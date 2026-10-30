@@ -1,16 +1,11 @@
-# 正式环境 macOS 桌面包（需在 GitHub 仓库 Actions 中手动触发）。
-# 本机 Windows 无法执行 flutter build macos。
+# 正式环境 macOS 桌面包。
+# 触发：GitHub → Actions →「Build macOS (prod)」→ Run workflow
+# 产物：Artifacts 中的 ZIP / DMG（ad-hoc 签名，未公证）
 
 name: Build macOS (prod)
 
 on:
   workflow_dispatch:
-    inputs:
-      flutter_version:
-        description: Flutter stable version
-        required: true
-        default: '3.35.0'
-        type: string
 
 permissions:
   contents: read
@@ -29,12 +24,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # path 依赖在 third_party/，须完整检出（勿用 sparse）
+          fetch-depth: 1
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: ${{ inputs.flutter_version }}
           cache: true
 
       - name: Show toolchain
@@ -42,6 +38,10 @@ jobs:
           flutter --version
           xcodebuild -version
           flutter config --enable-macos-desktop
+          test -f third_party/lemon_ui/pubspec.yaml
+          test -f third_party/lemon_x/pubspec.yaml
+          test -f third_party/lemon_shadcn/pubspec.yaml
+          test -f third_party/lemon_net/pubspec.yaml
 
       - name: Verify prod API config
         run: |
@@ -57,11 +57,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Codegen (if needed)
-        run: |
-          if grep -q "build_runner\|dart_json_mapper\|reflectable" pubspec.yaml; then
-            dart run build_runner build --delete-conflicting-outputs || true
-          fi
+      - name: Codegen
+        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Build release application
         run: flutter build macos --release --build-number "${GITHUB_RUN_NUMBER}"
@@ -96,10 +93,11 @@ jobs:
           (cd "$dist" && shasum -a 256 yidivination-macos-prod.app.zip yidivination-macos-prod.dmg > SHA256SUMS.txt)
           {
             echo '### macOS 正式包'
-            echo "- Commit: $GITHUB_SHA"
+            echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Architectures: $archs"
-            echo "- API: saas.palsmon.com (prod)"
+            echo "- API: saas.palsmon.com (prod) / tenantId 922729"
             echo "- Ad-hoc signed; not Apple-notarized."
+            echo "- Download artifact **macos-prod-$GITHUB_RUN_NUMBER**"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload packages

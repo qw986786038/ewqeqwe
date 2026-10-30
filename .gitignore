@@ -56,3 +56,6 @@ setup_fvp_mdk.ps1
 
 # Large / vendor backups
 third_party/lemon_ui.bak/
+
+# Nested vendor repo metadata (keep local, never commit)
+third_party/**/.git.bak/

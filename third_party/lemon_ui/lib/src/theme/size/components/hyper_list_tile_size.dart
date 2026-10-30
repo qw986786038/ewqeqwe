@@ -1,0 +1,140 @@
+import 'package:flutter/widgets.dart';
+
+/// 当前设备的 HyperListTile 布局规格。
+@immutable
+final class HyperListTileSize {
+  const HyperListTileSize({
+    required this.minHeight,
+    required this.compactMinHeight,
+    required this.subtitleMinHeight,
+    required this.compactSubtitleMinHeight,
+    required this.padding,
+    required this.compactPadding,
+    required this.leadingSize,
+    this.leadingIconSize,
+    required this.leadingSpacing,
+    required this.trailingSpacing,
+    required this.trailingIconSize,
+    required this.navigationSpacing,
+    required this.navigationIconSize,
+  });
+
+  final double minHeight;
+  final double compactMinHeight;
+  final double subtitleMinHeight;
+  final double compactSubtitleMinHeight;
+  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry compactPadding;
+  final double leadingSize;
+
+  /// Null inherits the supplied icon theme; leadingSize remains the slot size.
+  final double? leadingIconSize;
+  final double leadingSpacing;
+  final double trailingSpacing;
+  final double trailingIconSize;
+
+  /// 导航描述与箭头的间距，以及导航箭头尺寸。
+  final double navigationSpacing;
+  final double navigationIconSize;
+
+  HyperListTileSize copyWith({
+    double? minHeight,
+    double? compactMinHeight,
+    double? subtitleMinHeight,
+    double? compactSubtitleMinHeight,
+    EdgeInsetsGeometry? padding,
+    EdgeInsetsGeometry? compactPadding,
+    double? leadingSize,
+    double? leadingIconSize,
+    double? leadingSpacing,
+    double? trailingSpacing,
+    double? trailingIconSize,
+    double? navigationSpacing,
+    double? navigationIconSize,
+  }) => HyperListTileSize(
+    minHeight: minHeight ?? this.minHeight,
+    compactMinHeight: compactMinHeight ?? this.compactMinHeight,
+    subtitleMinHeight: subtitleMinHeight ?? this.subtitleMinHeight,
+    compactSubtitleMinHeight:
+        compactSubtitleMinHeight ?? this.compactSubtitleMinHeight,
+    padding: padding ?? this.padding,
+    compactPadding: compactPadding ?? this.compactPadding,
+    leadingSize: leadingSize ?? this.leadingSize,
+    leadingIconSize: leadingIconSize ?? this.leadingIconSize,
+    leadingSpacing: leadingSpacing ?? this.leadingSpacing,
+    trailingSpacing: trailingSpacing ?? this.trailingSpacing,
+    trailingIconSize: trailingIconSize ?? this.trailingIconSize,
+    navigationSpacing: navigationSpacing ?? this.navigationSpacing,
+    navigationIconSize: navigationIconSize ?? this.navigationIconSize,
+  );
+
+  static HyperListTileSize lerp(
+    HyperListTileSize a,
+    HyperListTileSize b,
+    double t,
+  ) => HyperListTileSize(
+    minHeight: a.minHeight + (b.minHeight - a.minHeight) * t,
+    compactMinHeight:
+        a.compactMinHeight + (b.compactMinHeight - a.compactMinHeight) * t,
+    subtitleMinHeight:
+        a.subtitleMinHeight + (b.subtitleMinHeight - a.subtitleMinHeight) * t,
+    compactSubtitleMinHeight:
+        a.compactSubtitleMinHeight +
+        (b.compactSubtitleMinHeight - a.compactSubtitleMinHeight) * t,
+    padding: EdgeInsetsGeometry.lerp(a.padding, b.padding, t)!,
+    compactPadding: EdgeInsetsGeometry.lerp(
+      a.compactPadding,
+      b.compactPadding,
+      t,
+    )!,
+    leadingSize: a.leadingSize + (b.leadingSize - a.leadingSize) * t,
+    leadingIconSize: a.leadingIconSize == null || b.leadingIconSize == null
+        ? (t < .5 ? a.leadingIconSize : b.leadingIconSize)
+        : a.leadingIconSize! + (b.leadingIconSize! - a.leadingIconSize!) * t,
+    leadingSpacing:
+        a.leadingSpacing + (b.leadingSpacing - a.leadingSpacing) * t,
+    trailingSpacing:
+        a.trailingSpacing + (b.trailingSpacing - a.trailingSpacing) * t,
+    trailingIconSize:
+        a.trailingIconSize + (b.trailingIconSize - a.trailingIconSize) * t,
+    navigationSpacing:
+        a.navigationSpacing + (b.navigationSpacing - a.navigationSpacing) * t,
+    navigationIconSize:
+        a.navigationIconSize +
+        (b.navigationIconSize - a.navigationIconSize) * t,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is HyperListTileSize &&
+      other.minHeight == minHeight &&
+      other.compactMinHeight == compactMinHeight &&
+      other.subtitleMinHeight == subtitleMinHeight &&
+      other.compactSubtitleMinHeight == compactSubtitleMinHeight &&
+      other.padding == padding &&
+      other.compactPadding == compactPadding &&
+      other.leadingSize == leadingSize &&
+      other.leadingIconSize == leadingIconSize &&
+      other.leadingSpacing == leadingSpacing &&
+      other.trailingSpacing == trailingSpacing &&
+      other.trailingIconSize == trailingIconSize &&
+      other.navigationSpacing == navigationSpacing &&
+      other.navigationIconSize == navigationIconSize;
+
+  @override
+  int get hashCode => Object.hash(
+    minHeight,
+    compactMinHeight,
+    subtitleMinHeight,
+    compactSubtitleMinHeight,
+    padding,
+    compactPadding,
+    leadingSize,
+    leadingIconSize,
+    leadingSpacing,
+    trailingSpacing,
+    trailingIconSize,
+    navigationSpacing,
+    navigationIconSize,
+  );
+}

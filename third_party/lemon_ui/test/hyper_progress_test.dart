@@ -1,0 +1,306 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lemon_ui/lemon_ui.dart';
+
+void main() {
+  testWidgets('线性确定进度在宽松宽度下占满可用空间，实例长度保持优先', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                HyperLinearProgress(key: Key('expand'), value: .35),
+                HyperLinearProgress(
+                  key: Key('explicit'),
+                  value: .35,
+                  length: 120,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byKey(const Key('expand'))).width, 300);
+    expect(tester.getSize(find.byKey(const Key('explicit'))).width, 120);
+    expect(tester.takeException(), isNull);
+  });
+
+  Widget app(
+    Widget child, {
+    HyperThemeData? theme,
+    bool disableAnimations = true,
+  }) => MaterialApp(
+    home: MediaQuery(
+      data: MediaQueryData(disableAnimations: disableAnimations),
+      child: HyperTheme(
+        data: theme ?? HyperThemeData.light(),
+        duration: Duration.zero,
+        child: Center(child: child),
+      ),
+    ),
+  );
+
+  testWidgets('统一入口转发到对应基础控件', (tester) async {
+    await tester.pumpWidget(
+      app(
+        const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HyperProgress.linear(value: .4),
+            HyperProgress.circular(value: .6),
+            HyperProgress.infinite(),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byType(HyperLinearProgress), findsOneWidget);
+    expect(find.byType(HyperCircularProgress), findsOneWidget);
+    expect(find.byType(HyperInfiniteProgress), findsOneWidget);
+  });
+
+  testWidgets('无限进度使用 MIUIX 默认规格并支持实例覆盖', (tester) async {
+    await tester.pumpWidget(
+      app(
+        const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HyperInfiniteProgress(),
+            HyperInfiniteProgress(
+              color: Colors.orange,
+              size: 40,
+              thickness: 3,
+              orbitingDotSize: 4,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final indicators = find.byType(HyperInfiniteProgress);
+    expect(tester.getSize(indicators.at(0)), const Size.square(20));
+    expect(tester.getSize(indicators.at(1)), const Size.square(40));
+    expect(
+      find.descendant(of: indicators, matching: find.byType(CustomPaint)),
+      findsNWidgets(2),
+    );
+  });
+
+  testWidgets('无限进度遵守正常动画和减少动画设置', (tester) async {
+    await tester.pumpWidget(
+      app(const HyperInfiniteProgress(), disableAnimations: false),
+    );
+    final animated = tester.widget<RotationTransition>(
+      find.byType(RotationTransition),
+    );
+    final before = animated.turns.value;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(animated.turns.value, isNot(before));
+
+    await tester.pumpWidget(app(const HyperInfiniteProgress()));
+    final reduced = tester.widget<RotationTransition>(
+      find.byType(RotationTransition),
+    );
+    expect(reduced.turns.value, 0);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(reduced.turns.value, 0);
+  });
+
+  testWidgets('进度值限制在零到一之间', (tester) async {
+    await tester.pumpWidget(
+      app(
+        const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HyperLinearProgress(value: 2),
+            HyperCircularProgress(value: -1),
+          ],
+        ),
+      ),
+    );
+
+    expect(
+      tester
+          .widget<Semantics>(
+            find
+                .descendant(
+                  of: find.byType(HyperLinearProgress),
+                  matching: find.byType(Semantics),
+                )
+                .first,
+          )
+          .properties
+          .value,
+      '100%',
+    );
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(
+            find.byType(CircularProgressIndicator),
+          )
+          .value,
+      0,
+    );
+  });
+
+  testWidgets('实例样式优先于局部和全局主题', (tester) async {
+    final theme = HyperThemeData.light().copyWith(
+      progressTheme: const HyperProgressThemeData(
+        style: HyperProgressStyle(color: Colors.red),
+      ),
+    );
+    await tester.pumpWidget(
+      app(
+        const HyperProgressTheme(
+          data: HyperProgressThemeData(
+            style: HyperProgressStyle(color: Colors.green),
+          ),
+          child: HyperCircularProgress(
+            value: .5,
+            color: Colors.blue,
+            size: 40,
+            thickness: 4,
+          ),
+        ),
+        theme: theme,
+      ),
+    );
+
+    final indicator = tester.widget<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(indicator.color, Colors.blue);
+    expect(indicator.strokeWidth, 4);
+    expect(
+      tester.getSize(find.byType(HyperCircularProgress)),
+      const Size.square(40),
+    );
+  });
+
+  testWidgets('三种进度指示器使用明确的设备规格', (tester) async {
+    for (final entry in <(HyperSizeScheme, double, double, double, double)>[
+      (const HyperSizeScheme.phone(), 6, 30, 4, 20),
+      (const HyperSizeScheme.tablet(), 6, 30, 4, 20),
+      (const HyperSizeScheme.desktop(), 4, 24, 3, 16),
+      (const HyperSizeScheme.watch(), 6, 24, 3, 20),
+    ]) {
+      await tester.pumpWidget(
+        app(
+          const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              HyperLinearProgress(value: .5),
+              HyperCircularProgress(value: .5),
+              HyperInfiniteProgress(),
+            ],
+          ),
+          theme: HyperThemeData.light(
+            sizes: HyperSizeThemeData(
+              phone: entry.$1,
+              tablet: entry.$1,
+              desktop: entry.$1,
+              watch: entry.$1,
+            ),
+          ),
+        ),
+      );
+      expect(tester.getSize(find.byType(HyperLinearProgress)).height, entry.$2);
+      expect(
+        tester.getSize(find.byType(HyperCircularProgress)),
+        Size.square(entry.$3),
+      );
+      expect(
+        tester
+            .widget<CircularProgressIndicator>(
+              find.byType(CircularProgressIndicator),
+            )
+            .strokeWidth,
+        entry.$4,
+      );
+      expect(
+        tester.getSize(find.byType(HyperInfiniteProgress)),
+        Size.square(entry.$5),
+      );
+    }
+  });
+
+  testWidgets('线性进度尺寸颜色可覆盖且默认圆角跟随厚度', (tester) async {
+    await tester.pumpWidget(
+      app(
+        const HyperLinearProgress(
+          value: .5,
+          length: 180,
+          thickness: 10,
+          color: Colors.orange,
+          trackColor: Colors.black12,
+        ),
+      ),
+    );
+
+    final dynamic painter = tester
+        .widget<CustomPaint>(
+          find.descendant(
+            of: find.byType(HyperLinearProgress),
+            matching: find.byType(CustomPaint),
+          ),
+        )
+        .painter;
+    expect(
+      tester.getSize(find.byType(HyperLinearProgress)),
+      const Size(180, 10),
+    );
+    expect(painter.color, Colors.orange);
+    expect(painter.trackColor, Colors.black12);
+    expect(
+      tester
+          .widget<ClipRRect>(
+            find.descendant(
+              of: find.byType(HyperLinearProgress),
+              matching: find.byType(ClipRRect),
+            ),
+          )
+          .borderRadius,
+      BorderRadius.circular(5),
+    );
+  });
+
+  testWidgets('减少动画时不确定进度降级为静态状态', (tester) async {
+    await tester.pumpWidget(
+      app(
+        const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [HyperLinearProgress(), HyperCircularProgress()],
+        ),
+      ),
+    );
+
+    expect(
+      tester
+          .widget<Semantics>(
+            find
+                .descendant(
+                  of: find.byType(HyperLinearProgress),
+                  matching: find.byType(Semantics),
+                )
+                .first,
+          )
+          .properties
+          .value,
+      '35%',
+    );
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(
+            find.byType(CircularProgressIndicator),
+          )
+          .value,
+      .75,
+    );
+  });
+}

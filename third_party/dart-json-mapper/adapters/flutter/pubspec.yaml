@@ -1,0 +1,23 @@
+name: dart_json_mapper_flutter
+version: 2.0.1
+description: >
+  This is a dart-json-mapper complementary package
+  provides support for https://github.com/flutter/flutter types in order to
+  serialize / deserialize them from / to JSON.
+homepage: https://github.com/k-paxian/dart-json-mapper/tree/master/adapters/flutter
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  dart_json_mapper: '>=2.1.12 <3.0.0'
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  reflectable:
+  flutter_test:
+    sdk: flutter
+  lints:
+  build_runner:
+  build_test:
+#dependency_overrides:
+#  dart_json_mapper:
+#    path: ../../mapper

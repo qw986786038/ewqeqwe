@@ -1,0 +1,1223 @@
+import 'package:flutter/material.dart' as material;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lemon_shadcn/lemon_shadcn.dart';
+
+void main() {
+  test('AppDescriptions accepts independently configurable spacing', () {
+    const descriptions = AppDescriptions(
+      items: [],
+      padding: material.EdgeInsets.all(12),
+      tableCellPadding: material.EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 8,
+      ),
+      margin: material.EdgeInsets.all(20),
+    );
+
+    expect(descriptions.padding, const material.EdgeInsets.all(12));
+    expect(
+      descriptions.tableCellPadding,
+      const material.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    );
+    expect(descriptions.margin, const material.EdgeInsets.all(20));
+  });
+
+  test('AppDescriptions uses all(20) content padding by default', () {
+    const descriptions = AppDescriptions(items: []);
+    expect(descriptions.padding, const material.EdgeInsets.all(20));
+  });
+
+  test('AppDescriptions uses the standard label width by default', () {
+    const descriptions = AppDescriptions(items: []);
+    expect(descriptions.labelWidth, 80);
+  });
+
+  test('AppDescriptions exposes fixed and maximum column widths', () {
+    const fixed = AppDescriptions(items: [], columnWidth: 240);
+    const limited = AppDescriptions(
+      items: [],
+      minColumnWidth: 180,
+      maxColumnWidth: 280,
+    );
+    expect(fixed.columnWidth, 240);
+    expect(limited.maxColumnWidth, 280);
+  });
+
+  testWidgets('compact theme changes typography and spacing', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppComponentTheme<AppDescriptionsTheme>(
+            data: AppDescriptionsTheme.compact(
+              labelStyle: material.TextStyle(color: material.Colors.purple),
+            ),
+            child: AppDescriptions(
+              type: AppDescriptionsType.table,
+              columns: 1,
+              items: [
+                AppDescriptionItem(
+                  label: material.Text('Label'),
+                  value: material.Text('Value'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final labelStyle = tester
+        .widget<material.RichText>(
+          find.descendant(
+            of: find.text('Label'),
+            matching: find.byType(material.RichText),
+          ),
+        )
+        .text
+        .style;
+    expect(labelStyle?.fontSize, 12);
+    expect(labelStyle?.color, material.Colors.purple);
+    expect(
+      tester
+          .widgetList<material.Padding>(find.byType(material.Padding))
+          .any(
+            (widget) =>
+                widget.padding ==
+                const material.EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+          ),
+      isTrue,
+    );
+  });
+
+  testWidgets('button value keeps its intrinsic width', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: material.SizedBox(
+          width: 500,
+          child: AppDescriptions(
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            items: [
+              AppDescriptionItem(
+                label: const material.Text('Action'),
+                value: material.TextButton(
+                  onPressed: () {},
+                  child: const material.Text('Edit'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byType(material.TextButton)).width,
+      lessThan(200),
+    );
+  });
+
+  testWidgets('standard layout defaults to 8 item run spacing', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.SizedBox(
+          width: 300,
+          child: AppDescriptions(
+            columns: 1,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('First'),
+                value: material.Text('One'),
+              ),
+              AppDescriptionItem(
+                label: material.Text('Second'),
+                value: material.Text('Two'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<material.Wrap>(find.byType(material.Wrap)).runSpacing,
+      8,
+    );
+  });
+
+  testWidgets('divider item occupies a complete responsive row', (
+    tester,
+  ) async {
+    const dividerKey = material.ValueKey('standard-divider');
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: material.SizedBox(
+            width: 500,
+            child: AppDescriptions(
+              columns: 2,
+              minColumnWidth: 100,
+              items: [
+                AppDescriptionItem(
+                  label: material.Text('First'),
+                  value: material.Text('One'),
+                ),
+                AppDescriptionItem.divider(
+                  divider: material.SizedBox(
+                    key: dividerKey,
+                    height: 1,
+                    child: material.ColoredBox(color: material.Colors.red),
+                  ),
+                ),
+                AppDescriptionItem(
+                  label: material.Text('Second'),
+                  value: material.Text('Two'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byKey(dividerKey)).width, 460);
+    expect(
+      tester.getTopLeft(find.byKey(dividerKey)).dy,
+      greaterThan(tester.getBottomLeft(find.text('One')).dy),
+    );
+    expect(
+      tester.getBottomLeft(find.byKey(dividerKey)).dy,
+      lessThan(tester.getTopLeft(find.text('Second')).dy),
+    );
+  });
+
+  testWidgets('divider item spans the full table width', (tester) async {
+    const dividerKey = material.ValueKey('table-divider');
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: material.SizedBox(
+            width: 500,
+            child: AppDescriptions(
+              type: AppDescriptionsType.table,
+              columns: 2,
+              items: [
+                AppDescriptionItem(
+                  label: material.Text('First'),
+                  value: material.Text('One'),
+                ),
+                AppDescriptionItem.divider(
+                  divider: material.SizedBox(
+                    key: dividerKey,
+                    height: 1,
+                    child: material.ColoredBox(color: material.Colors.red),
+                  ),
+                ),
+                AppDescriptionItem(
+                  label: material.Text('Second'),
+                  value: material.Text('Two'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byKey(dividerKey)).width, 500);
+    expect(find.byType(material.Table), findsNWidgets(2));
+  });
+
+  testWidgets('custom item replaces item layout and honors span', (
+    tester,
+  ) async {
+    const customKey = material.ValueKey('custom-item');
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: material.SizedBox(
+            width: 500,
+            child: AppDescriptions(
+              columns: 2,
+              minColumnWidth: 100,
+              items: [
+                AppDescriptionItem.custom(
+                  span: 2,
+                  child: material.SizedBox(
+                    key: customKey,
+                    width: double.infinity,
+                    child: material.Text('自定义操作区'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byKey(customKey)).width, 460);
+    expect(find.text('自定义操作区'), findsOneWidget);
+    expect(find.byType(material.Column), findsNothing);
+  });
+
+  testWidgets('layout defaults to 12 horizontal item spacing', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.SizedBox(
+          width: 500,
+          child: AppDescriptions(
+            columns: 2,
+            minColumnWidth: 100,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('First'),
+                value: material.Text('One'),
+              ),
+              AppDescriptionItem(
+                label: material.Text('Second'),
+                value: material.Text('Two'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<material.Wrap>(find.byType(material.Wrap)).spacing,
+      12,
+    );
+  });
+
+  testWidgets('custom variant renders arbitrary body and header actions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: AppDescriptions.custom(
+          title: const material.Text('Device'),
+          actions: material.IconButton(
+            onPressed: () {},
+            icon: const material.Icon(material.Icons.more_horiz),
+          ),
+          padding: const material.EdgeInsets.all(18),
+          child: const material.Column(
+            children: [
+              material.Text('Custom body'),
+              material.Text('Menu body'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Device'), findsOneWidget);
+    expect(find.byIcon(material.Icons.more_horiz), findsOneWidget);
+    expect(find.text('Custom body'), findsOneWidget);
+    expect(find.text('Menu body'), findsOneWidget);
+    expect(find.byType(material.Wrap), findsNothing);
+  });
+
+  testWidgets('title icon renders before title with density-aware size', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const AppDescriptions(
+          titleIcon: material.Icon(material.Icons.monitor),
+          title: material.Text('Device'),
+          items: [],
+        ),
+      ),
+    );
+
+    expect(find.byIcon(material.Icons.monitor), findsOneWidget);
+    expect(find.text('Device'), findsOneWidget);
+    expect(
+      tester.widget<material.Icon>(find.byIcon(material.Icons.monitor)).size,
+      isNull,
+    );
+    expect(
+      material.IconTheme.of(
+        tester.element(find.byIcon(material.Icons.monitor)),
+      ).size,
+      20,
+    );
+    expect(
+      tester.getTopLeft(find.text('Device')).dx -
+          tester.getTopRight(find.byIcon(material.Icons.monitor)).dx,
+      closeTo(8, 0.01),
+    );
+  });
+
+  testWidgets('header actions do not expand title spacing', (tester) async {
+    const actionKey = material.ValueKey('tall-header-action');
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: material.SizedBox(
+            width: 320,
+            child: AppDescriptions(
+              bordered: true,
+              columns: 1,
+              titleIcon: material.Icon(material.Icons.monitor),
+              title: material.Text('设备信息'),
+              actions: material.SizedBox(
+                key: actionKey,
+                width: 40,
+                height: 80,
+                child: material.ColoredBox(color: material.Colors.transparent),
+              ),
+              items: [
+                AppDescriptionItem(
+                  label: material.Text('设备序列号'),
+                  value: material.Text('site-shimano-01'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byKey(actionKey)).height, 32);
+    final surface = tester.getRect(find.byType(AppDescriptions));
+    final topInset = tester.getTopLeft(find.text('设备信息')).dy - surface.top;
+    final bottomInset =
+        surface.bottom - tester.getBottomLeft(find.text('site-shimano-01')).dy;
+    expect(topInset, closeTo(bottomInset, 2));
+  });
+
+  testWidgets('item label alignment can be overridden directly', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.SizedBox(
+          width: 300,
+          child: AppDescriptions(
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            labelWidth: 100,
+            padding: material.EdgeInsets.zero,
+            items: [
+              AppDescriptionItem(
+                labelAlignment: material.Alignment.centerRight,
+                label: material.Text('City'),
+                value: material.Text('Jinan'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final labelRight = tester.getTopRight(find.text('City')).dx;
+    final valueLeft = tester.getTopLeft(find.text('Jinan')).dx;
+    expect(valueLeft - labelRight, closeTo(8, 0.01));
+  });
+
+  testWidgets('descriptions applies one label alignment to all items', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.SizedBox(
+          width: 300,
+          child: AppDescriptions(
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            labelWidth: 100,
+            labelAlignment: material.Alignment.centerRight,
+            padding: material.EdgeInsets.zero,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('City'),
+                value: material.Text('Jinan'),
+              ),
+              AppDescriptionItem(
+                label: material.Text('Owner'),
+                value: material.Text('Zhang'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    for (final pair in [('City', 'Jinan'), ('Owner', 'Zhang')]) {
+      final labelRight = tester.getTopRight(find.text(pair.$1)).dx;
+      final valueLeft = tester.getTopLeft(find.text(pair.$2)).dx;
+      expect(valueLeft - labelRight, closeTo(8, 0.01));
+    }
+  });
+
+  testWidgets('topStart aligns label to top of a multiline value', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.SizedBox(
+          width: 300,
+          child: AppDescriptions(
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            labelAlignment: material.AlignmentDirectional.topStart,
+            padding: material.EdgeInsets.zero,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('Boot time'),
+                value: material.Text('09:00-12:00\n09:00-12:00'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getTopLeft(find.text('Boot time')).dy,
+      closeTo(
+        tester.getTopLeft(find.text('09:00-12:00\n09:00-12:00')).dy,
+        0.01,
+      ),
+    );
+  });
+
+  testWidgets('topStart keeps multiline AppInlineEdit flush with the label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: material.SizedBox(
+          width: 360,
+          child: AppDescriptions(
+            type: AppDescriptionsType.table,
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            items: [
+              AppDescriptionItem(
+                label: const material.Text('开关机时间'),
+                labelAlignment: material.AlignmentDirectional.topStart,
+                value: AppInlineEdit.multiline(
+                  value: '09:00:00–12:00:00\n13:00:00–19:45:00',
+                  minHeight: 56,
+                  onSaved: (_) async {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final labelTop = tester.getTopLeft(find.text('开关机时间')).dy;
+    final valueTop = tester
+        .getTopLeft(find.text('09:00:00–12:00:00\n13:00:00–19:45:00'))
+        .dy;
+    expect(valueTop, closeTo(labelTop, 0.01));
+
+    final valueBottom = tester
+        .getBottomLeft(find.text('09:00:00–12:00:00\n13:00:00–19:45:00'))
+        .dy;
+    final inlineBottom = tester
+        .getBottomLeft(find.byType(AppInlineEdit<String>))
+        .dy;
+    // Multiline display keeps the same optical air as single-line slots.
+    expect(inlineBottom, greaterThan(valueBottom + 4));
+    expect(
+      tester.getSize(find.byType(AppInlineEdit<String>)).height,
+      lessThan(72),
+    );
+  });
+
+  testWidgets(
+    'multiline and single-line inline edit share the same optical inset',
+    (tester) async {
+      await tester.pumpWidget(
+        material.MaterialApp(
+          builder: AppShadcnScope.builder(),
+          home: material.Align(
+            alignment: material.Alignment.topLeft,
+            child: material.SizedBox(
+              width: 360,
+              child: AppDescriptions(
+                type: AppDescriptionsType.table,
+                columns: 1,
+                layout: AppDescriptionLayout.horizontal,
+                items: [
+                  AppDescriptionItem(
+                    label: const material.Text('分辨率'),
+                    value: AppInlineEdit.text(
+                      value: '2160x3840',
+                      onSaved: (_) async {},
+                    ),
+                  ),
+                  AppDescriptionItem(
+                    label: const material.Text('开关机时间'),
+                    labelAlignment: material.AlignmentDirectional.topStart,
+                    value: AppInlineEdit.multiline(
+                      value: '09:00:00-12:00:00\n13:00:00-19:45:00',
+                      minHeight: 56,
+                      onSaved: (_) async {},
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final singleText = tester.getRect(find.text('2160x3840'));
+      final singleSlot = tester.getRect(
+        find.byType(AppInlineEdit<String>).at(0),
+      );
+      final multiText = tester.getRect(
+        find.text('09:00:00-12:00:00\n13:00:00-19:45:00'),
+      );
+      final multiSlot = tester.getRect(
+        find.byType(AppInlineEdit<String>).at(1),
+      );
+
+      final singleInset = singleText.top - singleSlot.top;
+      final multiInset = multiText.top - multiSlot.top;
+      expect(multiInset, closeTo(singleInset, 0.5));
+      expect(multiSlot.bottom - multiText.bottom, closeTo(multiInset, 0.5));
+    },
+  );
+
+  testWidgets('compact embedded controls and inline edit use local height', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: material.SizedBox(
+          width: 600,
+          child: AppDescriptions(
+            density: AppDensity.compact,
+            type: AppDescriptionsType.table,
+            columns: 2,
+            layout: AppDescriptionLayout.horizontal,
+            items: [
+              AppDescriptionItem(
+                label: const material.Text('Name'),
+                value: AppTextFormField(
+                  name: 'compact-name',
+                  initialValue: 'Lemon',
+                ),
+              ),
+              AppDescriptionItem(
+                label: const material.Text('Action'),
+                value: AppButton.outline(
+                  key: const material.ValueKey('compact-button'),
+                  onPressed: () {},
+                  child: const material.Text('Edit'),
+                ),
+              ),
+              AppDescriptionItem(
+                label: const material.Text('Owner'),
+                value: AppInlineEdit.text(value: 'Zhang', onSaved: (_) {}),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byType(AppTextFormField)).height, 26);
+    expect(
+      tester
+          .getSize(find.byKey(const material.ValueKey('compact-button')))
+          .height,
+      26,
+    );
+    expect(tester.getSize(find.byType(AppInlineEdit<String>)).height, 26);
+    final editableStyles = tester
+        .widgetList<material.EditableText>(find.byType(material.EditableText))
+        .map((widget) => widget.style.fontSize);
+    expect(editableStyles, everyElement(13));
+    final buttonText = tester.widget<material.RichText>(
+      find.descendant(
+        of: find.byKey(const material.ValueKey('compact-button')),
+        matching: find.byType(material.RichText),
+      ),
+    );
+    expect(buttonText.text.style?.fontSize, 13);
+    final labelCenter = tester.getCenter(find.text('Action')).dy;
+    final controlCenter = tester
+        .getCenter(find.byKey(const material.ValueKey('compact-button')))
+        .dy;
+    expect(labelCenter, closeTo(controlCenter, 0.01));
+  });
+
+  testWidgets('plain text uses the system control height by default', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppDescriptions(
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            padding: material.EdgeInsets.zero,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('名称'),
+                value: material.Text('柠檬管理后台'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final item = find.ancestor(
+      of: find.text('柠檬管理后台'),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is material.ConstrainedBox &&
+            widget.constraints.minHeight == 32,
+      ),
+    );
+    expect(tester.getSize(item.first).height, 32);
+  });
+
+  testWidgets('mixed AppInlineEdit keeps sibling items at system height', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppDescriptions(
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            padding: material.EdgeInsets.zero,
+            items: [
+              const AppDescriptionItem(
+                label: material.Text('名称'),
+                value: material.Text('柠檬管理后台'),
+              ),
+              AppDescriptionItem(
+                label: const material.Text('负责人'),
+                value: AppInlineEdit.text(value: '张明', onSaved: (_) {}),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final valueArea = find.ancestor(
+      of: find.text('柠檬管理后台'),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is material.ConstrainedBox &&
+            widget.constraints.minHeight == 32,
+      ),
+    );
+    expect(tester.getSize(valueArea.first).height, 32);
+    expect(tester.getSize(find.byType(AppInlineEdit<String>)).height, 32);
+  });
+
+  testWidgets('itemHeight supports theme, surface, item, and null overrides', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppComponentTheme<AppDescriptionsTheme>(
+            data: const AppDescriptionsTheme(itemHeight: 36),
+            child: material.Column(
+              mainAxisSize: material.MainAxisSize.min,
+              children: [
+                const AppDescriptions(
+                  columns: 1,
+                  layout: AppDescriptionLayout.horizontal,
+                  padding: material.EdgeInsets.zero,
+                  items: [
+                    AppDescriptionItem(
+                      label: material.Text('主题项'),
+                      value: material.Text('主题高度'),
+                    ),
+                  ],
+                ),
+                const AppDescriptions(
+                  columns: 1,
+                  layout: AppDescriptionLayout.horizontal,
+                  padding: material.EdgeInsets.zero,
+                  itemHeight: 40,
+                  items: [
+                    AppDescriptionItem(
+                      label: material.Text('表面项'),
+                      value: material.Text('表面高度'),
+                    ),
+                    AppDescriptionItem(
+                      label: material.Text('单项'),
+                      value: material.Text('单项高度'),
+                      itemHeight: 48,
+                    ),
+                    AppDescriptionItem(
+                      label: material.Text('自然项'),
+                      value: material.Text('自然高度'),
+                      itemHeight: null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Finder itemSlot(String text, double height) => find.ancestor(
+      of: find.text(text),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is material.SizedBox && widget.height == height,
+      ),
+    );
+
+    expect(tester.getSize(itemSlot('主题高度', 36).first).height, 36);
+    expect(tester.getSize(itemSlot('表面高度', 40).first).height, 40);
+    expect(tester.getSize(itemSlot('单项高度', 48).first).height, 48);
+    expect(itemSlot('自然高度', 40), findsNothing);
+  });
+
+  testWidgets('fixed itemHeight caps control metrics in the value slot', (
+    tester,
+  ) async {
+    final heights = <String, double>{};
+    material.Widget probe(String key) => material.Builder(
+      builder: (context) {
+        final metrics = AppControlMetricsScope.resolve(context);
+        heights[key] = metrics.height;
+        heights['$key.button'] = metrics.buttonHeight;
+        return material.Text(key);
+      },
+    );
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(
+          config: AppThemeConfig.standard(
+            controls: const AppControlMetrics(height: 36, buttonHeight: 35),
+          ),
+        ),
+        home: material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppDescriptions(
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            padding: material.EdgeInsets.zero,
+            itemHeight: 32,
+            items: [
+              AppDescriptionItem(
+                label: const material.Text('固定'),
+                value: probe('fixed'),
+              ),
+              AppDescriptionItem(
+                label: const material.Text('单项'),
+                value: probe('item'),
+                itemHeight: 28,
+              ),
+              AppDescriptionItem(
+                label: const material.Text('自然'),
+                value: probe('natural'),
+                itemHeight: null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(heights['fixed'], 32);
+    expect(heights['fixed.button'], 32);
+    expect(heights['item'], 28);
+    expect(heights['natural'], 36);
+  });
+
+  testWidgets('fixed itemHeight keeps mixed horizontal rows evenly spaced', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: material.SizedBox(
+            width: 360,
+            child: AppDescriptions(
+              columns: 1,
+              layout: AppDescriptionLayout.horizontal,
+              padding: material.EdgeInsets.zero,
+              runSpacing: 0,
+              itemHeight: 36,
+              items: [
+                AppDescriptionItem(
+                  label: material.Text('点位名称'),
+                  value: material.Text('国贸中心'),
+                ),
+                AppDescriptionItem(
+                  label: material.Text('媒体尺寸'),
+                  value: material.Text(
+                    '98寸',
+                    style: material.TextStyle(
+                      fontWeight: material.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                AppDescriptionItem(
+                  label: material.Text('开关机时间'),
+                  value: material.Text('09:00:00–21:00:00'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final tops = [
+      tester.getTopLeft(find.text('点位名称')).dy,
+      tester.getTopLeft(find.text('媒体尺寸')).dy,
+      tester.getTopLeft(find.text('开关机时间')).dy,
+    ];
+    expect(tops[1] - tops[0], closeTo(36, 0.01));
+    expect(tops[2] - tops[1], closeTo(36, 0.01));
+  });
+
+  testWidgets('default title font size is 16', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const AppDescriptions(title: material.Text('设备信息'), items: []),
+      ),
+    );
+
+    final style = material.DefaultTextStyle.of(
+      tester.element(find.text('设备信息')),
+    ).style;
+    expect(style.fontSize, 16);
+  });
+
+  testWidgets('valueHeight can be overridden on the surface and item', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppDescriptions(
+            columns: 1,
+            padding: material.EdgeInsets.zero,
+            valueHeight: 40,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('默认'),
+                value: material.Text('表面高度'),
+              ),
+              AppDescriptionItem(
+                label: material.Text('单项'),
+                value: material.Text('单项高度'),
+                valueHeight: 48,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    Finder valueSlot(String text, double height) => find.ancestor(
+      of: find.text(text),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is material.ConstrainedBox &&
+            widget.constraints.minHeight == height,
+      ),
+    );
+
+    expect(tester.getSize(valueSlot('表面高度', 40)).height, 40);
+    expect(tester.getSize(valueSlot('单项高度', 48)).height, 48);
+  });
+
+  testWidgets('valueHeight null keeps the value content-sized', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppDescriptions(
+            columns: 1,
+            padding: material.EdgeInsets.zero,
+            itemHeight: null,
+            valueHeight: null,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('名称'),
+                value: material.Text('内容高度'),
+              ),
+              AppDescriptionItem(
+                label: material.Text('单项'),
+                value: material.Text('单项内容'),
+                valueHeight: null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.ancestor(
+        of: find.text('内容高度'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is material.ConstrainedBox &&
+              widget.constraints.minHeight == 32,
+        ),
+      ),
+      findsNothing,
+    );
+    expect(tester.getSize(find.text('内容高度')).height, lessThan(32));
+    expect(
+      find.ancestor(
+        of: find.text('单项内容'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is material.ConstrainedBox &&
+              widget.constraints.minHeight > 0,
+        ),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('table row stays compact with a form-height value', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: AppDescriptions(
+            type: AppDescriptionsType.table,
+            columns: 1,
+            layout: AppDescriptionLayout.horizontal,
+            items: [
+              AppDescriptionItem(
+                label: material.Text('名称'),
+                value: material.SizedBox(height: 32, child: material.Text('值')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byType(material.Table)).height, 48);
+  });
+
+  testWidgets('table mode rejects unsupported item spans', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const AppDescriptions(
+          type: AppDescriptionsType.table,
+          items: [
+            AppDescriptionItem(
+              span: 2,
+              label: material.Text('Wide'),
+              value: material.Text('Value'),
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(tester.takeException(), isAssertionError);
+  });
+
+  testWidgets('vertical multi-column items honor individual alignments', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.Align(
+          alignment: material.Alignment.topLeft,
+          child: material.SizedBox(
+            width: 600,
+            child: AppDescriptions(
+              columns: 3,
+              minColumnWidth: 150,
+              padding: material.EdgeInsets.zero,
+              items: [
+                AppDescriptionItem(
+                  label: material.Text('Left label'),
+                  value: material.Text('Left value'),
+                ),
+                AppDescriptionItem(
+                  label: material.Text('Center label'),
+                  value: material.Text('Center value'),
+                  labelAlignment: material.Alignment.center,
+                  valueAlignment: material.Alignment.center,
+                ),
+                AppDescriptionItem(
+                  label: material.Text('Right label'),
+                  value: material.Text('Right value'),
+                  labelAlignment: material.Alignment.centerRight,
+                  valueAlignment: material.Alignment.centerRight,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final centerLabel = tester.getCenter(find.text('Center label')).dx;
+    final centerValue = tester.getCenter(find.text('Center value')).dx;
+    expect(centerLabel, closeTo(300, 0.01));
+    expect(centerValue, closeTo(300, 0.01));
+
+    final rightLabel = tester.getTopRight(find.text('Right label')).dx;
+    final rightValue = tester.getTopRight(find.text('Right value')).dx;
+    expect(rightLabel, closeTo(600, 0.01));
+    expect(rightValue, closeTo(600, 0.01));
+  });
+
+  testWidgets('header aligns with body and value controls stay intrinsic', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: material.SizedBox(
+          width: 500,
+          child: AppDescriptions(
+            title: const material.Text('Device information'),
+            columns: 1,
+            items: [
+              AppDescriptionItem(
+                label: const material.Text('Status'),
+                value: AppBadge.success(child: const material.Text('Online')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getTopLeft(find.text('Device information')).dx,
+      closeTo(tester.getTopLeft(find.text('Status')).dx, 0.01),
+    );
+    expect(
+      tester
+          .getSize(
+            find
+                .ancestor(
+                  of: find.text('Online'),
+                  matching: find.byType(material.IgnorePointer),
+                )
+                .first,
+          )
+          .width,
+      lessThan(500),
+    );
+  });
+
+  testWidgets('an item can enforce a minimum column width', (tester) async {
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(),
+        home: const material.SizedBox(
+          width: 600,
+          child: AppDescriptions(
+            columns: 3,
+            padding: material.EdgeInsets.zero,
+            items: [
+              AppDescriptionItem(
+                minWidth: 280,
+                label: material.Text('Custom width label'),
+                value: material.Text('Custom width value'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final item = find.ancestor(
+      of: find.text('Custom width label'),
+      matching: find.byType(material.SizedBox),
+    );
+    expect(
+      tester.widgetList<material.SizedBox>(item).any((box) => box.width == 280),
+      isTrue,
+    );
+  });
+
+  testWidgets('descriptions follows globally scaled typography', (
+    tester,
+  ) async {
+    final base = AppThemeConfig.standard();
+    const scale = 12 / 14;
+    await tester.pumpWidget(
+      material.MaterialApp(
+        builder: AppShadcnScope.builder(
+          config: base.copyWith(
+            lightTheme: base.lightTheme.copyWith(
+              typography: () => base.lightTheme.typography.scale(scale),
+            ),
+            darkTheme: base.darkTheme.copyWith(
+              typography: () => base.darkTheme.typography.scale(scale),
+            ),
+          ),
+        ),
+        home: const AppDescriptions(
+          items: [
+            AppDescriptionItem(
+              label: material.Text('Global label'),
+              value: material.Text('Global value'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final style = material.DefaultTextStyle.of(
+      tester.element(find.text('Global value')),
+    ).style;
+    expect(style.fontSize, closeTo(12, 0.01));
+  });
+}

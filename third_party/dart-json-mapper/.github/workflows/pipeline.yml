@@ -1,0 +1,75 @@
+name: Pipeline
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+    tags:
+      - 'release-*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish packages to pub.dev after tests pass'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/release-') }}
+
+jobs:
+  test_mapper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: '>> unit & performance tests for mapper <<'
+        uses: k-paxian/dart-package-publisher@master
+        with:
+          testRunOnly: true
+          relativePath: perf-test
+
+  publish_mapper:
+    if: >-
+      github.repository == 'k-paxian/dart-json-mapper' &&
+      (startsWith(github.ref, 'refs/tags/release-') ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    needs: [test_mapper]
+    runs-on: ubuntu-latest
+    environment: pub.dev
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: '>> publish mapper package to pub.dev <<'
+        uses: k-paxian/dart-package-publisher@master
+        with:
+          credentialJson: ${{ secrets.CREDENTIAL_JSON }}
+          relativePath: mapper
+
+  publish_adapter:
+    if: >-
+      github.repository == 'k-paxian/dart-json-mapper' &&
+      (startsWith(github.ref, 'refs/tags/release-') ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    needs: [publish_mapper]
+    runs-on: ubuntu-latest
+    environment: pub.dev
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: [flutter, built, fixnum, mobx]
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp -f ./mapper/LICENSE ./adapters/${{ matrix.adapter }}/LICENSE
+      - name: '>> test & publish adapter / ${{ matrix.adapter }} <<'
+        uses: k-paxian/dart-package-publisher@master
+        with:
+          credentialJson: ${{ secrets.CREDENTIAL_JSON }}
+          relativePath: adapters/${{ matrix.adapter }}

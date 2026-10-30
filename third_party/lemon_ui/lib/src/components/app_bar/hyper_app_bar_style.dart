@@ -1,0 +1,130 @@
+import '../card/hyper_card_style.dart';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../foundation/hyper_surface_material.dart';
+
+/// 固定与滚动顶栏共用的视觉覆盖。
+@immutable
+final class HyperAppBarStyle {
+  const HyperAppBarStyle({
+    this.backgroundColor,
+    this.surfaceStyle,
+    this.foregroundColor,
+    this.titleTextStyle,
+    this.expandedTitleTextStyle,
+    this.material,
+    this.centerTitle,
+    this.elevation,
+    this.systemOverlayStyle,
+  });
+
+  final Color? backgroundColor;
+  final HyperCardStyle? surfaceStyle;
+  final Color? foregroundColor;
+  final TextStyle? titleTextStyle;
+  final TextStyle? expandedTitleTextStyle;
+  final HyperSurfaceMaterial? material;
+
+  /// 收起标题默认居中；设为 false 时按阅读方向在起始侧对齐。
+  final bool? centerTitle;
+  final double? elevation;
+
+  /// 状态栏与系统导航栏覆盖；默认状态栏透明，图标亮暗跟随顶栏前景。
+  final SystemUiOverlayStyle? systemOverlayStyle;
+
+  HyperAppBarStyle merge(HyperAppBarStyle? other) => other == null
+      ? this
+      : HyperAppBarStyle(
+          backgroundColor: other.backgroundColor ?? backgroundColor,
+          surfaceStyle:
+              surfaceStyle?.merge(other.surfaceStyle) ?? other.surfaceStyle,
+          foregroundColor: other.foregroundColor ?? foregroundColor,
+          titleTextStyle:
+              titleTextStyle?.merge(other.titleTextStyle) ??
+              other.titleTextStyle,
+          expandedTitleTextStyle:
+              expandedTitleTextStyle?.merge(other.expandedTitleTextStyle) ??
+              other.expandedTitleTextStyle,
+          material: other.material ?? material,
+          centerTitle: other.centerTitle ?? centerTitle,
+          elevation: other.elevation ?? elevation,
+          systemOverlayStyle: other.systemOverlayStyle ?? systemOverlayStyle,
+        );
+
+  HyperAppBarStyle copyWith({
+    Color? backgroundColor,
+    HyperCardStyle? surfaceStyle,
+    Color? foregroundColor,
+    TextStyle? titleTextStyle,
+    TextStyle? expandedTitleTextStyle,
+    HyperSurfaceMaterial? material,
+    bool? centerTitle,
+    double? elevation,
+    SystemUiOverlayStyle? systemOverlayStyle,
+  }) => merge(
+    HyperAppBarStyle(
+      backgroundColor: backgroundColor,
+      surfaceStyle: surfaceStyle,
+      foregroundColor: foregroundColor,
+      titleTextStyle: titleTextStyle,
+      expandedTitleTextStyle: expandedTitleTextStyle,
+      material: material,
+      centerTitle: centerTitle,
+      elevation: elevation,
+      systemOverlayStyle: systemOverlayStyle,
+    ),
+  );
+
+  static HyperAppBarStyle lerp(
+    HyperAppBarStyle a,
+    HyperAppBarStyle b,
+    double t,
+  ) => HyperAppBarStyle(
+    backgroundColor: Color.lerp(a.backgroundColor, b.backgroundColor, t),
+    surfaceStyle: a.surfaceStyle == null || b.surfaceStyle == null
+        ? (t < .5 ? a.surfaceStyle : b.surfaceStyle)
+        : HyperCardStyle.lerp(a.surfaceStyle!, b.surfaceStyle!, t),
+    foregroundColor: Color.lerp(a.foregroundColor, b.foregroundColor, t),
+    titleTextStyle: TextStyle.lerp(a.titleTextStyle, b.titleTextStyle, t),
+    expandedTitleTextStyle: TextStyle.lerp(
+      a.expandedTitleTextStyle,
+      b.expandedTitleTextStyle,
+      t,
+    ),
+    material: a.material == null || b.material == null
+        ? (t < .5 ? a.material : b.material)
+        : HyperSurfaceMaterial.lerp(a.material!, b.material!, t),
+    centerTitle: t < .5 ? a.centerTitle : b.centerTitle,
+    systemOverlayStyle: t < .5 ? a.systemOverlayStyle : b.systemOverlayStyle,
+    elevation: a.elevation == null || b.elevation == null
+        ? (t < .5 ? a.elevation : b.elevation)
+        : a.elevation! + (b.elevation! - a.elevation!) * t,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is HyperAppBarStyle &&
+      other.backgroundColor == backgroundColor &&
+      other.foregroundColor == foregroundColor &&
+      other.titleTextStyle == titleTextStyle &&
+      other.expandedTitleTextStyle == expandedTitleTextStyle &&
+      other.material == material &&
+      other.centerTitle == centerTitle &&
+      other.elevation == elevation &&
+      other.systemOverlayStyle == systemOverlayStyle;
+
+  @override
+  int get hashCode => Object.hash(
+    backgroundColor,
+    surfaceStyle,
+    foregroundColor,
+    titleTextStyle,
+    expandedTitleTextStyle,
+    material,
+    centerTitle,
+    elevation,
+    systemOverlayStyle,
+  );
+}

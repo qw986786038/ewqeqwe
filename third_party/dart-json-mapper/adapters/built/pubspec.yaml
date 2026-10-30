@@ -1,0 +1,21 @@
+name: dart_json_mapper_built
+version: 1.0.1
+description: >
+  This is a dart-json-mapper complementary package
+  provides support for https://pub.dev/packages/built_collection types in order to
+  serialize / deserialize them from / to JSON.
+homepage: https://github.com/k-paxian/dart-json-mapper/tree/master/adapters/built
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  dart_json_mapper: '>=2.1.12 <3.0.0'
+  built_collection: ^5.1.1
+dev_dependencies:
+  reflectable:
+  lints:
+  build_runner:
+  build_test:
+  test:
+#dependency_overrides:
+#  dart_json_mapper:
+#    path: ../../mapper

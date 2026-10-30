@@ -1,0 +1,98 @@
+/// Lemon's shared Flutter component library.
+///
+/// Exports App-prefixed APIs only. Upstream `shadcn_flutter` is **not**
+/// re-exported here so existing Material pages can import this package without
+/// name clashes. Icons and design-theme tokens are available as App aliases
+/// (`AppLucideIcons`, `ShadcnTheme`, `AppThemeData`, …). For other upstream
+/// widgets (`Card`, `Gap`, …), import `package:lemon_shadcn/shadcn.dart`.
+library;
+
+export 'src/components/actions/app_button.dart';
+export 'src/components/actions/app_toggle.dart';
+export 'src/components/actions/app_toggle_group.dart';
+export 'src/components/charts/app_bar_chart.dart';
+export 'src/components/charts/app_candlestick_chart.dart';
+export 'src/components/charts/app_chart_common.dart';
+export 'src/components/charts/app_chart_container.dart';
+export 'src/components/charts/app_chart_export.dart';
+export 'src/components/charts/app_line_chart.dart';
+export 'src/components/charts/app_pie_chart.dart';
+export 'src/components/charts/app_radar_chart.dart';
+export 'src/components/charts/app_rank_bar_chart.dart';
+export 'src/components/charts/app_scatter_chart.dart';
+export 'src/components/data/app_data_grid.dart';
+export 'src/components/display/app_badge.dart';
+export 'src/components/display/app_corner_badge.dart';
+export 'src/components/display/app_avatar.dart';
+export 'src/components/display/app_divider.dart';
+export 'src/components/display/app_text.dart';
+export 'src/components/display/app_async_view.dart';
+export 'src/components/display/app_chat_components.dart';
+export 'src/components/display/app_display_components.dart';
+export 'src/components/display/app_descriptions.dart';
+export 'src/components/display/app_empty.dart';
+export 'src/components/display/app_item.dart';
+export 'src/components/display/app_result.dart';
+export 'src/components/display/app_utility_components.dart';
+export 'src/foundation/app_density.dart';
+export 'src/components/forms/app_field.dart';
+export 'src/components/forms/app_file_picker.dart';
+export 'src/components/forms/app_input_group.dart';
+export 'src/components/forms/app_inline_edit.dart';
+export 'src/components/forms/app_form.dart';
+export 'src/components/forms/app_input_otp.dart';
+export 'src/components/forms/app_auto_complete.dart';
+export 'src/components/forms/app_cascade_select.dart';
+export 'src/components/forms/app_cascader.dart';
+export 'src/components/forms/app_combobox.dart';
+export 'src/components/forms/app_async_option_source.dart';
+export 'src/components/forms/app_advanced_inputs.dart';
+export 'src/components/forms/app_checkbox.dart';
+export 'src/components/forms/app_collection_inputs.dart';
+export 'src/components/forms/app_chip_input.dart';
+export 'src/components/forms/app_date_picker.dart';
+export 'src/components/forms/app_option.dart';
+export 'src/components/forms/app_phone_input.dart';
+export 'src/components/forms/app_radio_group.dart';
+export 'src/components/forms/app_select.dart';
+export 'src/components/forms/app_slider.dart';
+export 'src/components/forms/app_star_rating.dart';
+export 'src/components/forms/app_switch.dart';
+export 'src/components/forms/app_text_area.dart';
+export 'src/components/forms/app_time_picker.dart';
+export 'src/components/forms/app_time_stepper_picker.dart';
+export 'src/components/forms/app_text_form_field.dart';
+export 'src/components/forms/app_text_display.dart';
+export 'src/components/forms/app_transfer.dart';
+export 'src/components/layout/app_layout_components.dart';
+export 'src/components/layout/app_grid.dart';
+export 'src/components/layout/app_aspect_ratio.dart';
+export 'src/components/layout/app_shell.dart';
+export 'src/components/layout/app_window_components.dart';
+export 'src/components/navigation/app_navigation_components.dart';
+export 'src/components/navigation/app_menu_components.dart';
+export 'src/components/navigation/app_dropdown_button.dart';
+export 'src/components/navigation/app_navigation_bar.dart';
+export 'src/components/navigation/app_sidebar.dart';
+export 'src/components/overlay/app_overlay_components.dart';
+export 'src/components/overlay/app_anchored_overlay.dart';
+export 'src/components/overlay/app_expandable_overlay.dart';
+export 'src/components/overlay/app_hover_overlay.dart';
+export 'src/components/overlay/app_pointer_tooltip.dart';
+export 'src/foundation/app_shadcn_scope.dart';
+export 'src/foundation/app_shadow_types.dart';
+export 'src/foundation/app_async_action.dart';
+export 'src/foundation/app_component_themes.dart';
+export 'src/foundation/app_compact_label_style.dart';
+export 'src/foundation/app_icons.dart';
+export 'src/foundation/app_interactive_style.dart';
+export 'src/foundation/app_localizations_zh.dart';
+export 'src/foundation/app_overlay_style.dart';
+export 'src/foundation/app_control_box.dart';
+export 'src/foundation/app_theme_aliases.dart';
+export 'src/foundation/app_theme_config.dart';
+export 'src/foundation/app_visual_style.dart';
+export 'src/lemon_shadcn.dart';
+export 'src/motion/app_motion.dart';
+export 'src/motion/app_page_transition.dart';
+export 'src/registry/app_component_registry.dart';

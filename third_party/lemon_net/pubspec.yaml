@@ -1,0 +1,18 @@
+name: lemon_net
+description: A lightweight Dio-based HTTP client with composable authentication.
+version: 0.2.0
+homepage:
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  cookie_jar: ^4.0.9
+  crypto: ^3.0.7
+  dio: ^5.10.0
+  dio_cookie_manager: ^3.4.0
+  path: ^1.9.1
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.31.2

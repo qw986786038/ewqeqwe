@@ -1,0 +1,35 @@
+name: performance_test
+# This package is not intended to be published
+publish_to: none
+description: >
+  This package contains performance tests for the following JSON interoperability libraries:
+  - JsonSerializable https://pub.dev/packages/json_serializable
+  - BuiltValue https://pub.dev/packages/built_value
+  - DartJsonMapper https://pub.dev/packages/dart_json_mapper
+  And unit tests for DartJsonMapper
+homepage: https://github.com/k-paxian/dart-json-mapper/perf-test
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  dart_json_mapper:
+  json_annotation: ^4.7.0
+  built_value:
+  intl:
+  unit_testing:
+  starlink:
+dev_dependencies:
+  reflectable_builder:
+  json_serializable:
+  built_value_generator:
+  lints:
+  path:
+  build_runner:
+  build_test:
+  test:
+dependency_overrides:
+  unit_testing:
+    path: ../models/unit_testing
+  starlink:
+    path: ../models/starlink
+  dart_json_mapper:
+    path: ../mapper
