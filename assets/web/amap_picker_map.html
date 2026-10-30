@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>地图选点</title>
+  __SECURITY_BLOCK__
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, sans-serif;
+      overflow: hidden;
+    }
+    #root {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: #f5f7fa;
+    }
+    #picker-bar,
+    #address-bar {
+      display: none;
+    }
+    #picker-bar.legacy-visible,
+    #address-bar.legacy-visible {
+      display: block;
+    }
+    #picker-bar.legacy-visible {
+      display: flex;
+    }
+    #picker-bar.legacy-visible {
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid rgba(110, 130, 153, 0.18);
+      box-sizing: border-box;
+      z-index: 2;
+    }
+    #map-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+    #container {
+      height: 100%;
+      width: 100%;
+    }
+    #search-input {
+      flex: 1;
+      height: 36px;
+      border: 1px solid rgba(110, 130, 153, 0.28);
+      border-radius: 8px;
+      padding: 0 12px;
+      font-size: 14px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    #search-input:focus {
+      border-color: #4a90d9;
+      box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.15);
+    }
+    #address-bar.legacy-visible {
+      padding: 10px 12px 12px;
+      background: rgba(255, 255, 255, 0.96);
+      border-top: 1px solid rgba(110, 130, 153, 0.18);
+      color: #1a1a1a;
+      font-size: 13px;
+      line-height: 1.5;
+      box-sizing: border-box;
+      z-index: 2;
+    }
+    #address-bar .muted {
+      color: #757575;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+  </style>
+  <script src="https://webapi.amap.com/loader.js"></script>
+</head>
+<body>
+  <div id="root">
+    <div id="picker-bar">
+      <input id="search-input" type="search" placeholder="搜索地址、地点" autocomplete="off" />
+    </div>
+    <div id="map-wrap">
+      <div id="container"></div>
+    </div>
+    <div id="address-bar">
+      <div id="picked-address">请在地图上点击选点，或搜索地址</div>
+      <div id="picked-coord" class="muted"></div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var amapNs = null;
+      var map = null;
+      var geocoder = null;
+      var placeSearch = null;
+      var pickMarker = null;
+      var searchCity = '全国';
+      var picked = { lng: null, lat: null, address: '', province: '', city: '', district: '' };
+      window.__amapPickerReady = 0;
+
+      function readLngLat(loc) {
+        if (!loc) return null;
+        if (typeof loc === 'string') {
+          var parts = loc.split(',');
+          if (parts.length < 2) return null;
+          var lng = Number(parts[0]);
+          var lat = Number(parts[1]);
+          if (isNaN(lng) || isNaN(lat)) return null;
+          return { lng: lng, lat: lat };
+        }
+        var lng = typeof loc.getLng === 'function' ? loc.getLng() : Number(loc.lng);
+        var lat = typeof loc.getLat === 'function' ? loc.getLat() : Number(loc.lat);
+        if (isNaN(lng) || isNaN(lat)) return null;
+        return { lng: lng, lat: lat };
+      }
+
+      function updateAddressBar() {
+        var addressEl = document.getElementById('picked-address');
+        var coordEl = document.getElementById('picked-coord');
+        if (picked.address) {
+          addressEl.textContent = picked.address;
+        } else if (picked.lng != null && picked.lat != null) {
+          addressEl.textContent = '已选位置（未解析到详细地址）';
+        } else {
+          addressEl.textContent = '请在地图上点击选点，或搜索地址';
+        }
+        if (picked.lng != null && picked.lat != null) {
+          coordEl.textContent = '经度 ' + picked.lng.toFixed(6) + '　纬度 ' + picked.lat.toFixed(6);
+        } else {
+          coordEl.textContent = '';
+        }
+      }
+
+      function readAddressComponent(regeocode) {
+        if (!regeocode || !regeocode.addressComponent) return {};
+        var comp = regeocode.addressComponent;
+        var province = comp.province || '';
+        var city = comp.city || '';
+        if (Array.isArray(city)) city = city.length ? city[0] : '';
+        if (!city) city = province;
+        var district = comp.district || '';
+        if (Array.isArray(district)) district = district.length ? district[0] : '';
+        return {
+          province: province || '',
+          city: city || '',
+          district: district || ''
+        };
+      }
+
+      function notifyFlutter() {
+        if (!window.onLocationChanged || typeof window.onLocationChanged.postMessage !== 'function') return;
+        window.onLocationChanged.postMessage(JSON.stringify({
+          address: picked.address || '',
+          lng: picked.lng,
+          lat: picked.lat,
+          province: picked.province || '',
+          city: picked.city || '',
+          district: picked.district || ''
+        }));
+      }
+
+      function applyPickedState(lng, lat, address, region) {
+        picked.lng = lng;
+        picked.lat = lat;
+        picked.address = address || '';
+        if (region) {
+          picked.province = region.province || '';
+          picked.city = region.city || '';
+          picked.district = region.district || '';
+        }
+        updateAddressBar();
+        notifyFlutter();
+      }
+
+      function placeMarker(lng, lat) {
+        if (!map || !amapNs) return;
+        if (pickMarker) {
+          map.remove(pickMarker);
+          pickMarker = null;
+        }
+        pickMarker = new amapNs.Marker({
+          position: [lng, lat],
+          title: picked.address || '选中位置',
+          icon: new amapNs.Icon({
+            size: new amapNs.Size(25, 34),
+            image: 'https://webapi.amap.com/theme/v1.3/markers/n/mark_b.png',
+            imageSize: new amapNs.Size(25, 34)
+          }),
+          offset: new amapNs.Pixel(-12, -34),
+          zIndex: 200
+        });
+        map.add(pickMarker);
+      }
+
+      function moveMapTo(lng, lat, zoom) {
+        if (!map) return;
+        var z = zoom || Math.max(map.getZoom() || 14, 16);
+        if (typeof map.setZoomAndCenter === 'function') {
+          map.setZoomAndCenter(z, [lng, lat]);
+        } else {
+          map.setCenter([lng, lat]);
+          map.setZoom(z);
+        }
+      }
+
+      function reverseGeocode(lng, lat, fallbackAddress) {
+        placeMarker(lng, lat);
+        applyPickedState(lng, lat, fallbackAddress || '', null);
+        if (!geocoder) return;
+        geocoder.getAddress([lng, lat], function (status, result) {
+          var address = fallbackAddress || picked.address || '';
+          var region = null;
+          if (status === 'complete' && result && result.regeocode) {
+            address = result.regeocode.formattedAddress || address;
+            region = readAddressComponent(result.regeocode);
+          }
+          if (!address) {
+            address = '经度 ' + lng.toFixed(6) + '，纬度 ' + lat.toFixed(6);
+          }
+          applyPickedState(lng, lat, address, region);
+        });
+      }
+
+      function setPicked(lng, lat, address, moveMap) {
+        if (isNaN(lng) || isNaN(lat)) return;
+        if (moveMap !== false) {
+          moveMapTo(lng, lat, 16);
+        }
+        reverseGeocode(lng, lat, address || '');
+      }
+
+      function searchPoiByName(name, fallbackAddress) {
+        if (!placeSearch || !name) return;
+        placeSearch.search(name, function (status, result) {
+          if (status !== 'complete' || !result || !result.poiList || !result.poiList.pois.length) return;
+          var first = result.poiList.pois[0];
+          var pos = readLngLat(first.location);
+          if (!pos) return;
+          var address = first.address || first.name || fallbackAddress || name;
+          setPicked(pos.lng, pos.lat, address, true);
+        });
+      }
+
+      window.flutterMapSearch = function (keyword) {
+        var name = (keyword || '').trim();
+        if (!name) return;
+        searchPoiByName(name, name);
+      };
+
+      function handlePoiSelect(poi) {
+        if (!poi) return;
+        var pos = readLngLat(poi.location);
+        var label = poi.name || poi.district || poi.address || '';
+        if (pos) {
+          setPicked(pos.lng, pos.lat, label, true);
+          return;
+        }
+        searchPoiByName(poi.name || label, label);
+      }
+
+      window.flutterMapResize = function () {
+        if (map && typeof map.resize === 'function') {
+          map.resize();
+        }
+      };
+
+      window.flutterMapInitPicker = function (opt) {
+        opt = opt || {};
+        if (opt.city) {
+          searchCity = opt.city;
+        }
+        if (opt.legacyChrome === true) {
+          var pickerBar = document.getElementById('picker-bar');
+          var addressBar = document.getElementById('address-bar');
+          if (pickerBar) pickerBar.classList.add('legacy-visible');
+          if (addressBar) addressBar.classList.add('legacy-visible');
+        }
+        if (!map) {
+          window.__pendingPickerInit = opt;
+          return;
+        }
+        if (placeSearch) {
+          placeSearch.setCity(searchCity || '全国');
+        }
+        if (opt.lng != null && opt.lat != null) {
+          setPicked(Number(opt.lng), Number(opt.lat), opt.address || '', true);
+          return;
+        }
+        if (opt.city && geocoder) {
+          geocoder.getLocation(opt.city, function (status, result) {
+            if (status !== 'complete' || !result || !result.geocodes || !result.geocodes.length) return;
+            var pos = readLngLat(result.geocodes[0].location);
+            if (!pos) return;
+            moveMapTo(pos.lng, pos.lat, 12);
+          });
+        }
+      };
+
+      function setupSearch() {
+        if (!amapNs || !map) return;
+        var auto = new amapNs.AutoComplete({
+          input: 'search-input',
+          city: searchCity || '全国',
+          citylimit: false
+        });
+        auto.on('select', function (e) {
+          handlePoiSelect(e && e.poi);
+        });
+        auto.on('choose', function (e) {
+          handlePoiSelect(e && e.poi);
+        });
+      }
+
+      var key = '__AMAP_KEY__';
+      if (!key || key.indexOf('请替换') !== -1) {
+        document.getElementById('container').innerHTML =
+          '<div style="padding:16px;color:#c00;font-size:14px;">请在 lib/widget/amap/amap_config.dart 中配置有效的 webJsApiKey。</div>';
+        return;
+      }
+
+      if (typeof AMapLoader === 'undefined') {
+        document.getElementById('container').innerHTML =
+          '<div style="padding:16px;">无法加载高德 Loader，请检查网络。</div>';
+        return;
+      }
+
+      var defaultCenter = [117.0227, 36.6677];
+
+      AMapLoader.load({
+        key: key,
+        version: '2.0',
+        plugins: ['AMap.Scale', 'AMap.ToolBar', 'AMap.Geocoder', 'AMap.AutoComplete', 'AMap.PlaceSearch']
+      }).then(function (AMap) {
+        amapNs = AMap;
+        map = new AMap.Map('container', {
+          zoom: 14,
+          center: defaultCenter,
+          viewMode: '2D'
+        });
+        map.addControl(new AMap.Scale({ position: 'LB' }));
+        map.addControl(new AMap.ToolBar({ position: 'RB', liteStyle: false }));
+        geocoder = new AMap.Geocoder({ city: '全国' });
+        placeSearch = new AMap.PlaceSearch({ city: searchCity, pageSize: 5, citylimit: false });
+        map.on('click', function (e) {
+          var pos = readLngLat(e.lnglat);
+          if (!pos) return;
+          reverseGeocode(pos.lng, pos.lat, '');
+        });
+        setupSearch();
+        window.__amapPickerReady = 1;
+        setTimeout(function () {
+          window.flutterMapResize();
+        }, 120);
+        if (window.__pendingPickerInit) {
+          window.flutterMapInitPicker(window.__pendingPickerInit);
+          window.__pendingPickerInit = null;
+        }
+      }).catch(function (err) {
+        document.getElementById('container').innerHTML =
+          '<div style="padding:16px;color:#c00;">地图加载失败：' + (err && err.message ? err.message : String(err)) + '</div>';
+      });
+    })();
+  </script>
+</body>
+</html>

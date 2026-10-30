@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>高德地图</title>
+  __SECURITY_BLOCK__
+  <script>window.__showZoomControl = __SHOW_ZOOM_CONTROL__;</script>
+  <style>
+    :root {
+      --amap-card-bg: #ffffff;
+      --amap-text: #1a1a1a;
+      --amap-muted: #757575;
+      --amap-primary: #4a90d9;
+      --amap-on-primary: #ffffff;
+      --amap-overlay: rgba(0, 0, 0, 0.45);
+      --amap-card-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+    html[data-theme="dark"] {
+      --amap-card-bg: #1e1e1e;
+      --amap-text: #f5f5f5;
+      --amap-muted: #bdbdbd;
+      --amap-primary: #4a90d9;
+      --amap-on-primary: #ffffff;
+      --amap-overlay: rgba(0, 0, 0, 0.65);
+      --amap-card-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+    }
+    html, body { height: 100%; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+    #container { height: 100%; width: 100%; }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--amap-overlay);
+      /* 高于高德地图内部图层，避免被 WebGL/Canvas 盖住造成「慢半拍才看见」 */
+      z-index: 2147483000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+      transform: translateZ(0);
+      -webkit-transform: translateZ(0);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 120ms ease;
+    }
+    #overlay.show {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      display: flex;
+    }
+    .card {
+      background: var(--amap-card-bg);
+      border-radius: 12px;
+      max-width: 360px;
+      width: 100%;
+      padding: 16px 18px;
+      box-shadow: var(--amap-card-shadow);
+      color: var(--amap-text);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 1.1rem; color: var(--amap-text); }
+    .card p { margin: 4px 0; font-size: 0.9rem; color: var(--amap-text); line-height: 1.45; }
+    .card .muted { color: var(--amap-muted); font-size: 0.8rem; }
+    .card button {
+      margin-top: 14px;
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      background: var(--amap-primary);
+      color: var(--amap-on-primary);
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    /* 标记信息弹窗：固定高对比（避免 Flutter 内联变量盖掉暗色） */
+    html[data-theme="dark"] #overlay .card {
+      background: #1e1e1e !important;
+      color: #f5f5f5 !important;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+    html[data-theme="dark"] #overlay .card h3,
+    html[data-theme="dark"] #overlay .card p {
+      color: #f5f5f5 !important;
+    }
+    html[data-theme="dark"] #overlay .card .muted {
+      color: #bdbdbd !important;
+    }
+    html[data-theme="dark"] #overlay .card button {
+      background: #4a90d9 !important;
+      color: #ffffff !important;
+    }
+    /* 自定义 HTML 标记：默认白底锚点 28×28，含三角总高 32；划入只加宽显示名称，选中才描边+三角变色。
+       定位盒宽度固定为默认锚点宽，名称向右溢出，保证高德 bottom-center 对准色块中心。 */
+    .amap-pin-wrap {
+      position: relative;
+      width: 28px;
+      max-width: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      overflow: visible;
+      pointer-events: auto;
+      cursor: pointer;
+      transform-origin: 50% 100%;
+      line-height: 0;
+    }
+    .amap-pin-wrap:hover {
+      z-index: 300 !important;
+    }
+    .amap-pin {
+      position: relative;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 28px;
+      height: 28px;
+      padding: 3px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+      line-height: normal;
+      overflow: visible;
+      transition: border-color 0.18s ease, padding 0.18s ease, width 0.18s ease;
+    }
+    .amap-pin-wrap:hover .amap-pin {
+      width: max-content;
+      min-width: 28px;
+      height: 28px;
+      padding: 3px 8px 3px 3px;
+    }
+    .amap-pin-wrap.selected .amap-pin {
+      width: max-content;
+      min-width: 28px;
+      height: 28px;
+      padding: 3px 8px 3px 3px;
+      border-color: var(--pin-accent, #098292);
+    }
+    .amap-pin-avatar {
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
+      background: var(--pin-accent, #098292);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 11px;
+      line-height: 1;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .amap-pin-label {
+      display: none;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 500;
+      color: #0f172a;
+      user-select: none;
+      line-height: 20px;
+    }
+    .amap-pin-wrap:hover .amap-pin-label,
+    .amap-pin-wrap.selected .amap-pin-label {
+      display: block;
+    }
+    /* 三角：默认白；选中时变主题色。28 宽 + 4 高 → 含三角总高 32 */
+    .amap-pin-tail {
+      position: relative;
+      width: 0;
+      height: 0;
+      margin: 0 0 0 10px;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 4px solid #ffffff;
+      pointer-events: none;
+      flex-shrink: 0;
+      align-self: flex-start;
+    }
+    .amap-pin-wrap.selected .amap-pin-tail {
+      border-top-color: var(--pin-accent, #098292);
+    }
+    /* 选中设备详情气泡：白底圆角卡（标题 + 状态 / 信息块 / 徽标 / 地址） */
+    .amap-device-popup {
+      --card-accent: #00A0E9;
+      --card-muted: #4E5969;
+      --card-subtle: #86909C;
+      box-sizing: border-box;
+      width: 260px;
+      padding: 16px 20px;
+      border-radius: 25px;
+      background: #ffffff;
+      border: 1px solid color-mix(in srgb, var(--card-accent) 35%, #ffffff);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+      color: #1F2329;
+      font-family: system-ui, "PingFang SC", sans-serif;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+      pointer-events: auto;
+      cursor: pointer;
+      line-height: normal;
+      transform: translateY(-8px);
+    }
+    .amap-device-popup-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+    .amap-device-popup-title {
+      flex: 1;
+      min-width: 0;
+      font-size: 16px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .amap-device-popup-status {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 14px;
+      line-height: 1;
+      color: var(--card-muted);
+    }
+    .amap-device-popup-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .amap-device-popup-status.is-online {
+      color: #16A34A;
+    }
+    .amap-device-popup-status.is-abnormal {
+      color: #DC2626;
+    }
+    /* 信息块：浅灰底，每行一个内容（楼名 / 楼栋 / 媒体位置） */
+    .amap-device-popup-info {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #F5F6F7;
+      font-size: 14px;
+      color: var(--card-muted);
+    }
+    .amap-device-popup-info > div {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .amap-device-popup-badge {
+      align-self: flex-start;
+      padding: 2px 10px;
+      border-radius: 4px;
+      background: #E8F7EE;
+      color: #16A34A;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 20px;
+    }
+    .amap-device-popup-addr {
+      /* 行高 1.45 使文字上方多约 4px 留白，抵掉后与上方 gap 视觉一致 */
+      margin-top: -4px;
+      font-size: 14px;
+      color: var(--card-subtle);
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
+    }
+    /* 弹窗小地图：中心圆点 + 扩散涟漪（在线绿 / 离线红） */
+    .amap-dot-wrap {
+      width: 48px;
+      height: 48px;
+      position: relative;
+      pointer-events: auto;
+    }
+    .amap-dot-wrap .dot-core {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+    }
+    .amap-dot-wrap .ripple {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      animation: amap-ripple 2.4s ease-out infinite;
+      z-index: 1;
+    }
+    .amap-dot-wrap .ripple:nth-child(2) { animation-delay: 0.8s; }
+    .amap-dot-wrap .ripple:nth-child(3) { animation-delay: 1.6s; }
+    @keyframes amap-ripple {
+      0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.65;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(4.2);
+        opacity: 0;
+      }
+    }
+    .amap-dot-wrap.online .dot-core {
+      background: #1ec881;
+      box-shadow: 0 0 6px rgba(51, 246, 139, 0.85);
+    }
+    .amap-dot-wrap.online .ripple {
+      border: 2px solid rgba(51, 246, 139, 0.75);
+    }
+    .amap-dot-wrap.offline .dot-core {
+      background: #ff5c75;
+      box-shadow: 0 0 6px rgba(250, 136, 155, 0.85);
+    }
+    .amap-dot-wrap.offline .ripple {
+      border: 2px solid rgba(250, 136, 155, 0.75);
+    }
+    .amap-dot-wrap.selected {
+      width: 56px;
+      height: 56px;
+    }
+    .amap-dot-wrap.selected .dot-core {
+      width: 14px;
+      height: 14px;
+    }
+    .amap-dot-wrap.selected .ripple {
+      animation-duration: 1.8s;
+      border-width: 3px;
+    }
+    .amap-dot-wrap.selected::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid #4a90d9;
+      transform: translate(-50%, -50%);
+      animation: amap-select-ring 1.5s ease-out infinite;
+      z-index: 3;
+      pointer-events: none;
+    }
+    @keyframes amap-select-ring {
+      0% {
+        transform: translate(-50%, -50%) scale(0.85);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(1.35);
+        opacity: 0;
+      }
+    }
+    /* 缩放工具条 / 比例尺：随 data-theme 切换 */
+    html[data-theme="light"] .amap-toolbar,
+    html[data-theme="light"] .amap-zoomcontrol {
+      background-color: rgba(255, 255, 255, 0.96) !important;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18) !important;
+    }
+    html[data-theme="dark"] .amap-toolbar,
+    html[data-theme="dark"] .amap-zoomcontrol,
+    html[data-theme="dark"] .amap-toolbar table,
+    html[data-theme="dark"] .amap-toolbar td,
+    html[data-theme="dark"] .amap-toolbar div {
+      background-color: #2c2c2c !important;
+      box-shadow: none !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+    }
+    html[data-theme="dark"] .amap-toolbar .amap-zoom-plus,
+    html[data-theme="dark"] .amap-toolbar .amap-zoom-minus,
+    html[data-theme="dark"] .amap-zoomcontrol .amap-zoom-plus,
+    html[data-theme="dark"] .amap-zoomcontrol .amap-zoom-minus {
+      background-color: #2c2c2c !important;
+      filter: invert(1) brightness(1.15) !important;
+    }
+    html[data-theme="dark"] .amap-scalecontrol {
+      background-color: rgba(44, 44, 44, 0.92) !important;
+      color: #e8e8e8 !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    }
+  </style>
+  <script src="https://webapi.amap.com/loader.js"></script>
+</head>
+<body>
+  <div id="container"></div>
+  <div id="overlay" class="">
+    <div class="card">
+      <h3 id="mTitle">标记</h3>
+      <p id="mDesc"></p>
+      <p id="mCoord" class="muted"></p>
+      <button type="button" id="mClose">关闭</button>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var amapNs = null;
+      var map = null;
+      var markers = [];
+      var popupMarker = null;
+      var toolBarControl = null;
+      window.__amapMapReady = 0;
+
+      /** 高德内置底图样式，与 lib/widget/amap/amap_map_styles.dart 对应 */
+      var MAP_STYLE = {
+        normal: 'amap://styles/normal',
+        grey: 'amap://styles/grey',
+        whitesmoke: 'amap://styles/whitesmoke',
+        dark: 'amap://styles/dark',
+        light: 'amap://styles/light',
+        graffiti: 'amap://styles/graffiti'
+      };
+
+      function resolveMapStyle(t) {
+        if (t && t.mapStyle) return t.mapStyle;
+        if (t && t.brightness === 'dark') return MAP_STYLE.dark;
+        return MAP_STYLE.normal;
+      }
+
+      function applyMapStyle(styleId) {
+        if (!styleId || !map) return;
+        try {
+          map.setMapStyle(styleId);
+        } catch (e) {
+          console.warn('setMapStyle failed', e);
+        }
+      }
+
+      var THEME_VAR_KEYS = [
+        '--amap-card-bg', '--amap-text', '--amap-muted', '--amap-primary',
+        '--amap-on-primary', '--amap-overlay', '--amap-card-shadow'
+      ];
+
+      /** 重建缩放工具条（统一 liteStyle，暗色由 CSS 覆盖）；可由 Flutter 关闭 */
+      function applyToolBarTheme() {
+        if (!map || !amapNs) return;
+        if (toolBarControl) {
+          try {
+            map.removeControl(toolBarControl);
+          } catch (e) {
+            console.warn('remove ToolBar failed', e);
+          }
+          toolBarControl = null;
+        }
+        if (window.__showZoomControl === false) return;
+        toolBarControl = new amapNs.ToolBar({
+          position: 'RB',
+          liteStyle: false
+        });
+        map.addControl(toolBarControl);
+      }
+
+      /** Flutter 注入：data-theme + 底图 mapStyle + 缩放条（勿写内联 CSS 变量，避免盖掉暗色弹窗） */
+      window.flutterMapApplyTheme = function (t) {
+        if (!t) return;
+        var root = document.documentElement;
+        if (t.brightness === 'dark' || t.brightness === 'light') {
+          root.setAttribute('data-theme', t.brightness);
+        }
+        THEME_VAR_KEYS.forEach(function (k) {
+          root.style.removeProperty(k);
+        });
+        applyMapStyle(resolveMapStyle(t));
+        applyToolBarTheme();
+      };
+
+      if (window.__pendingTheme) {
+        window.flutterMapApplyTheme(window.__pendingTheme);
+      }
+
+      function notifyFlutter(info) {
+        if (window.onMarkerTap && typeof window.onMarkerTap.postMessage === 'function') {
+          window.onMarkerTap.postMessage(JSON.stringify(info));
+        }
+      }
+
+      function notifyMarkerAnchor(info) {
+        if (window.onMarkerAnchor && typeof window.onMarkerAnchor.postMessage === 'function') {
+          window.onMarkerAnchor.postMessage(JSON.stringify(info));
+        }
+      }
+
+      var selectedMarkerId = null;
+      var selectedLng = null;
+      var selectedLat = null;
+
+      function readPixelXY(pixel) {
+        if (!pixel) return null;
+        var x = typeof pixel.getX === 'function' ? pixel.getX() : pixel.x;
+        var y = typeof pixel.getY === 'function' ? pixel.getY() : pixel.y;
+        if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) return null;
+        return { x: x, y: y };
+      }
+
+      function lngLatToXY(lng, lat) {
+        if (!map || isNaN(lng) || isNaN(lat)) return null;
+        try {
+          var lngLat = amapNs && amapNs.LngLat ? new amapNs.LngLat(lng, lat) : [lng, lat];
+          return readPixelXY(map.lngLatToContainer(lngLat));
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function reportSelectedAnchor() {
+        if (!map) return;
+        if (!selectedMarkerId || selectedLng == null || selectedLat == null) {
+          notifyMarkerAnchor({ id: '', x: 0, y: 0, mapW: 0, mapH: 0 });
+          return;
+        }
+        var xy = lngLatToXY(selectedLng, selectedLat);
+        if (!xy) return;
+        var size = map.getSize ? map.getSize() : null;
+        notifyMarkerAnchor({
+          id: selectedMarkerId,
+          x: xy.x,
+          y: xy.y,
+          mapW: size && size.width ? size.width : 0,
+          mapH: size && size.height ? size.height : 0
+        });
+      }
+
+      function clearSelectionAndNotify() {
+        if (!selectedMarkerId && !popupMarker) return;
+        selectedMarkerId = null;
+        selectedLng = null;
+        selectedLat = null;
+        clearPopupMarker();
+        notifyFlutter({ id: '', title: '', desc: '', lng: 0, lat: 0, x: 0, y: 0 });
+        notifyMarkerAnchor({ id: '', x: 0, y: 0, mapW: 0, mapH: 0 });
+      }
+
+      var markerClickLock = false;
+
+      function scheduleReportSelectedAnchor() {
+        requestAnimationFrame(function () {
+          reportSelectedAnchor();
+        });
+      }
+
+      function showModal(info) {
+        var overlay = document.getElementById('overlay');
+        document.getElementById('mTitle').textContent = info.title || '标记点';
+        document.getElementById('mDesc').textContent = info.desc || '';
+        document.getElementById('mCoord').textContent =
+          '经度 ' + info.lng + '　纬度 ' + info.lat + (info.id ? '　ID: ' + info.id : '');
+        overlay.classList.add('show');
+      }
+
+      function hideModal() {
+        var overlay = document.getElementById('overlay');
+        overlay.classList.remove('show');
+      }
+
+      document.getElementById('mClose').addEventListener('click', hideModal);
+      document.getElementById('overlay').addEventListener('click', function (e) {
+        if (e.target.id === 'overlay') hideModal();
+      });
+
+      /** 弹窗先显示，Flutter 回调延后到空闲任务，避免桥接阻塞影响首帧 */
+      function showModalThenNotifyFlutter(payload) {
+        showModal(payload);
+        setTimeout(function () {
+          notifyFlutter(payload);
+        }, 80);
+      }
+
+      /** 首字母方块标记；悬停 CSS 展开名称，选中加描边 */
+      function escapeHtml(text) {
+        return String(text || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function isDotMarkerStyle() {
+        return window.__amapMarkerStyle === 'dot';
+      }
+
+      /** 中心圆点 + 涟漪，锚点为中心（与 offset 配合对准经纬度） */
+      function buildRippleDotContent(online, selected) {
+        var cls = (online ? 'online' : 'offline') + (selected ? ' selected' : '');
+        return (
+          '<div class="amap-dot-wrap ' + cls + '">' +
+          '<span class="ripple"></span>' +
+          '<span class="ripple"></span>' +
+          '<span class="ripple"></span>' +
+          '<span class="dot-core"></span>' +
+          '</div>'
+        );
+      }
+
+      function buildPinContent(item) {
+        var initial = escapeHtml(item.initial || '?');
+        var title = escapeHtml(item.title || '');
+        var accent = item.accent || '098292';
+        var selected = item.selected === true;
+        var cls = 'amap-pin-wrap' + (selected ? ' selected' : '');
+        return (
+          '<div class="' + cls + '" style="--pin-accent:#' + accent + '">' +
+          '<div class="amap-pin">' +
+          '<span class="amap-pin-avatar">' + initial + '</span>' +
+          '<span class="amap-pin-label">' + title + '</span>' +
+          '</div>' +
+          '<span class="amap-pin-tail"></span>' +
+          '</div>'
+        );
+      }
+
+      function buildPopupContent(item) {
+        var title = escapeHtml(item.title || '');
+        var property = escapeHtml(item.propertyName || '');
+        var building = escapeHtml(item.building || '');
+        var media = escapeHtml(item.mediaAddress || '');
+        var addr = escapeHtml(item.desc || '');
+        var operation = escapeHtml(item.operationStatus || '');
+        var rawStatus = item.statusLabel || (item.online ? '在线' : '离线');
+        var statusLabel = escapeHtml(rawStatus);
+        var statusKind = rawStatus.indexOf('异常') >= 0 ? 'abnormal' : (item.online || rawStatus.indexOf('在线') >= 0 ? 'online' : '');
+        var statusClass = statusKind === 'online' ? 'is-online' : (statusKind === 'abnormal' ? 'is-abnormal' : '');
+        // 首行是楼的名字（物业名称优先，缺失时回退楼栋），其后是楼栋、媒体位置。
+        var buildingName = property || building;
+        var lines = '';
+        if (buildingName) {
+          lines += '<div>' + buildingName + '</div>';
+        }
+        if (property && building) {
+          lines += '<div>' + building + '</div>';
+        }
+        if (media) {
+          lines += '<div>' + media + '</div>';
+        }
+        return (
+          '<div class="amap-device-popup">' +
+          '<div class="amap-device-popup-head">' +
+          '<div class="amap-device-popup-title">' + title + '</div>' +
+          '<span class="amap-device-popup-status ' + statusClass + '">' +
+          '<span class="amap-device-popup-status-dot"></span>' +
+          statusLabel +
+          '</span>' +
+          '</div>' +
+          (lines ? '<div class="amap-device-popup-info">' + lines + '</div>' : '') +
+          (operation ? '<span class="amap-device-popup-badge">' + operation + '</span>' : '') +
+          (addr ? '<div class="amap-device-popup-addr">' + addr + '</div>' : '') +
+          '</div>'
+        );
+      }
+
+      function clearPopupMarker() {
+        if (popupMarker && map) {
+          map.remove(popupMarker);
+        }
+        popupMarker = null;
+      }
+
+      function showPopupForItem(item, lng, lat) {
+        if (!map || !amapNs) return;
+        clearPopupMarker();
+        popupMarker = new amapNs.Marker({
+          position: [lng, lat],
+          content: buildPopupContent(item),
+          offset: new amapNs.Pixel(0, -36),
+          anchor: 'bottom-center',
+          zIndex: 400
+        });
+        popupMarker.on('click', function () {
+          markerClickLock = true;
+          setTimeout(function () { markerClickLock = false; }, 50);
+        });
+        popupMarker.on('dblclick', function () {
+          markerClickLock = true;
+          notifyFlutter({
+            id: item.id != null ? String(item.id) : '',
+            title: item.title || '',
+            desc: item.desc || '',
+            lng: lng,
+            lat: lat,
+            dbl: true
+          });
+          setTimeout(function () { markerClickLock = false; }, 50);
+        });
+        map.add(popupMarker);
+      }
+
+      function notifyMarkerClick(payload) {
+        if (window.__amapSuppressMarkerModal) {
+          notifyFlutter(payload);
+          return;
+        }
+        showModalThenNotifyFlutter(payload);
+      }
+
+      window.flutterMapAddMarkers = function (list) {
+        if (!map || !amapNs) return;
+        markers.forEach(function (m) {
+          map.remove(m);
+        });
+        markers = [];
+        clearPopupMarker();
+        selectedMarkerId = null;
+        selectedLng = null;
+        selectedLat = null;
+        if (!list || !list.length) {
+          return;
+        }
+        var useDot = isDotMarkerStyle();
+        var popupItem = null;
+        var popupLng = null;
+        var popupLat = null;
+        var focusLng = null;
+        var focusLat = null;
+        list.forEach(function (item) {
+          var lng = Number(item.lng);
+          var lat = Number(item.lat);
+          if (isNaN(lng) || isNaN(lat)) return;
+          var selected = item.selected === true;
+          if (selected) {
+            selectedMarkerId = String(item.id);
+            selectedLng = lng;
+            selectedLat = lat;
+            focusLng = lng;
+            focusLat = lat;
+            if (!useDot) {
+              popupItem = item;
+              popupLng = lng;
+              popupLat = lat;
+            }
+          }
+          var m;
+          if (useDot) {
+            m = new amapNs.Marker({
+              position: [lng, lat],
+              title: item.title || '',
+              content: buildRippleDotContent(item.online === true, selected),
+              offset: new amapNs.Pixel(selected ? -28 : -24, selected ? -28 : -24),
+              zIndex: selected ? 120 : 100
+            });
+          } else {
+            m = new amapNs.Marker({
+              position: [lng, lat],
+              content: buildPinContent(item),
+              offset: new amapNs.Pixel(0, 0),
+              anchor: 'bottom-center',
+              zIndex: selected ? 120 : 100
+            });
+          }
+          m._flutterMeta = item;
+          m.on('click', function () {
+            markerClickLock = true;
+            var meta = m._flutterMeta || {};
+            var payload = {
+              id: meta.id != null ? String(meta.id) : '',
+              title: meta.title || '标记',
+              desc: meta.desc || '',
+              lng: lng,
+              lat: lat
+            };
+            selectedMarkerId = payload.id;
+            selectedLng = lng;
+            selectedLat = lat;
+            notifyMarkerClick(payload);
+            setTimeout(function () { markerClickLock = false; }, 50);
+          });
+          m.on('dblclick', function () {
+            markerClickLock = true;
+            var meta = m._flutterMeta || {};
+            notifyFlutter({
+              id: meta.id != null ? String(meta.id) : '',
+              title: meta.title || '标记',
+              desc: meta.desc || '',
+              lng: lng,
+              lat: lat,
+              dbl: true
+            });
+            setTimeout(function () { markerClickLock = false; }, 50);
+          });
+          if (!useDot) {
+            m.on('mouseover', function () {
+              m.setzIndex(220);
+            });
+            m.on('mouseout', function () {
+              m.setzIndex((m._flutterMeta && m._flutterMeta.selected) ? 120 : 100);
+            });
+          }
+          map.add(m);
+          markers.push(m);
+        });
+        if (useDot) {
+          if (focusLng != null && focusLat != null) {
+            map.setCenter([focusLng, focusLat], true);
+          }
+        } else if (popupItem != null) {
+          showPopupForItem(popupItem, popupLng, popupLat);
+        }
+      };
+
+      var key = '__AMAP_KEY__';
+      if (!key || key.indexOf('请替换') !== -1) {
+        document.getElementById('container').innerHTML =
+          '<div style="padding:16px;color:#c00;font-size:14px;">请在 lib/amap_config.dart 中配置有效的 webJsApiKey 后重新运行。</div>';
+        return;
+      }
+
+      if (typeof AMapLoader === 'undefined') {
+        document.getElementById('container').innerHTML =
+          '<div style="padding:16px;">无法加载高德 Loader，请检查网络。</div>';
+        return;
+      }
+
+      /** 大屏区域中心，初始缩放约对应视距 ~1km 量级（比例尺控件会随缩放更新刻度） */
+      var defaultCenter = [117.0227, 36.6677];
+
+      AMapLoader.load({
+        key: key,
+        version: '2.0',
+        plugins: ['AMap.Scale', 'AMap.ToolBar']
+      }).then(function (AMap) {
+        amapNs = AMap;
+        var initialMapStyle = resolveMapStyle(window.__pendingTheme);
+        map = new AMap.Map('container', {
+          zoom: 14,
+          center: defaultCenter,
+          viewMode: '2D',
+          mapStyle: initialMapStyle
+        });
+        map.addControl(new AMap.Scale({
+          position: 'LB'
+        }));
+        map.on('click', function () {
+          if (markerClickLock) return;
+          clearSelectionAndNotify();
+        });
+        window.__amapMapReady = 1;
+        if (window.__pendingTheme) {
+          window.flutterMapApplyTheme(window.__pendingTheme);
+        } else {
+          document.documentElement.setAttribute('data-theme', 'light');
+          applyToolBarTheme();
+        }
+        if (window.__pendingMarkerList && window.__pendingMarkerList.length) {
+          window.flutterMapAddMarkers(window.__pendingMarkerList);
+        }
+      }).catch(function (err) {
+        document.getElementById('container').innerHTML =
+          '<div style="padding:16px;color:#c00;">地图加载失败：' + (err && err.message ? err.message : String(err)) + '</div>';
+      });
+    })();
+  </script>
+</body>
+</html>

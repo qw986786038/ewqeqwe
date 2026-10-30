@@ -1,0 +1,111 @@
+# 正式环境 macOS 桌面包（需在 GitHub 仓库 Actions 中手动触发）。
+# 本机 Windows 无法执行 flutter build macos。
+
+name: Build macOS (prod)
+
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: Flutter stable version
+        required: true
+        default: '3.35.0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-macos-prod-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build release macOS
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ inputs.flutter_version }}
+          cache: true
+
+      - name: Show toolchain
+        run: |
+          flutter --version
+          xcodebuild -version
+          flutter config --enable-macos-desktop
+
+      - name: Verify prod API config
+        run: |
+          set -euo pipefail
+          grep -q "saas.palsmon.com/prod-api/media-market-service" lib/config/api_config.dart
+          grep -q "tenantId = '922729'" lib/config/api_config.dart
+          if grep -E "^\s*static const String baseUrl =\s*$" -A1 lib/config/api_config.dart | grep -q "192.168"; then
+            echo "api_config still points to local LAN; abort." >&2
+            exit 1
+          fi
+          echo "Prod API config OK"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Codegen (if needed)
+        run: |
+          if grep -q "build_runner\|dart_json_mapper\|reflectable" pubspec.yaml; then
+            dart run build_runner build --delete-conflicting-outputs || true
+          fi
+
+      - name: Build release application
+        run: flutter build macos --release --build-number "${GITHUB_RUN_NUMBER}"
+
+      - name: Package ZIP and DMG
+        run: |
+          set -euo pipefail
+          products="$PWD/build/macos/Build/Products/Release"
+          shopt -s nullglob
+          apps=("$products/"*.app)
+          if [[ ${#apps[@]} -ne 1 ]]; then
+            echo "Expected exactly one .app in $products, found ${#apps[@]}" >&2
+            ls -la "$products" >&2 || true
+            exit 1
+          fi
+          app="${apps[0]}"
+          app_name="$(basename "$app")"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          archs="$(lipo -archs "$app/Contents/MacOS/$executable" || true)"
+          echo "Built app: $app_name"
+          echo "Architectures: $archs"
+          codesign --verify --deep --strict --verbose=2 "$app" || true
+
+          dist="$GITHUB_WORKSPACE/dist"
+          stage="$RUNNER_TEMP/yidivination-dmg"
+          mkdir -p "$dist" "$stage"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$dist/yidivination-macos-prod.app.zip"
+          ditto "$app" "$stage/$app_name"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname 'Yidivination' -srcfolder "$stage" \
+            -ov -format UDZO "$dist/yidivination-macos-prod.dmg"
+          (cd "$dist" && shasum -a 256 yidivination-macos-prod.app.zip yidivination-macos-prod.dmg > SHA256SUMS.txt)
+          {
+            echo '### macOS 正式包'
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Architectures: $archs"
+            echo "- API: saas.palsmon.com (prod)"
+            echo "- Ad-hoc signed; not Apple-notarized."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-prod-${{ github.run_number }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
