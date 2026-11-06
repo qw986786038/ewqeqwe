@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_shadcn/shadcn.dart' as shad;
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../models/customer_archive.dart';
 import '../../../models/oac_brand_detail.dart';
@@ -11,12 +12,10 @@ import '../../../services/order_api.dart';
 import '../../customer_archive/dialogs/quick_create_brand_dialog.dart';
 
 const _kPrimary = Color(0xFF1677FF);
-const _kTitle = Color(0xFF262626);
 const _kSectionTitle = Color(0xFF1D2129);
 const _kLabel = Color(0xFF4E5969);
 const _kHint = Color(0xFFC9CDD4);
 const _kMuted = Color(0xFF86909C);
-const _kBarrier = Color(0x99000000);
 
 const _kContractTypeOptions = [
   AppOption(value: '广告发布', label: '广告发布'),
@@ -24,18 +23,16 @@ const _kContractTypeOptions = [
   AppOption(value: '项目制', label: '项目制'),
 ];
 
-/// 打开「+添加订单」弹窗。
+/// 打开「+添加订单」弹窗（与主体概览同款 HyperDialog 小窗）。
 /// [initialBrandId] 可选：从详情页打开时预选该品牌。
 /// 返回 `true` 表示创建成功。
 Future<bool> showAddOrderDialog(
   BuildContext context, {
   String? initialBrandId,
 }) async {
-  final result = await AppDialog.show<bool>(
+  final result = await showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
-    barrierColor: _kBarrier,
     builder: (dialogContext) {
       // 弹窗内取消全局文字放大；控件高度略留余量，避免下拉选中后文字上下被裁切。
       final mq = MediaQuery.of(dialogContext);
@@ -56,12 +53,12 @@ Future<bool> showAddOrderDialog(
           child: _AddOrderDialog(
             initialBrandId: initialBrandId,
             onClose: ([bool saved = false]) =>
-                AppOverlay.close<bool>(dialogContext, saved),
+                Navigator.of(dialogContext).pop(saved),
           ),
         ),
       );
     },
-  ).future;
+  );
   return result ?? false;
 }
 
@@ -667,10 +664,6 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // 内容区高度须扣掉底栏/内边距；双列紧凑宽度，避免弹窗/下拉显得过宽。
-    final screenH = MediaQuery.sizeOf(context).height;
-    final dialogMaxH = screenH * 0.82;
-    final bodyH = (dialogMaxH - 140).clamp(320.0, 560.0);
     final brandOptions = [
       for (final b in _brands)
         if (b.id != null && (b.brandName?.trim().isNotEmpty ?? false))
@@ -719,333 +712,300 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
 
     final quickCreateEnabled = !_bootLoading;
 
-    // 固定宽高上限 + 自绘标题；内容区 Expanded 滚动，切换品牌时高度稳定不溢出。
     return AppForm(
       key: ValueKey(_fillEpoch),
       controller: _form,
-      child: AppFormDialog(
-          barrierColor: _kBarrier,
-          borderRadius: BorderRadius.circular(10),
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-          constraints: BoxConstraints(
-            minWidth: 560,
-            maxWidth: 640,
-            maxHeight: dialogMaxH,
-          ),
-          content: DefaultTextStyle.merge(
-            style: const TextStyle(fontSize: 12, color: _kLabel),
-            child: SizedBox(
-              height: bodyH,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '+添加订单',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _kTitle,
-                    ),
+      child: HyperDialog(
+        title: const Text('+添加订单'),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 640),
+        onClose: () => widget.onClose(),
+        content: DefaultTextStyle.merge(
+          style: const TextStyle(fontSize: 12, color: _kLabel),
+          child: _bootLoading
+              ? const SizedBox(
+                  height: 180,
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: _bootLoading
-                        ? const Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : _bootError != null
-                            ? Center(
-                                child: Text(
-                                  _bootError!,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFFFF4D4F),
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              )
-                            : SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                  _sectionTitle('品牌信息'),
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    _selectWithQuickCreate(
-                                      label: '品牌简称',
-                                      required: true,
-                                      onQuickCreate: quickCreateEnabled
-                                          ? _openQuickCreate
-                                          : null,
-                                      field: KeyedSubtree(
-                                        key: ValueKey(
-                                          'brand-$_brandEpoch-${_selectedBrand?.id}',
-                                        ),
-                                        child: AppSelectFormField<String>(
-                                          name: 'brandId',
-                                          hintText: '请选择品牌',
-                                          popupMinWidth: 180,
-                                          options: brandOptions,
-                                          initialValue: _selectedBrand?.id,
-                                          onChanged: _onBrandSelected,
-                                          validator: (v) =>
-                                              v == null ? '请选择品牌简称' : null,
-                                        ),
-                                      ),
-                                    ),
-                                    _detailLoading
-                                        ? const Padding(
-                                            padding: EdgeInsets.only(top: 28),
-                                            child: Center(
-                                              child: SizedBox(
-                                                width: 18,
-                                                height: 18,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                ),
-                                              ),
-                                            ),
-                                          )
-                                        : _selectWithQuickCreate(
-                                            label: '签约主体全称',
-                                            required: true,
-                                            onQuickCreate: quickCreateEnabled
-                                                ? _openQuickCreate
-                                                : null,
-                                            field: KeyedSubtree(
-                                              key: ValueKey(
-                                                'ent-$_brandEpoch',
-                                              ),
-                                              child: AppSelectFormField<String>(
-                                                name: 'enterprise',
-                                                hintText: '请选择',
-                                                popupMinWidth: 180,
-                                                options: enterprises,
-                                                initialValue: selectedEntKey,
-                                                onChanged:
-                                                    _onEnterpriseSelected,
-                                                validator: (v) => v == null
-                                                    ? '请选择签约主体'
-                                                    : null,
-                                              ),
-                                            ),
-                                          ),
-                                  ),
-                            KeyedSubtree(
-                              key: ValueKey('fill-$_fillEpoch'),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    _readonlyField(
-                                      name: 'relation',
-                                      label: '关联关系',
-                                      required: true,
-                                      value: relation,
-                                      hintText: '随签约主体自动填充',
-                                    ),
-                                    _readonlyField(
-                                      name: 'clientType',
-                                      label: '客户类型',
-                                      required: true,
-                                      value: clientType,
-                                      hintText: '随品牌自动填充',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    _readonlyField(
-                                      name: 'industry',
-                                      label: '所属行业',
-                                      required: true,
-                                      value: industry,
-                                      hintText: '随品牌自动填充',
-                                    ),
-                                    _readonlyField(
-                                      name: 'city',
-                                      label: '所在城市',
-                                      required: true,
-                                      value: city,
-                                      hintText: '随签约主体自动填充',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    _readonlyField(
-                                      name: 'agency',
-                                      label: '关联 4A',
-                                      value: agencyName,
-                                      hintText: '随品牌自动填充',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  _sectionTitle('订单信息'),
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    _dimDisabled(
-                                      const AppTextFormField(
-                                        name: 'orderNo',
-                                        label: '订单编号',
-                                        hintText: '保存后自动生成',
-                                        enabled: false,
-                                        readOnly: true,
-                                      ),
-                                    ),
-                                    const AppSelectFormField<String>(
-                                      name: 'contractType',
-                                      label: '合同类型',
-                                      required: true,
-                                      hintText: '请选择',
-                                      popupMinWidth: 160,
-                                      options: _kContractTypeOptions,
-                                      initialValue: '广告发布',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    AppTextFormField(
-                                      name: 'amount',
-                                      label: '订单金额',
-                                      required: true,
-                                      hintText: '单位：元，如 15000000',
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(
-                                          RegExp(r'[0-9.]'),
-                                        ),
-                                      ],
-                                      trailing: const Text(
-                                        '元',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: _kMuted,
-                                        ),
-                                      ),
-                                      validator: AppValidators.required(
-                                        message: '请输入订单金额',
-                                      ),
-                                    ),
-                                    AppDatePickerFormField(
-                                      name: 'signDate',
-                                      label: '订单签约时间',
-                                      required: true,
-                                      // popover 在弹窗内会因 IntrinsicWidth+Spacer 横向溢出，改 dialog
-                                      mode: shad.PromptMode.dialog,
-                                      initialValue: DateTime.now(),
-                                      validator: (v) =>
-                                          v == null ? '请选择签约时间' : null,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    AppDateRangePickerFormField(
-                                      name: 'period',
-                                      label: '订单周期',
-                                      required: true,
-                                      hintText: '开始日期 - 结束日期',
-                                      mode: shad.PromptMode.dialog,
-                                      onChanged: _onPeriodChanged,
-                                      validator: (v) =>
-                                          v == null ? '请选择订单周期' : null,
-                                    ),
-                                    _dimDisabled(
-                                      AppTextFormField(
-                                        name: 'duration',
-                                        label: '订单时长',
-                                        controller: _durationCtrl,
-                                        hintText: '按周期自动计算',
-                                        enabled: false,
-                                        readOnly: true,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  AppTextAreaFormField(
-                                    name: 'remark',
-                                    label: '备注',
-                                    controller: _remarkCtrl,
-                                    hintText: '补充说明',
-                                    minHeight: 72,
-                                    onChanged: (_) => setState(() {}),
-                                  ),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(
-                                        top: 2,
-                                        right: 2,
-                                      ),
-                                      child: Text(
-                                        '${_remarkCtrl.text.characters.length}/500',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: _kHint,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  _sectionTitle('关联人信息'),
-                                  const SizedBox(height: 8),
-                                  _row(
-                                    AppMultiSelectFormField<String>(
-                                      name: 'clientContacts',
-                                      label: '客户方联系人',
-                                      required: true,
-                                      options: contactOptions,
-                                      initialValue: contactOptions.isNotEmpty
-                                          ? [contactOptions.first.value]
-                                          : const [],
-                                      validator: (v) => v == null || v.isEmpty
-                                          ? '请选择客户方联系人'
-                                          : null,
-                                    ),
-                                    AppMultiSelectFormField<String>(
-                                      name: 'ourContacts',
-                                      label: '我方联系人',
-                                      required: true,
-                                      options: salesOptions,
-                                      initialValue: salesOptions.isNotEmpty
-                                          ? [salesOptions.first.value]
-                                          : const [],
-                                      validator: (v) => v == null || v.isEmpty
-                                          ? '请选择我方联系人'
-                                          : null,
-                                    ),
-                                  ),
-                                ],
+                )
+              : _bootError != null
+                  ? SizedBox(
+                      height: 180,
+                      child: Center(
+                        child: Text(
+                          _bootError!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFFF4D4F),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _sectionTitle('品牌信息'),
+                        const SizedBox(height: 8),
+                        _row(
+                          _selectWithQuickCreate(
+                            label: '品牌简称',
+                            required: true,
+                            onQuickCreate:
+                                quickCreateEnabled ? _openQuickCreate : null,
+                            field: KeyedSubtree(
+                              key: ValueKey(
+                                'brand-$_brandEpoch-${_selectedBrand?.id}',
+                              ),
+                              child: AppSelectFormField<String>(
+                                name: 'brandId',
+                                hintText: '请选择品牌',
+                                popupMinWidth: 180,
+                                options: brandOptions,
+                                initialValue: _selectedBrand?.id,
+                                onChanged: _onBrandSelected,
+                                validator: (v) =>
+                                    v == null ? '请选择品牌简称' : null,
                               ),
                             ),
-                                  ],
+                          ),
+                          _detailLoading
+                              ? const Padding(
+                                  padding: EdgeInsets.only(top: 28),
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : _selectWithQuickCreate(
+                                  label: '签约主体全称',
+                                  required: true,
+                                  onQuickCreate: quickCreateEnabled
+                                      ? _openQuickCreate
+                                      : null,
+                                  field: KeyedSubtree(
+                                    key: ValueKey('ent-$_brandEpoch'),
+                                    child: AppSelectFormField<String>(
+                                      name: 'enterprise',
+                                      hintText: '请选择',
+                                      popupMinWidth: 180,
+                                      options: enterprises,
+                                      initialValue: selectedEntKey,
+                                      onChanged: _onEnterpriseSelected,
+                                      validator: (v) =>
+                                          v == null ? '请选择签约主体' : null,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        KeyedSubtree(
+                          key: ValueKey('fill-$_fillEpoch'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const SizedBox(height: 8),
+                              _row(
+                                _readonlyField(
+                                  name: 'relation',
+                                  label: '关联关系',
+                                  required: true,
+                                  value: relation,
+                                  hintText: '随签约主体自动填充',
+                                ),
+                                _readonlyField(
+                                  name: 'clientType',
+                                  label: '客户类型',
+                                  required: true,
+                                  value: clientType,
+                                  hintText: '随品牌自动填充',
                                 ),
                               ),
-                  ),
-                ],
-              ),
-            ),
+                              const SizedBox(height: 8),
+                              _row(
+                                _readonlyField(
+                                  name: 'industry',
+                                  label: '所属行业',
+                                  required: true,
+                                  value: industry,
+                                  hintText: '随品牌自动填充',
+                                ),
+                                _readonlyField(
+                                  name: 'city',
+                                  label: '所在城市',
+                                  required: true,
+                                  value: city,
+                                  hintText: '随签约主体自动填充',
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _row(
+                                _readonlyField(
+                                  name: 'agency',
+                                  label: '关联 4A',
+                                  value: agencyName,
+                                  hintText: '随品牌自动填充',
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _sectionTitle('订单信息'),
+                              const SizedBox(height: 8),
+                              _row(
+                                _dimDisabled(
+                                  const AppTextFormField(
+                                    name: 'orderNo',
+                                    label: '订单编号',
+                                    hintText: '保存后自动生成',
+                                    enabled: false,
+                                    readOnly: true,
+                                  ),
+                                ),
+                                const AppSelectFormField<String>(
+                                  name: 'contractType',
+                                  label: '合同类型',
+                                  required: true,
+                                  hintText: '请选择',
+                                  popupMinWidth: 160,
+                                  options: _kContractTypeOptions,
+                                  initialValue: '广告发布',
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _row(
+                                AppTextFormField(
+                                  name: 'amount',
+                                  label: '订单金额',
+                                  required: true,
+                                  hintText: '单位：元，如 15000000',
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9.]'),
+                                    ),
+                                  ],
+                                  trailing: const Text(
+                                    '元',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: _kMuted,
+                                    ),
+                                  ),
+                                  validator: AppValidators.required(
+                                    message: '请输入订单金额',
+                                  ),
+                                ),
+                                AppDatePickerFormField(
+                                  name: 'signDate',
+                                  label: '订单签约时间',
+                                  required: true,
+                                  // popover 在弹窗内会因 IntrinsicWidth+Spacer 横向溢出，改 dialog
+                                  mode: shad.PromptMode.dialog,
+                                  initialValue: DateTime.now(),
+                                  validator: (v) =>
+                                      v == null ? '请选择签约时间' : null,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _row(
+                                AppDateRangePickerFormField(
+                                  name: 'period',
+                                  label: '订单周期',
+                                  required: true,
+                                  hintText: '开始日期 - 结束日期',
+                                  mode: shad.PromptMode.dialog,
+                                  onChanged: _onPeriodChanged,
+                                  validator: (v) =>
+                                      v == null ? '请选择订单周期' : null,
+                                ),
+                                _dimDisabled(
+                                  AppTextFormField(
+                                    name: 'duration',
+                                    label: '订单时长',
+                                    controller: _durationCtrl,
+                                    hintText: '按周期自动计算',
+                                    enabled: false,
+                                    readOnly: true,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              AppTextAreaFormField(
+                                name: 'remark',
+                                label: '备注',
+                                controller: _remarkCtrl,
+                                hintText: '补充说明',
+                                minHeight: 72,
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 2,
+                                    right: 2,
+                                  ),
+                                  child: Text(
+                                    '${_remarkCtrl.text.characters.length}/500',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _kHint,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _sectionTitle('关联人信息'),
+                              const SizedBox(height: 8),
+                              _row(
+                                AppMultiSelectFormField<String>(
+                                  name: 'clientContacts',
+                                  label: '客户方联系人',
+                                  required: true,
+                                  options: contactOptions,
+                                  initialValue: contactOptions.isNotEmpty
+                                      ? [contactOptions.first.value]
+                                      : const [],
+                                  validator: (v) => v == null || v.isEmpty
+                                      ? '请选择客户方联系人'
+                                      : null,
+                                ),
+                                AppMultiSelectFormField<String>(
+                                  name: 'ourContacts',
+                                  label: '我方联系人',
+                                  required: true,
+                                  options: salesOptions,
+                                  initialValue: salesOptions.isNotEmpty
+                                      ? [salesOptions.first.value]
+                                      : const [],
+                                  validator: (v) => v == null || v.isEmpty
+                                      ? '请选择我方联系人'
+                                      : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+        ),
+        actions: [
+          HyperButton.outlined(
+            onPressed: () => widget.onClose(),
+            label: const Text('取消'),
           ),
-          actions: [
-            AppButton.outline(
-              size: AppButtonSize.small,
-              onPressed: () => widget.onClose(),
-              child: const Text(
-                '取消',
-                style: TextStyle(fontSize: 12, color: _kLabel),
-              ),
-            ),
-            AppButton.primary(
-              size: AppButtonSize.small,
-              onPressed: (_bootLoading || _detailLoading) ? null : _save,
-              loadingLabel: '保存中',
-              child: const Text('保存', style: TextStyle(fontSize: 12)),
-            ),
-          ],
+          HyperButton.filled(
+            onPressed: (_bootLoading || _detailLoading) ? null : _save,
+            label: const Text('保存'),
+          ),
+        ],
       ),
     );
   }

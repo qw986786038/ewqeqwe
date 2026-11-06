@@ -8,11 +8,13 @@ import 'package:lemon_x/lemon_x.dart';
 
 import '../../models/oac_brand.dart';
 import '../../models/oac_brand_detail.dart';
-import '../../services/order_api.dart';
 import 'brand_detail_controller.dart';
 import 'dialogs/add_order_dialog.dart';
+import 'dialogs/agency_overview_dialog.dart';
 import 'dialogs/order_contacts_dialog.dart';
 import 'dialogs/order_sales_dialog.dart';
+
+part 'order_detail_page.dart';
 
 const _kPrimary = Color(0xFF1677FF);
 const _kPageBg = Color(0xFFF5F7FA);
@@ -587,7 +589,7 @@ class _MetricRows extends StatelessWidget {
                 value: '${b?.orderCount ?? detail.orders.length}',
                 subtitle: '查看订单明细',
                 subtitleColor: _kPrimary,
-                onTap: () => showBrandOrderDetailSheet(context),
+                onTap: () => openBrandOrderDetailPage(context),
               ),
             ),
             const SizedBox(width: 10),
@@ -1165,10 +1167,13 @@ class _OrdersCard extends StatelessWidget {
     return Obx(() {
       final orders = controller.filteredOrders;
       final total = controller.detail.value?.orders.length ?? 0;
-      final amount = controller.ordersTotalAmount;
       final brand = controller.detail.value?.brand;
       // 读字典版本，标签映射变更时刷新表格。
       controller.dictVersion.value;
+      var shownAmount = 0.0;
+      for (final o in orders) {
+        shownAmount += num.tryParse(o.amount ?? '')?.toDouble() ?? 0;
+      }
       return Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
         decoration: BoxDecoration(
@@ -1181,8 +1186,10 @@ class _OrdersCard extends StatelessWidget {
           children: [
             _OrdersHeader(
               controller: controller,
+              shown: orders.length,
               total: total,
-              amountText: _fmtWan('$amount'),
+              amountText: _fmtWan('$shownAmount'),
+              onViewAll: () => openBrandOrderDetailPage(context),
             ),
             const SizedBox(height: 12),
             _OrdersGrid(
@@ -1202,34 +1209,49 @@ class _OrdersCard extends StatelessWidget {
 class _OrdersHeader extends StatelessWidget {
   const _OrdersHeader({
     required this.controller,
+    required this.shown,
     required this.total,
     required this.amountText,
-    this.showTitle = true,
+    required this.onViewAll,
   });
 
   final BrandDetailController controller;
+  final int shown;
   final int total;
   final String amountText;
-  final bool showTitle;
+  final VoidCallback onViewAll;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        if (showTitle) ...[
-          const Text(
-            '订单明细',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: _kTitle,
-            ),
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F8EF),
+            borderRadius: BorderRadius.circular(4),
           ),
-          const SizedBox(width: 12),
-        ],
-        Flexible(
+          child: const Icon(
+            Icons.receipt_long,
+            size: 14,
+            color: Color(0xFF52C41A),
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Text(
+          '订单明细',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: _kTitle,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
           child: Text(
-            '近期 $total 笔 · 全额合计 $amountText',
+            '近期 $shown 笔 · 金额合计 $amountText',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 13, color: _kMuted),
@@ -1240,17 +1262,20 @@ class _OrdersHeader extends StatelessWidget {
           width: 200,
           child: TextField(
             controller: controller.orderKeywordCtrl,
+            style: const TextStyle(fontSize: 12),
             decoration: InputDecoration(
               isDense: true,
-              hintText: '筛选订单号/标签',
+              hintText: '筛选订单号 / 标签',
               hintStyle: const TextStyle(fontSize: 12, color: _kMuted),
-              prefixIcon: const Icon(Icons.search, size: 16),
+              prefixIcon: const Icon(Icons.search, size: 16, color: _kMuted),
+              filled: true,
+              fillColor: const Color(0xFFF7F8FA),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(16),
                 borderSide: const BorderSide(color: _kBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(16),
                 borderSide: const BorderSide(color: _kBorder),
               ),
               contentPadding: const EdgeInsets.symmetric(vertical: 8),
@@ -1258,9 +1283,27 @@ class _OrdersHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Text(
-          '全部 $total 笔',
-          style: const TextStyle(fontSize: 13, color: _kMuted),
+        HyperPressable(
+          onTap: onViewAll,
+          builder: (context, states, child) => child!,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '全部 $total 笔',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF52C41A),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                size: 16,
+                color: Color(0xFF52C41A),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -1273,12 +1316,16 @@ class _OrdersGrid extends StatelessWidget {
     required this.orders,
     required this.brand,
     required this.height,
+    this.withTime = false,
+    this.indexOffset = 0,
   });
 
   final BrandDetailController controller;
   final List<OrderItem> orders;
   final OacBrand? brand;
   final double height;
+  final bool withTime;
+  final int indexOffset;
 
   List<String> get _brandTags {
     // 仅用 tagList（如 listed_company）；不带 clientTag（international）。
@@ -1318,6 +1365,11 @@ class _OrdersGrid extends StatelessWidget {
     final brandName = brand?.name?.trim().isNotEmpty == true
         ? brand!.name!.trim()
         : '-';
+    String rowBrandName(OrderItem row) {
+      final own = row.brandName?.trim();
+      if (own != null && own.isNotEmpty) return own;
+      return brandName;
+    }
     final weight = brand?.weight;
     final iconUrl = brand?.iconUrl?.trim();
     final letter = brandName.characters.first;
@@ -1336,7 +1388,7 @@ class _OrdersGrid extends StatelessWidget {
             id: 'index',
             title: '序号',
             width: 52,
-            value: (row) => '${orders.indexOf(row) + 1}',
+            value: (row) => '${indexOffset + orders.indexOf(row) + 1}',
           ),
           AppDataGridColumn(
             id: 'weight',
@@ -1398,11 +1450,11 @@ class _OrdersGrid extends StatelessWidget {
             widthMode: AppDataGridColumnWidthMode.fill,
             alignment: Alignment.centerLeft,
             titleAlignment: Alignment.centerLeft,
-            value: (row) => brandName,
+            value: rowBrandName,
             cellBuilder: (context, row, _) => Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                brandName,
+                rowBrandName(row),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -1483,14 +1535,25 @@ class _OrdersGrid extends StatelessWidget {
             alignment: Alignment.centerLeft,
             titleAlignment: Alignment.centerLeft,
             value: (row) => row.agencyName ?? row.agencyId ?? '',
-            cellBuilder: (context, row, _) =>
-                _OrderAgencySelect(controller: controller, order: row),
+            cellBuilder: (context, row, _) => _OrderAgencyLink(order: row),
           ),
           AppDataGridColumn(
             id: 'contract',
             title: '合同类型',
             width: 100,
             value: (row) => controller.contractTypeLabel(row.contractType),
+            cellBuilder: (context, row, _) {
+              final label = controller.contractTypeLabel(row.contractType);
+              if (label == '-') return const Text('-');
+              return Center(
+                child: AppBadge.custom(
+                  color: const Color(0xFF1677FF),
+                  appearance: AppBadgeStyle.soft,
+                  shape: AppBadgeShape.square,
+                  child: Text(label, style: const TextStyle(fontSize: 11)),
+                ),
+              );
+            },
           ),
           AppDataGridColumn(
             id: 'amount',
@@ -1509,7 +1572,7 @@ class _OrdersGrid extends StatelessWidget {
             id: 'time',
             title: '订单时间',
             width: 110,
-            value: (row) => _fmtDate(row.orderTime),
+            value: (row) => _fmtOrderTime(row.orderTime, withTime: withTime),
           ),
           AppDataGridColumn(
             id: 'contact',
@@ -1558,6 +1621,35 @@ class _OrdersGrid extends StatelessWidget {
             value: (row) => row.remark?.trim().isNotEmpty == true
                 ? row.remark!.trim()
                 : '-',
+          ),
+          AppDataGridColumn(
+            id: 'actions',
+            title: '操作',
+            width: 64,
+            widthMode: AppDataGridColumnWidthMode.fixed,
+            pin: AppDataGridColumnPin.end,
+            value: (_) => '',
+            cellBuilder: (context, row, _) => Center(
+              child: HyperPressable(
+                onTap: () {
+                  showHyperToast(
+                    context,
+                    content: const Text('订单编辑暂未开放'),
+                  );
+                },
+                builder: (context, states, child) => child!,
+                child: const Text(
+                  '编辑',
+                  softWrap: false,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: Color(0xFF52C41A),
+                    fontSize: 12,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -1634,7 +1726,10 @@ class _OrderContactsCell extends StatelessWidget {
             if (visible.isNotEmpty) ...[
               Text(
                 visible.join(' · '),
-                style: const TextStyle(fontSize: 12),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF52C41A),
+                ),
               ),
               const SizedBox(width: 6),
             ],
@@ -1701,73 +1796,49 @@ class _OrderSalesCell extends StatelessWidget {
   }
 }
 
-/// 订单行「关联4A」下拉：选项来自 agency 客户列表，选中后 PUT order/agency。
-class _OrderAgencySelect extends StatelessWidget {
-  const _OrderAgencySelect({
-    required this.controller,
-    required this.order,
-  });
+/// 订单行「关联4A」：蓝色可点，打开主体概览（`GET /desktop/oac/customer/{id}`）。
+class _OrderAgencyLink extends StatelessWidget {
+  const _OrderAgencyLink({required this.order});
 
-  final BrandDetailController controller;
   final OrderItem order;
-
-  Future<void> _onChanged(BuildContext context, String? agencyId) async {
-    try {
-      await controller.updateOrderAgency(
-        order: order,
-        agencyCustomerId: agencyId,
-      );
-      if (!context.mounted) return;
-      showHyperToast(
-        context,
-        content: Text(agencyId == null || agencyId.isEmpty ? '已清空关联 4A' : '关联 4A 已更新'),
-      );
-    } on OrderApiException catch (e) {
-      if (!context.mounted) return;
-      showHyperToast(context, content: Text(e.message));
-    } catch (e) {
-      if (!context.mounted) return;
-      showHyperToast(context, content: Text('$e'));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      final options = controller.agencyOptions;
-      final value = controller.resolveAgencyValue(order);
-      final busy = controller.updatingAgencyOrderIds.contains(order.id);
-      final name = order.agencyName?.trim();
-      final optionIds = {for (final a in options) if (a.id != null) a.id!};
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: HyperSelect<String>(
-          value: value,
-          placeholder: busy ? '更新中…' : '请选择',
-          allowDeselect: true,
-          searchable: true,
-          enabled: !busy,
-          size: HyperButtonSizeVariant.small,
-          options: [
-            for (final a in options)
-              if (a.id != null)
-                HyperSelectOption(
-                  value: a.id!,
-                  label: a.brandName?.trim().isNotEmpty == true
-                      ? a.brandName!.trim()
-                      : a.id!,
-                ),
-            if (value != null &&
-                value.isNotEmpty &&
-                !optionIds.contains(value) &&
-                name != null &&
-                name.isNotEmpty)
-              HyperSelectOption(value: value, label: name),
-          ],
-          onChanged: (v) => _onChanged(context, v),
-        ),
+    final id = order.agencyId?.trim() ?? '';
+    final name = order.agencyName?.trim() ?? '';
+    final label = name.isNotEmpty ? name : id;
+    if (label.isEmpty) {
+      return const Align(
+        alignment: Alignment.centerLeft,
+        child: Text('-', style: TextStyle(fontSize: 12)),
       );
-    });
+    }
+    if (id.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text(label, style: const TextStyle(fontSize: 12)),
+      );
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: HyperPressable(
+        onTap: () => showAgencyOverviewDialog(
+          context,
+          customerId: id,
+        ),
+        builder: (context, states, child) => child!,
+        child: Text(
+          label,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF52C41A),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -2262,72 +2333,41 @@ String _fmtDate(String? raw) {
   return s.length >= 10 ? s.substring(0, 10) : s;
 }
 
-/// 品牌详情「查看明细」→ 订单明细底部面板。
-Future<void> showBrandOrderDetailSheet(BuildContext context) {
+DateTime? _parseOrderTime(String? raw) {
+  final s = raw?.trim();
+  if (s == null || s.isEmpty) return null;
+  final normalized = s.contains('T') ? s : s.replaceFirst(' ', 'T');
+  return DateTime.tryParse(normalized);
+}
+
+String _fmtOrderTime(String? raw, {required bool withTime}) {
+  final d = _parseOrderTime(raw);
+  if (d == null) return _fmtDate(raw);
+  final y = d.year.toString().padLeft(4, '0');
+  final m = d.month.toString().padLeft(2, '0');
+  final day = d.day.toString().padLeft(2, '0');
+  if (!withTime) return '$y.$m.$day';
+  final hh = d.hour.toString().padLeft(2, '0');
+  final mm = d.minute.toString().padLeft(2, '0');
+  return '$y-$m-$day $hh:$mm';
+}
+
+void openBrandOrderDetailPage(BuildContext context) {
   final controller = context.lx.find<BrandDetailController>();
-  final mq = MediaQuery.sizeOf(context);
-  final sheetStyle = HyperBottomSheetStyle(
-    height: mq.height * 0.82,
-    width: mq.width,
-    maxWidth: mq.width,
-    margin: EdgeInsets.zero,
-    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-  );
-  return showHyperBottomSheet<void>(
-    context: context,
-    style: sheetStyle,
-    builder: (sheetContext) {
-      return AppShadcnScope(
-        config: AppThemeConfig.standard(primary: _kPrimary),
-        child: LxScope(
-          bindings: (container) {
-            container.putInstance<BrandDetailController>(
-              controller,
-              owned: false,
-            );
-          },
-          child: HyperBottomSheet(
-            title: const Text('订单明细'),
-            showCloseButton: true,
-            showDragHandle: true,
-            scrollable: false,
-            style: sheetStyle,
-            content: Obx(() {
-              final orders = controller.filteredOrders;
-              final total = controller.detail.value?.orders.length ?? 0;
-              final amount = controller.ordersTotalAmount;
-              final brand = controller.detail.value?.brand;
-              controller.dictVersion.value;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _OrdersHeader(
-                    controller: controller,
-                    total: total,
-                    amountText: _fmtWan('$amount'),
-                    showTitle: false,
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return _OrdersGrid(
-                          controller: controller,
-                          orders: orders,
-                          brand: brand,
-                          height: constraints.maxHeight.isFinite
-                              ? constraints.maxHeight
-                              : 360,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            }),
-          ),
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => LxScope(
+        bindings: (container) {
+          container.putInstance<BrandDetailController>(
+            controller,
+            owned: false,
+          );
+        },
+        child: AppShadcnScope(
+          config: AppThemeConfig.standard(primary: _kPrimary),
+          child: const BrandOrderDetailPage(),
         ),
-      );
-    },
+      ),
+    ),
   );
 }

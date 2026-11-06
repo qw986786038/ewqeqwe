@@ -1,59 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
-import '../../../../models/hrm_dept.dart';
-import '../../../../models/hrm_employee_assign.dart';
+import '../../../../models/hrm_employee.dart';
 import '../../../../models/hrm_employee_profile.dart';
-import '../../../../models/hrm_position.dart';
 import '../../../../models/hrm_post.dart';
 import '../../../../models/hrm_post_seq_level.dart';
 import '../../../../services/hrm_api.dart';
 
-/// 人事档案 · 修改职级弹窗。打开时拉在任记录与职级；提交走 level。
+const _kTitle = Color(0xFF1D2129);
+const _kBorder = Color(0xFFE5E6EB);
+const _kDanger = Color(0xFFF53F3F);
+const _kReadonly = Color(0xFFF7F8FA);
+
+/// 花名册 · 调级。编制不变，提交 `POST /desktop/hrm/employee-assign/transfer`。
 Future<bool> showEmployeeLevelDialog(
   BuildContext context, {
   required HrmEmployeeProfile employee,
+  HrmEmployeeTitle? initial,
 }) {
-  final userId = employee.userId;
-  if (userId == null) {
-    AppToast.show(context: context, title: '缺少用户 ID');
-    return Future.value(false);
-  }
-  final fallbackName = () {
-    final n = employee.name?.trim();
-    if (n != null && n.isNotEmpty) return n;
-    final no = employee.no?.trim();
-    if (no != null && no.isNotEmpty) return no;
-    return '用户 $userId';
-  }();
-
-  return AppDialog.show<bool>(
+  return showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => _EmployeeLevelDialog(
-      employeeUserId: userId,
-      fallbackName: fallbackName,
-      onClose: (ok) => AppOverlay.close<bool>(dialogContext, ok),
+    builder: (_) => AppShadcnScope(
+      config: AppThemeConfig.standard(primary: const Color(0xFF1677FF)),
+      child: _LevelDialog(profile: employee, initial: initial),
     ),
-  ).future.then((v) => v == true);
+  ).then((v) => v == true);
 }
 
-class _EmployeeLevelDialog extends StatefulWidget {
-  const _EmployeeLevelDialog({
-    required this.employeeUserId,
-    required this.fallbackName,
-    required this.onClose,
-  });
+class _LevelDialog extends StatefulWidget {
+  const _LevelDialog({required this.profile, this.initial});
 
-  final int employeeUserId;
-  final String fallbackName;
-  final void Function(bool ok) onClose;
+  final HrmEmployeeProfile profile;
+  final HrmEmployeeTitle? initial;
 
   @override
-  State<_EmployeeLevelDialog> createState() => _EmployeeLevelDialogState();
+  State<_LevelDialog> createState() => _LevelDialogState();
 }
 
-class _EmployeeLevelDialogState extends State<_EmployeeLevelDialog> {
+class _LevelDialogState extends State<_LevelDialog> {
   final _api = HrmApi();
   final _form = AppFormController();
 
@@ -61,18 +47,23 @@ class _EmployeeLevelDialogState extends State<_EmployeeLevelDialog> {
   var _saving = false;
   String? _loadError;
 
-  List<HrmEmployeeAssign> _assigns = const [];
+  List<HrmPost> _posts = const [];
   List<HrmPostSeqLevel> _levels = const [];
-  final Map<String, String> _deptNameById = {};
-  final Map<String, HrmPosition> _positionById = {};
-  final Map<String, String> _postNameById = {};
-  final Map<String, String> _levelCodeById = {};
+  final Map<String, HrmPostSeqLevel> _levelById = {};
 
-  String? _selectedAssignId;
+  String? _positionId;
+  String? _levelId;
 
   @override
   void initState() {
     super.initState();
+    final initialId = widget.initial?.positionId?.trim();
+    if (initialId != null && initialId.isNotEmpty) {
+      _positionId = initialId;
+    } else if (_seats.length == 1) {
+      _positionId = _seats.first.positionId?.trim();
+    }
+    _levelId = _seat?.postSeqLevelId?.trim();
     _loadOptions();
   }
 
@@ -82,6 +73,20 @@ class _EmployeeLevelDialogState extends State<_EmployeeLevelDialog> {
     super.dispose();
   }
 
+  List<HrmEmployeeTitle> get _seats => [
+        for (final t in widget.profile.titleList)
+          if (t.positionId?.trim().isNotEmpty == true) t,
+      ];
+
+  HrmEmployeeTitle? get _seat {
+    final id = _positionId?.trim();
+    if (id == null || id.isEmpty) return null;
+    for (final t in _seats) {
+      if (t.positionId?.trim() == id) return t;
+    }
+    return null;
+  }
+
   Future<void> _loadOptions() async {
     setState(() {
       _loading = true;
@@ -89,62 +94,19 @@ class _EmployeeLevelDialogState extends State<_EmployeeLevelDialog> {
     });
     try {
       final results = await Future.wait([
-        _api.fetchOnDutyAssigns(),
-        _api.fetchPositions(),
-        _api.fetchPostSeqLevels(),
         _api.fetchPosts(),
-        _api.fetchDepts(),
+        _api.fetchPostSeqLevels(),
       ]);
-      final onDuty = results[0] as List<HrmEmployeeAssign>;
-      final positions = results[1] as List<HrmPosition>;
-      final levels = results[2] as List<HrmPostSeqLevel>;
-      final posts = results[3] as List<HrmPost>;
-      final depts = results[4] as List<HrmDept>;
-
-      final mine = [
-        for (final a in onDuty)
-          if (a.employeeUserId == widget.employeeUserId &&
-              a.id?.trim().isNotEmpty == true)
-            a,
-      ];
-      final initialAssign =
-          mine.length == 1 ? mine.first.id!.trim() : null;
-
       if (!mounted) return;
+      final levels = results[1] as List<HrmPostSeqLevel>;
       setState(() {
-        _assigns = mine;
+        _posts = results[0] as List<HrmPost>;
         _levels = levels;
-        _selectedAssignId = initialAssign;
-        _deptNameById
-          ..clear()
-          ..addEntries([
-            for (final d in depts)
-              if (d.deptId?.trim().isNotEmpty == true &&
-                  d.deptName?.trim().isNotEmpty == true)
-                MapEntry(d.deptId!.trim(), d.deptName!.trim()),
-          ]);
-        _positionById
-          ..clear()
-          ..addEntries([
-            for (final p in positions)
-              if (p.id?.trim().isNotEmpty == true)
-                MapEntry(p.id!.trim(), p),
-          ]);
-        _postNameById
-          ..clear()
-          ..addEntries([
-            for (final p in posts)
-              if (p.id?.trim().isNotEmpty == true &&
-                  p.name?.trim().isNotEmpty == true)
-                MapEntry(p.id!.trim(), p.name!.trim()),
-          ]);
-        _levelCodeById
+        _levelById
           ..clear()
           ..addEntries([
             for (final l in levels)
-              if (l.id?.trim().isNotEmpty == true &&
-                  l.code?.trim().isNotEmpty == true)
-                MapEntry(l.id!.trim(), l.code!.trim()),
+              if (l.id?.trim().isNotEmpty == true) MapEntry(l.id!.trim(), l),
           ]);
         _loading = false;
       });
@@ -157,85 +119,80 @@ class _EmployeeLevelDialogState extends State<_EmployeeLevelDialog> {
     }
   }
 
-  String _assignLabel(HrmEmployeeAssign a) {
-    final pos = _positionById[a.positionId?.trim() ?? ''];
-    final deptId = pos?.sysDeptId?.trim();
-    final postId = pos?.postId?.trim();
-    final dept = (pos?.deptName?.trim().isNotEmpty == true)
-        ? pos!.deptName!.trim()
-        : (deptId == null ? '' : (_deptNameById[deptId] ?? ''));
-    final post = (pos?.postName?.trim().isNotEmpty == true)
-        ? pos!.postName!.trim()
-        : (postId == null ? '' : (_postNameById[postId] ?? ''));
-    final level = _levelCodeById[a.postSeqLevelId?.trim() ?? ''] ?? '';
+  List<HrmPostSeqLevel> get _targetLevels {
+    final postId = _seat?.postId?.trim();
+    HrmPost? post;
+    for (final item in _posts) {
+      if (item.id?.trim() == postId) {
+        post = item;
+        break;
+      }
+    }
+    final min = _levelById[post?.postSeqLevelIdMin?.trim() ?? ''];
+    final max = _levelById[post?.postSeqLevelIdMax?.trim() ?? ''];
+    final seq = min?.postSeqId?.trim();
+    if (seq == null || seq.isEmpty || seq != max?.postSeqId?.trim()) {
+      return _levels;
+    }
+    final lo = min!.orderNum ?? 0;
+    final hi = max!.orderNum ?? lo;
+    final from = lo < hi ? lo : hi;
+    final to = lo > hi ? lo : hi;
+    final matched = [
+      for (final l in _levels)
+        if (l.postSeqId?.trim() == seq && l.id?.trim().isNotEmpty == true)
+          if (l.orderNum == null || (l.orderNum! >= from && l.orderNum! <= to))
+            l,
+    ];
+    return matched.isEmpty ? _levels : matched;
+  }
+
+  String _seatLabel(HrmEmployeeTitle title) {
+    final dept = title.deptName?.trim() ?? '';
+    final post = title.postName?.trim() ?? '';
+    final level = title.postSeqLeveName?.trim() ?? '';
     final parts = [
       if (dept.isNotEmpty) dept,
       if (post.isNotEmpty) post,
       if (level.isNotEmpty) level,
     ];
-    if (parts.isNotEmpty) return parts.join(' / ');
-    return a.id?.trim() ?? '-';
+    final text = parts.isEmpty ? (title.positionId?.trim() ?? '-') : parts.join(' / ');
+    if (title.isPrimary == 1) return '$text · 主岗';
+    return text;
   }
 
-  List<AppOption<String>> get _assignOptions => [
-        for (final a in _assigns)
-          AppOption(
-            value: a.id!.trim(),
-            label: _assignLabel(a),
-          ),
-      ];
-
-  List<AppOption<String>> get _levelOptions => [
-        for (final l in _levels)
-          if (l.id?.trim().isNotEmpty == true &&
-              l.code?.trim().isNotEmpty == true)
-            AppOption(value: l.id!.trim(), label: l.code!.trim()),
-      ];
-
-  String? _currentLevelIdForAssign(String? assignId) {
-    final id = assignId?.trim();
-    if (id == null || id.isEmpty) return null;
-    for (final a in _assigns) {
-      if (a.id?.trim() == id) {
-        final levelId = a.postSeqLevelId?.trim();
-        if (levelId != null &&
-            levelId.isNotEmpty &&
-            _levelOptions.any((o) => o.value == levelId)) {
-          return levelId;
-        }
-        return null;
-      }
-    }
+  String? _need(String? id, String label) {
+    if (id == null || id.trim().isEmpty) return '请选择$label';
     return null;
   }
 
   Future<void> _submit() async {
     if (_saving || _loading) return;
-    await _form.submit((values) async {
-      final assignId = (values['assignId'] as String?)?.trim() ?? '';
-      final levelId = (values['postSeqLevelId'] as String?)?.trim() ?? '';
-      if (assignId.isEmpty || levelId.isEmpty) return;
-
-      final idInt = int.tryParse(assignId);
-      final levelInt = int.tryParse(levelId);
-      if (idInt == null || levelInt == null) {
-        AppToast.show(context: context, title: '在任记录或职级无效');
+    await _form.submit((_) async {
+      final missing = _need(_positionId, '在职编制') ?? _need(_levelId, '目标职级');
+      if (missing != null) {
+        AppToast.show(context: context, title: missing);
         return;
       }
-
+      final positionId = _positionId!.trim();
+      final levelId = _levelId!.trim();
+      if (positionId.isEmpty || levelId.isEmpty) {
+        AppToast.show(context: context, title: '在职编制或职级无效');
+        return;
+      }
       setState(() => _saving = true);
       try {
-        await _api.updateEmployeeAssignLevel(
-          id: idInt,
-          postSeqLevelId: levelInt,
+        await _api.transferEmployeeAssign(
+          oldPositionId: positionId,
+          newPositionId: positionId,
+          newPostSeqLevelId: levelId,
         );
         if (!mounted) return;
-        AppToast.show(context: context, title: '修改职级成功');
-        widget.onClose(true);
+        AppToast.show(context: context, title: '调级成功');
+        Navigator.of(context).pop(true);
       } catch (e) {
-        if (mounted) {
-          AppToast.show(context: context, title: e.toString());
-        }
+        if (!mounted) return;
+        AppToast.show(context: context, title: e.toString());
       } finally {
         if (mounted) setState(() => _saving = false);
       }
@@ -244,29 +201,29 @@ class _EmployeeLevelDialogState extends State<_EmployeeLevelDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final assignOpts = _assignOptions;
-    final levelOpts = _levelOptions;
-    final initialLevel = _currentLevelIdForAssign(_selectedAssignId);
-
+    final name = widget.profile.name?.trim() ?? '';
+    final currentLevel = _seat?.postSeqLeveName?.trim() ?? '';
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
-        title: const Text('修改职级'),
-        constraints: const BoxConstraints(minWidth: 440, maxWidth: 480),
+      child: HyperDialog(
+        title: const Text('调级'),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 520),
+        onClose: _saving ? null : () => Navigator.of(context).pop(false),
         content: _loading
             ? const SizedBox(
-                height: 160,
+                height: 180,
                 child: Center(
                   child: SizedBox(
                     width: 28,
                     height: 28,
-                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
                   ),
                 ),
               )
             : _loadError != null
                 ? SizedBox(
-                    height: 160,
+                    height: 180,
                     child: Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -274,94 +231,151 @@ class _EmployeeLevelDialogState extends State<_EmployeeLevelDialog> {
                           Text(
                             _loadError!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFFFF4D4F),
-                            ),
+                            style: const TextStyle(fontSize: 13, color: _kDanger),
                           ),
                           const SizedBox(height: 12),
-                          AppButton.outline(
+                          HyperButton.outlined(
                             onPressed: _loadOptions,
-                            child: const Text('重试'),
+                            label: const Text('重试'),
                           ),
                         ],
                       ),
                     ),
                   )
-                : AppFieldScope.horizontal(
-                    labelWidth: 96,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      spacing: 14,
-                      children: [
-                        AppTextFormField(
-                          name: 'employeeName',
-                          label: '员工',
-                          readOnly: true,
-                          enabled: false,
-                          initialValue: widget.fallbackName,
-                        ),
-                        if (assignOpts.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 96),
-                            child: Text(
-                              '该员工暂无在任记录',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF86909C),
+                : Column(
+                    children: [
+                      _Readonly(label: '员工', value: name),
+                      _Field(
+                        label: '在职编制',
+                        required: true,
+                        child: AppSelectFormField<String>(
+                          name: 'positionId',
+                          hintText: '请选择在职编制',
+                          options: [
+                            for (final t in _seats)
+                              AppOption(
+                                value: t.positionId!.trim(),
+                                label: _seatLabel(t),
                               ),
-                            ),
-                          )
-                        else
-                          AppSelectFormField<String>(
-                            name: 'assignId',
-                            label: '在任记录',
-                            required: true,
-                            hintText: '请选择在任记录',
-                            options: assignOpts,
-                            initialValue: _selectedAssignId,
-                            onChanged: (v) {
-                              setState(() => _selectedAssignId = v);
-                            },
-                            validator: (v) =>
-                                (v == null || v.isEmpty) ? '请选择在任记录' : null,
-                          ),
-                        KeyedSubtree(
-                          key: ValueKey(
-                            'level-${_selectedAssignId ?? ''}-$initialLevel',
-                          ),
-                          child: AppSelectFormField<String>(
-                            name: 'postSeqLevelId',
-                            label: '职级',
-                            required: true,
-                            hintText: '请选择职级',
-                            options: levelOpts,
-                            initialValue: initialLevel,
-                            validator: (v) =>
-                                (v == null || v.isEmpty) ? '请选择职级' : null,
-                          ),
+                          ],
+                          initialValue: _positionId,
+                          validator: (_) => _need(_positionId, '在职编制'),
+                          onChanged: (value) {
+                            setState(() {
+                              _positionId = value;
+                              _levelId = _seat?.postSeqLevelId?.trim();
+                            });
+                          },
                         ),
-                      ],
-                    ),
+                      ),
+                      _Readonly(
+                        label: '原职级',
+                        value: currentLevel,
+                      ),
+                      _Field(
+                        label: '目标职级',
+                        required: true,
+                        child: AppSelectFormField<String>(
+                          key: ValueKey('level-$_positionId'),
+                          name: 'postSeqLevelId',
+                          hintText: _positionId == null ? '请先选择在职编制' : '请选择目标职级',
+                          enabled: _positionId != null,
+                          options: [
+                            for (final l in _targetLevels)
+                              if (l.id?.trim().isNotEmpty == true &&
+                                  l.code?.trim().isNotEmpty == true)
+                                AppOption(value: l.id!.trim(), label: l.code!.trim()),
+                          ],
+                          initialValue: _levelId,
+                          validator: (_) => _need(_levelId, '目标职级'),
+                          onChanged: (value) => _levelId = value,
+                        ),
+                      ),
+                    ],
                   ),
         actions: [
-          AppButton.outline(
-            onPressed: _saving ? null : () => widget.onClose(false),
-            child: const Text('取消'),
+          HyperButton.outlined(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+            label: const Text('取消'),
           ),
-          AppButton.primary(
+          HyperButton.filled(
             loading: _saving,
-            loadingLabel: '提交中…',
-            onPressed: (_saving ||
-                    _loading ||
-                    _loadError != null ||
-                    _assigns.isEmpty)
-                ? null
-                : () async {
-                    await _submit();
-                  },
-            child: const Text('确定'),
+            onPressed: (_saving || _loading || _loadError != null) ? null : _submit,
+            label: const Text('确定'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Readonly extends StatelessWidget {
+  const _Readonly({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Field(
+      label: label,
+      child: Container(
+        height: 34,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: _kReadonly,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: _kBorder),
+        ),
+        child: Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, color: _kTitle),
+        ),
+      ),
+    );
+  }
+}
+
+class _Field extends StatelessWidget {
+  const _Field({
+    required this.label,
+    required this.child,
+    this.required = false,
+  });
+
+  final String label;
+  final Widget child;
+  final bool required;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  if (required)
+                    const TextSpan(
+                      text: '* ',
+                      style: TextStyle(color: _kDanger, fontSize: 13),
+                    ),
+                  TextSpan(text: label),
+                ],
+              ),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: child),
         ],
       ),
     );

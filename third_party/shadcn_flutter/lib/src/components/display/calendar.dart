@@ -244,7 +244,9 @@ class _DatePickerDialogState extends State<DatePickerDialog> {
     );
     final viewMode = widget.viewMode ?? widget.selectionMode;
     if (widget.selectionMode == CalendarSelectionMode.range) {
-      return IntrinsicWidth(
+      // 不用 IntrinsicWidth：标题行里有 Expanded，求固有宽度会直接抛错，弹层打不开。
+      return SizedBox(
+        width: 640 * theme.scaling,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -460,7 +462,8 @@ class _DatePickerDialogState extends State<DatePickerDialog> {
         ),
       );
     }
-    return IntrinsicWidth(
+    return SizedBox(
+      width: 320 * theme.scaling,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

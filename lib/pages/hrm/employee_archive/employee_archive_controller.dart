@@ -1,19 +1,20 @@
 import 'package:flutter/widgets.dart';
 import 'package:lemon_x/lemon_x.dart';
 
+import '../../../models/hrm_employee.dart';
 import '../../../models/hrm_employee_profile.dart';
 import '../../../services/hrm_api.dart';
 
 class EmployeeArchiveController extends LxController {
   final _api = HrmApi();
 
-  final nameCtrl = TextEditingController();
-  final noCtrl = TextEditingController();
-  final mobileCtrl = TextEditingController();
+  final keywordCtrl = TextEditingController();
 
   final loading = false.obs;
+  final statsLoading = false.obs;
   final errorMessage = Rxn<String>();
 
+  final stats = HrmEmployeeStats().obs;
   final rows = <HrmEmployeeProfile>[].obs;
   final total = 0.obs;
   final pageNum = 1.obs;
@@ -23,31 +24,29 @@ class EmployeeArchiveController extends LxController {
   final filterEmpType = Rxn<String>();
 
   final showDetail = false.obs;
-  final viewingUserId = Rxn<int>();
+  final viewingEmployeeId = Rxn<String>();
 
   final showEdit = false.obs;
+  final editingEmployeeId = Rxn<String>();
   final editingUserId = Rxn<int>();
 
-  String _nameQuery = '';
-  String _noQuery = '';
-  String _mobileQuery = '';
+  String _keyword = '';
 
-  /// 筛选 / 展示用员工状态。
+  /// 筛选 / 展示用员工状态（对接 HrmEmployeeStatus）。
   static const statusOptions = <(String, String)>[
-    ('PENDING', '待入职'),
-    ('PROBATION', '试用'),
+    ('PENDING_ACTIVE', '待入职'),
     ('ACTIVE', '在职'),
-    ('LEFT', '离职'),
-    ('UNPAID_LEAVE', '停薪留职'),
+    ('PENDING_LEAVE', '待离职'),
+    ('LEAVE', '离职'),
+    ('CANCEL_ACTIVE', '取消入职'),
   ];
 
-  /// 筛选 / 展示用员工类型（与接口枚举对齐；EMPLOYEE 展示为劳动合同）。
+  /// 筛选 / 展示用员工类型（对接 HrmEmployeeType）。
   static const typeOptions = <(String, String)>[
-    ('EMPLOYEE', '劳动合同'),
-    ('FULL_TIME', '全职'),
-    ('PART_TIME', '兼职'),
+    ('FORMAL', '正式'),
     ('INTERN', '实习'),
     ('OUTSOURCE', '外包'),
+    ('LABOR', '劳务'),
     ('CONSULTANT', '顾问'),
   ];
 
@@ -60,15 +59,28 @@ class EmployeeArchiveController extends LxController {
   @override
   void onInit() {
     super.onInit();
-    loadPage();
+    refreshAll();
   }
 
   @override
   void onDispose() {
-    nameCtrl.dispose();
-    noCtrl.dispose();
-    mobileCtrl.dispose();
+    keywordCtrl.dispose();
     super.onDispose();
+  }
+
+  Future<void> refreshAll() async {
+    await Future.wait([loadStats(), loadPage(page: pageNum.value)]);
+  }
+
+  Future<void> loadStats() async {
+    statsLoading.value = true;
+    try {
+      stats.value = await _api.fetchEmployeeStats();
+    } catch (_) {
+      // 统计失败不阻断列表。
+    } finally {
+      statsLoading.value = false;
+    }
   }
 
   Future<void> loadPage({int? page}) async {
@@ -77,10 +89,8 @@ class EmployeeArchiveController extends LxController {
     errorMessage.value = null;
     try {
       final result = await _api.fetchEmployeesPage(
-        name: _nameQuery,
-        no: _noQuery,
-        mobile: _mobileQuery,
-        empStatus: filterEmpStatus.value,
+        keyword: _keyword,
+        empStatus: filterEmpStatus.value ?? 'ACTIVE,PENDING_LEAVE',
         empType: filterEmpType.value,
         pageNum: pageNum.value,
         pageSize: pageSize.value,
@@ -106,22 +116,14 @@ class EmployeeArchiveController extends LxController {
     }
   }
 
-  Future<void> refreshAll() => loadPage(page: pageNum.value);
-
   void search() {
-    _nameQuery = nameCtrl.text.trim();
-    _noQuery = noCtrl.text.trim();
-    _mobileQuery = mobileCtrl.text.trim();
+    _keyword = keywordCtrl.text.trim();
     loadPage(page: 1);
   }
 
   void resetSearch() {
-    nameCtrl.clear();
-    noCtrl.clear();
-    mobileCtrl.clear();
-    _nameQuery = '';
-    _noQuery = '';
-    _mobileQuery = '';
+    keywordCtrl.clear();
+    _keyword = '';
     filterEmpStatus.value = null;
     filterEmpType.value = null;
     loadPage(page: 1);
@@ -145,7 +147,19 @@ class EmployeeArchiveController extends LxController {
     for (final o in statusOptions) {
       if (o.$1 == key) return o.$2;
     }
-    return status!.trim();
+    // 兼容旧枚举
+    switch (key) {
+      case 'PENDING':
+        return '待入职';
+      case 'PROBATION':
+        return '试用';
+      case 'LEFT':
+        return '离职';
+      case 'UNPAID_LEAVE':
+        return '停薪留职';
+      default:
+        return status!.trim();
+    }
   }
 
   static String typeLabel(String? type) {
@@ -154,7 +168,15 @@ class EmployeeArchiveController extends LxController {
     for (final o in typeOptions) {
       if (o.$1 == key) return o.$2;
     }
-    return type!.trim();
+    switch (key) {
+      case 'EMPLOYEE':
+      case 'FULL_TIME':
+        return '正式';
+      case 'PART_TIME':
+        return '兼职';
+      default:
+        return type!.trim();
+    }
   }
 
   static String timeTypeLabel(String? timeType) {
@@ -177,30 +199,89 @@ class EmployeeArchiveController extends LxController {
     return s;
   }
 
-  void openDetail(int? userId) {
-    if (userId == null) return;
-    viewingUserId.value = userId;
+  static String dateText(String? raw) {
+    final s = raw?.trim();
+    if (s == null || s.isEmpty) return '-';
+    if (s.length >= 10) return s.substring(0, 10);
+    return s;
+  }
+
+  /// 司龄：不足 30 天按天，不足 12 月按月，否则按年+月。
+  static String tenureText(String? hireDate) {
+    final raw = hireDate?.trim();
+    if (raw == null || raw.isEmpty) return '-';
+    final d = DateTime.tryParse(raw.length >= 10 ? raw.substring(0, 10) : raw);
+    if (d == null) return '-';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = DateTime(d.year, d.month, d.day);
+    final days = today.difference(start).inDays;
+    if (days < 0) return '-';
+    if (days < 30) return '$days天';
+    var months =
+        (today.year - start.year) * 12 + (today.month - start.month);
+    if (today.day < start.day) months -= 1;
+    if (months < 12) return '$months个月';
+    final years = months ~/ 12;
+    final rem = months % 12;
+    if (rem == 0) return '$years年';
+    return '$years年$rem个月';
+  }
+
+  static String titleField(
+    HrmEmployeeProfile row,
+    String? Function(HrmEmployeeTitle title) pick,
+  ) {
+    final t = row.primaryTitle;
+    if (t == null) return '-';
+    return displayOrDash(pick(t));
+  }
+
+  static String contractExpireText(HrmEmployeeProfile row) {
+    DateTime? nearest;
+    for (final c in row.contracts) {
+      final raw = c.expireDate?.trim();
+      if (raw == null || raw.isEmpty) continue;
+      final d = DateTime.tryParse(raw.length >= 10 ? raw.substring(0, 10) : raw);
+      if (d == null) continue;
+      if (nearest == null || d.isBefore(nearest)) nearest = d;
+    }
+    if (nearest == null) return '-';
+    final y = nearest.year.toString().padLeft(4, '0');
+    final m = nearest.month.toString().padLeft(2, '0');
+    final d = nearest.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  void openDetail(String employeeId) {
+    final id = employeeId.trim();
+    if (id.isEmpty) return;
+    viewingEmployeeId.value = id;
     showDetail.value = true;
   }
 
   void closeDetail() {
     showDetail.value = false;
-    viewingUserId.value = null;
+    viewingEmployeeId.value = null;
   }
 
-  void openEdit(int? userId) {
-    if (userId == null) return;
+  void openEdit({required String employeeId, int? userId}) {
+    final id = employeeId.trim();
+    if (id.isEmpty) return;
+    editingEmployeeId.value = id;
     editingUserId.value = userId;
     showEdit.value = true;
   }
 
   void openCreate() {
+    editingEmployeeId.value = null;
     editingUserId.value = null;
     showEdit.value = true;
   }
 
   void closeEdit() {
     showEdit.value = false;
+    editingEmployeeId.value = null;
     editingUserId.value = null;
   }
 }

@@ -40,11 +40,30 @@ class SrmBusinessLicenseOcrResult {
   String? licenseFile;
 
   static SrmBusinessLicenseOcrResult fromJson(Map<String, dynamic> json) {
-    String? s(String key) {
-      final v = json[key];
+    final byLower = <String, Object?>{
+      for (final e in json.entries) e.key.toString().toLowerCase(): e.value,
+    };
+    String? textOf(Object? v) {
       if (v == null) return null;
+      if (v is Map) {
+        final inner = v['amount'] ?? v['value'] ?? v['text'] ?? v['name'];
+        if (inner == null) return null;
+        final t = inner.toString().trim();
+        return t.isEmpty ? null : t;
+      }
       final t = v.toString().trim();
-      return t.isEmpty ? null : t;
+      if (t.isEmpty || t == 'null') return null;
+      return t;
+    }
+
+    String? s(String key, [List<String> alts = const []]) {
+      for (final k in [key, ...alts]) {
+        final direct = textOf(json[k]);
+        if (direct != null) return direct;
+        final folded = textOf(byLower[k.toLowerCase()]);
+        if (folded != null) return folded;
+      }
+      return null;
     }
 
     return SrmBusinessLicenseOcrResult()
@@ -55,13 +74,39 @@ class SrmBusinessLicenseOcrResult {
       ..businessAddress = s('businessAddress')
       ..legalPerson = s('legalPerson')
       ..businessScope = s('businessScope')
-      ..registeredCapital = s('registeredCapital')
-      ..registrationDate = s('registrationDate')
+      ..registeredCapital = s('registeredCapital', const [
+        'regCapital',
+        'regCap',
+        'registCapi',
+        'registerCapital',
+        'capital',
+        'capitalAmount',
+        'registered_capital',
+        'reg_capital',
+        '注册资本',
+        '注册资金',
+        '注册资本金',
+      ])
+      ..registrationDate = s('registrationDate', const [
+        'RegistrationDate',
+        'establishDate',
+        'establishedDate',
+        'foundDate',
+        'esDate',
+        'startDate',
+        'setUpDate',
+        'registerDate',
+        'regDate',
+        'registration_date',
+        '成立日期',
+        '注册日期',
+        '成立时间',
+      ])
       ..validPeriod = s('validPeriod')
       ..validFromDate = s('validFromDate')
       ..validToDate = s('validToDate')
       ..companyForm = s('companyForm')
-      ..issueDate = s('issueDate')
+      ..issueDate = s('issueDate', const ['issue_date'])
       ..message = s('message')
       ..licenseFile = s('licenseFile') ??
           s('fileName') ??

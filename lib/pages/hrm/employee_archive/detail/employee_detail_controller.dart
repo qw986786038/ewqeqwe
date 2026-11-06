@@ -46,9 +46,10 @@ extension EmployeeDetailTabX on EmployeeDetailTab {
 
 /// 人事档案 · 详情（只读展示；编辑走独立编辑页）。
 class EmployeeDetailController extends LxController {
-  EmployeeDetailController(this.userId);
+  EmployeeDetailController(this.employeeId);
 
-  final int userId;
+  /// 员工主键，详情走 `GET /desktop/hrm/employee/{id}`。
+  final String employeeId;
   final _api = HrmApi();
 
   final loading = true.obs;
@@ -82,12 +83,17 @@ class EmployeeDetailController extends LxController {
     loading.value = true;
     errorMessage.value = null;
     try {
+      final id = employeeId.trim();
+      if (id.isEmpty) {
+        throw HrmApiException('员工 id 不能为空');
+      }
+      final p = await _api.fetchEmployeeById(id);
+      final uid = p.userId;
       final results = await Future.wait([
-        _api.fetchEmployeeByUser(userId),
-        _api.fetchEmployeeContacts(userId),
-        _api.fetchEmployeeEducations(userId),
-        _api.fetchEmployeeWorkExperiences(userId),
-        _api.fetchEmployeeContracts(userId),
+        _api.fetchEmployeeContacts(id),
+        _api.fetchEmployeeEducations(id),
+        _api.fetchEmployeeWorkExperiences(id),
+        _api.fetchEmployeeContracts(id),
         _api.fetchOnDutyAssigns(),
         _api.fetchOfficeLocations(),
         _api.fetchPositions(),
@@ -97,33 +103,31 @@ class EmployeeDetailController extends LxController {
         _api.fetchEmployeeProfiles(pageNum: 1, pageSize: 10000),
       ]);
 
-      final p = results[0] as HrmEmployeeProfile;
       profile.value = p;
       contacts
         ..clear()
-        ..addAll(results[1] as List<HrmEmployeeContact>);
+        ..addAll(results[0] as List<HrmEmployeeContact>);
       educations
         ..clear()
-        ..addAll(results[2] as List<HrmEmployeeEdu>);
+        ..addAll(results[1] as List<HrmEmployeeEdu>);
       workExperiences
         ..clear()
-        ..addAll(results[3] as List<HrmEmployeeWork>);
-      // 优先用详情 Vo 内嵌 contracts；子资源为空时再回退独立接口。
+        ..addAll(results[2] as List<HrmEmployeeWork>);
       final nested = p.contracts;
-      final fromApi = results[4] as List<HrmEmployeeContract>;
+      final fromApi = results[3] as List<HrmEmployeeContract>;
       contracts
         ..clear()
         ..addAll(nested.isNotEmpty ? nested : fromApi);
 
       officeLocations
         ..clear()
-        ..addAll(results[6] as List<HrmOfficeLocation>);
+        ..addAll(results[5] as List<HrmOfficeLocation>);
 
-      final positions = results[7] as List<HrmPosition>;
-      final posts = results[8] as List<HrmPost>;
-      final levels = results[9] as List<HrmPostSeqLevel>;
-      final depts = results[10] as List<HrmDept>;
-      final employees = results[11] as List<HrmEmployeeProfile>;
+      final positions = results[6] as List<HrmPosition>;
+      final posts = results[7] as List<HrmPost>;
+      final levels = results[8] as List<HrmPostSeqLevel>;
+      final depts = results[9] as List<HrmDept>;
+      final employees = results[10] as List<HrmEmployeeProfile>;
 
       positionById
         ..clear()
@@ -158,7 +162,7 @@ class EmployeeDetailController extends LxController {
               MapEntry(e.userId!, e.name!.trim()),
         ]);
 
-      final onDuty = results[5] as List<HrmEmployeeAssign>;
+      final onDuty = results[4] as List<HrmEmployeeAssign>;
       assignByPositionId
         ..clear()
         ..addEntries([
@@ -170,7 +174,7 @@ class EmployeeDetailController extends LxController {
         ..clear()
         ..addAll([
           for (final a in onDuty)
-            if (a.employeeUserId == userId) a,
+            if (a.employeeUserId == uid) a,
         ]);
     } catch (e) {
       errorMessage.value = e.toString();

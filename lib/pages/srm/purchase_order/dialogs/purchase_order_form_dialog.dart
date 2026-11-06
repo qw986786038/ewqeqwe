@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_shadcn/shadcn.dart' as shad;
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../../models/srm_purchase_order.dart';
 import '../../../../services/srm_purchase_order_api.dart';
@@ -9,23 +11,25 @@ import 'select_counterpart_dialog.dart';
 
 const _kPrimary = Color(0xFF1677FF);
 const _kMuted = Color(0xFF8C8C8C);
-const _kBarrier = Color(0x99000000);
 
 const _kContractTypeOptions = [
   AppOption(value: '设备采购', label: '设备采购'),
   AppOption(value: '媒介采购', label: '媒介采购'),
   AppOption(value: '物业租赁', label: '物业租赁'),
   AppOption(value: '维保运维', label: '维保运维'),
+  AppOption(value: '灵活用工', label: '灵活用工'),
   AppOption(value: '技术服务', label: '技术服务'),
+  AppOption(value: '物料制作', label: '物料制作'),
+  AppOption(value: '工程施工', label: '工程施工'),
   AppOption(value: '其它', label: '其它'),
 ];
 
 const _kSettlementOptions = [
-  AppOption(value: '项目结算', label: '项目结算'),
   AppOption(value: '月结', label: '月结'),
-  AppOption(value: '30天', label: '30天'),
-  AppOption(value: '60天', label: '60天'),
+  AppOption(value: '季结', label: '季结'),
+  AppOption(value: '项目结算', label: '项目结算'),
   AppOption(value: '预付', label: '预付'),
+  AppOption(value: '货到付款', label: '货到付款'),
 ];
 
 const _kInvoiceTypeOptions = [
@@ -34,12 +38,15 @@ const _kInvoiceTypeOptions = [
 ];
 
 const _kTaxRateOptions = [
-  AppOption(value: '1%', label: '1%'),
   AppOption(value: '3%', label: '3%'),
   AppOption(value: '6%', label: '6%'),
   AppOption(value: '9%', label: '9%'),
+  AppOption(value: '11%', label: '11%'),
   AppOption(value: '13%', label: '13%'),
+  AppOption(value: '其他', label: '其他'),
 ];
+
+const _kTaxRatePresets = {'3%', '6%', '9%', '11%', '13%'};
 
 enum _PoFormMode { create, view, edit }
 
@@ -66,11 +73,9 @@ Future<bool> _showPoFormDialog(
   String? orderId,
 }) {
   final hostContext = context;
-  return AppDialog.show<bool>(
+  return showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
-    barrierColor: _kBarrier,
     builder: (dialogContext) {
       final mq = MediaQuery.of(dialogContext);
       return AppShadcnScope(
@@ -92,12 +97,12 @@ Future<bool> _showPoFormDialog(
             initialMode: mode,
             orderId: orderId,
             hostContext: hostContext,
-            onClose: (ok) => AppOverlay.close<bool>(dialogContext, ok),
+            onClose: (ok) => Navigator.of(dialogContext).pop(ok),
           ),
         ),
       );
     },
-  ).future.then((v) => v == true);
+  ).then((v) => v == true);
 }
 
 class _PurchaseOrderFormDialog extends StatefulWidget {
@@ -232,6 +237,27 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
     return s.isEmpty ? null : s;
   }
 
+  String? _resolveTaxRate(Map<String, Object?> values) {
+    final selected = _asTrimmed(values['taxRate']);
+    if (selected == null) return null;
+    if (selected != '其他') return selected;
+    final custom = _asTrimmed(values['taxRateCustom']);
+    if (custom == null) return '其他';
+    final raw = custom.endsWith('%')
+        ? custom.substring(0, custom.length - 1)
+        : custom;
+    final n = num.tryParse(raw);
+    if (n == null || n < 0) {
+      throw SrmPurchaseOrderApiException('请输入税率');
+    }
+    if (n > 100) return '100%';
+    return '$raw%';
+  }
+
+  String? _resolveSettlement(Map<String, Object?> values) {
+    return _asTrimmed(values['settlementMethod']);
+  }
+
   Map<String, dynamic> _buildBody(Map<String, Object?> values) {
     final body = <String, dynamic>{};
     void put(String key, Object? value) {
@@ -247,9 +273,9 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
     put('contractType', _asTrimmed(values['contractType']));
     put('orderAmount', _asAmount(values['orderAmount']));
     put('orderTime', _formatDate(values['orderTime'] as DateTime?));
-    put('settlementMethod', _asTrimmed(values['settlementMethod']));
+    put('settlementMethod', _resolveSettlement(values));
     put('invoiceType', _asTrimmed(values['invoiceType']));
-    put('taxRate', _asTrimmed(values['taxRate']));
+    put('taxRate', _resolveTaxRate(values));
     put('city', _cityFromPath(values['city']));
     put('contactName', _asTrimmed(values['contactName']));
     put('staffName', _asTrimmed(values['staffName']));
@@ -266,13 +292,15 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
   Future<void> _submit() async {
     if (_saving || _readOnly) return;
     final ok = await _form.submit((values) async {
-      final body = _buildBody(values);
-      final name = body['orderName']?.toString().trim() ?? '';
-      final brand = body['brandName']?.toString().trim() ?? '';
-      if (name.isEmpty || brand.isEmpty) return;
-
       setState(() => _saving = true);
       try {
+        final body = _buildBody(values);
+        final name = body['orderName']?.toString().trim() ?? '';
+        final brand = body['brandName']?.toString().trim() ?? '';
+        if (name.isEmpty || brand.isEmpty) {
+          setState(() => _saving = false);
+          return;
+        }
         if (_mode == _PoFormMode.create) {
           await _api.create(body);
         } else {
@@ -556,14 +584,10 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               name: 'orderTime',
               label: '订单时间',
               hintText: '请选择日期',
+              // popover 在 HyperDialog 内无法点「确定」，改 dialog
+              mode: shad.PromptMode.dialog,
             ),
-            right: const AppSelectFormField<String>(
-              name: 'settlementMethod',
-              label: '结算方式',
-              hintText: '请选择',
-              clearable: true,
-              options: _kSettlementOptions,
-            ),
+            right: const _PoSettlementField(),
           ),
           _twoCol(
             left: const AppSelectFormField<String>(
@@ -573,13 +597,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               clearable: true,
               options: _kInvoiceTypeOptions,
             ),
-            right: const AppSelectFormField<String>(
-              name: 'taxRate',
-              label: '税率',
-              hintText: '请选择',
-              clearable: true,
-              options: _kTaxRateOptions,
-            ),
+            right: const _PoTaxRateField(),
           ),
           _twoCol(
             left: AppRegionPickerFormField<String>(
@@ -668,18 +686,12 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               name: 'orderTime',
               label: '订单时间',
               hintText: '请选择日期',
+              mode: shad.PromptMode.dialog,
               initialValue: _parseDate(d.orderTime),
             ),
           ),
           _twoCol(
-            left: AppSelectFormField<String>(
-              name: 'settlementMethod',
-              label: '结算方式',
-              hintText: '请选择',
-              clearable: true,
-              options: _kSettlementOptions,
-              initialValue: d.settlementMethod,
-            ),
+            left: _PoSettlementField(initialValue: d.settlementMethod),
             right: AppSelectFormField<String>(
               name: 'invoiceType',
               label: '发票类型',
@@ -690,14 +702,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
             ),
           ),
           _twoCol(
-            left: AppSelectFormField<String>(
-              name: 'taxRate',
-              label: '税率',
-              hintText: '请选择',
-              clearable: true,
-              options: _kTaxRateOptions,
-              initialValue: d.taxRate,
-            ),
+            left: _PoTaxRateField(initialValue: d.taxRate),
             right: AppRegionPickerFormField<String>(
               name: 'city',
               label: '城市',
@@ -736,9 +741,11 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
     return AppForm(
       key: ValueKey('po-form-$_formEpoch'),
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: Text(_title),
-        constraints: const BoxConstraints(minWidth: 720, maxWidth: 780),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 780),
+        onClose: () => widget.onClose(false),
         content: _bootLoading
             ? const SizedBox(
                 height: 240,
@@ -746,42 +753,155 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               )
-            : SingleChildScrollView(
-                child: switch (_mode) {
-                  _PoFormMode.view when d != null => _buildViewBody(d),
-                  _PoFormMode.create => _buildCreateBody(),
-                  _PoFormMode.edit when d != null => _buildEditBody(d),
-                  _ => const SizedBox.shrink(),
-                },
-              ),
+            : switch (_mode) {
+                _PoFormMode.view when d != null => _buildViewBody(d),
+                _PoFormMode.create => _buildCreateBody(),
+                _PoFormMode.edit when d != null => _buildEditBody(d),
+                _ => const SizedBox.shrink(),
+              },
         actions: [
           if (_mode == _PoFormMode.view) ...[
-            AppButton.outline(
+            HyperButton.outlined(
               onPressed: () => widget.onClose(false),
-              child: const Text('关闭'),
+              label: const Text('关闭'),
             ),
-            AppButton.primary(
+            HyperButton.filled(
               onPressed: _bootLoading ? null : _enterEdit,
-              child: const Text('编辑'),
+              label: const Text('编辑'),
             ),
           ] else ...[
-            AppButton.outline(
+            HyperButton.outlined(
               onPressed: _saving ? null : () => widget.onClose(false),
-              child: Text(_isCreate ? '取消' : '关闭'),
+              label: Text(_isCreate ? '取消' : '关闭'),
             ),
-            AppButton.primary(
-              loading: _saving,
-              loadingLabel: '保存中…',
+            HyperButton.filled(
               onPressed: _bootLoading || _saving
                   ? null
                   : () async {
                       await _submit();
                     },
-              child: const Text('保存'),
+              label: Text(_saving ? '保存中…' : '保存'),
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// 手填税率超过 100 时，把输入收成 100。
+class _CapTaxRateFormatter extends TextInputFormatter {
+  const _CapTaxRateFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    if (text.isEmpty) return newValue;
+    final n = num.tryParse(text);
+    if (n == null || n <= 100) return newValue;
+    return const TextEditingValue(
+      text: '100',
+      selection: TextSelection.collapsed(offset: 3),
+    );
+  }
+}
+
+/// 税率：选「其他」时可手填。
+class _PoTaxRateField extends StatefulWidget {
+  const _PoTaxRateField({this.initialValue});
+
+  final String? initialValue;
+
+  @override
+  State<_PoTaxRateField> createState() => _PoTaxRateFieldState();
+}
+
+class _PoTaxRateFieldState extends State<_PoTaxRateField> {
+  late String? _selected;
+  late String? _custom;
+
+  @override
+  void initState() {
+    super.initState();
+    final rate = widget.initialValue?.trim();
+    if (rate == null || rate.isEmpty) {
+      _selected = null;
+      _custom = null;
+    } else if (_kTaxRatePresets.contains(rate) || rate == '其他') {
+      _selected = rate;
+      _custom = null;
+    } else {
+      _selected = '其他';
+      _custom = rate.endsWith('%') ? rate.substring(0, rate.length - 1) : rate;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 8,
+      children: [
+        AppSelectFormField<String>(
+          name: 'taxRate',
+          label: '税率',
+          hintText: '请选择',
+          clearable: true,
+          options: _kTaxRateOptions,
+          initialValue: _selected,
+          onChanged: (v) => setState(() => _selected = v),
+        ),
+        if (_selected == '其他')
+          AppTextFormField(
+            name: 'taxRateCustom',
+            hintText: '请输入税率',
+            initialValue: _custom,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              const _CapTaxRateFormatter(),
+            ],
+            trailing: const Text(
+              '%',
+              style: TextStyle(fontSize: 13, color: _kMuted),
+            ),
+            validator: (v) {
+              final text = v?.trim() ?? '';
+              if (text.isEmpty) return '请输入税率';
+              final n = num.tryParse(text);
+              if (n == null || n < 0) return '请输入税率';
+              return null;
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _PoSettlementField extends StatelessWidget {
+  const _PoSettlementField({this.initialValue});
+
+  final String? initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = initialValue?.trim();
+    final known = _kSettlementOptions.any((o) => o.value == raw);
+    final options = [
+      if (raw != null && raw.isNotEmpty && !known)
+        AppOption(value: raw, label: raw),
+      ..._kSettlementOptions,
+    ];
+    return AppSelectFormField<String>(
+      name: 'settlementMethod',
+      label: '结算方式',
+      hintText: '请选择',
+      clearable: true,
+      options: options,
+      initialValue: (raw == null || raw.isEmpty) ? null : raw,
     );
   }
 }

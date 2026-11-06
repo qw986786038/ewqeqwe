@@ -11,12 +11,16 @@ class HrmPlaceholderPage extends StatelessWidget {
   final String menuId;
 
   static const titles = <String, String>{
-    'hrm_post': '岗位管理',
-    'hrm_post_seq': '岗位序列',
-    'hrm_seat': '席位',
-    'hrm_archive': '人事档案',
-    'hrm_directory': '企业通讯录',
+    'hrm_org': '部门',
+    'hrm_post': '职务',
+    'hrm_post_seq': '序列',
+    'hrm_seat': '编制',
     'hrm_workplace': '工作地点',
+    'hrm_archive': '花名册',
+    'hrm_onboarding': '入职管理',
+    'hrm_regularization': '转正管理',
+    'hrm_offboarding': '离职管理',
+    'hrm_directory': '企业通讯录',
   };
 
   static String titleOf(String menuId) => titles[menuId] ?? 'HRM';

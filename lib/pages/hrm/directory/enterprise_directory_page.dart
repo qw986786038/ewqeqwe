@@ -3,6 +3,7 @@ import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/hrm_employee.dart';
+import '../../location_breadcrumb.dart';
 import 'enterprise_directory_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -44,7 +45,15 @@ class _Body extends StatelessWidget {
     final c = context.lx.find<EnterpriseDirectoryController>();
     return ColoredBox(
       color: _kPageBg,
-      child: Obx(() {
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: LocationBreadcrumb(segments: ['HRM', '企业通讯录']),
+          ),
+          Expanded(
+            child: Obx(() {
         if (c.loading.value && c.roots.isEmpty) {
           return const Center(
             child: SizedBox(
@@ -79,6 +88,9 @@ class _Body extends StatelessWidget {
           ],
         );
       }),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -314,7 +326,7 @@ class _PeoplePanel extends StatelessWidget {
                   style: const TextStyle(fontSize: 13),
                   onChanged: c.onSearchChanged,
                   decoration: InputDecoration(
-                    hintText: '搜索姓名、岗位',
+                    hintText: '搜索姓名、职务',
                     hintStyle: const TextStyle(fontSize: 13, color: _kMuted),
                     prefixIcon: const Icon(
                       Icons.search,

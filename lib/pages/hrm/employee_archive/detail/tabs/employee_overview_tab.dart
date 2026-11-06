@@ -119,11 +119,11 @@ class EmployeeOverviewTab extends StatelessWidget {
                   child: Column(
                     children: [
                       _kv('部门', dept),
-                      _kv('岗位 / 职级', postLevel),
+                      _kv('职务 / 职级', postLevel),
                       _kv('汇报对象', report),
                       _kv('直属下属', '4 人 · 团队 12 人'),
                       _kv(
-                        '岗位状态',
+                        '职务状态',
                         assign?.startDate?.trim().isNotEmpty == true
                             ? '在任 · 自 ${assign!.startDate!.trim()}'
                             : '在任 · 自 2021-04-01',
@@ -373,7 +373,7 @@ class EmployeeOverviewTab extends StatelessWidget {
           const SizedBox(height: 12),
           _Panel(
             titleIcon: const Icon(Icons.schedule, size: 16, color: _kPrimary),
-            title: '岗位任职时间线',
+            title: '职务任职时间线',
             titleTrailing: const Text(
               '入职 → 试用 → 转正 → 调岗 → 晋升 → 调薪',
               style: TextStyle(fontSize: 12, color: _kMuted),
@@ -411,7 +411,7 @@ class EmployeeOverviewTab extends StatelessWidget {
                   color: _kWarnBtn,
                   title: '调岗',
                   date: '2021-07-01',
-                  badge: '岗位调整',
+                  badge: '职务调整',
                   badgeFg: _kWarnFg,
                   badgeBg: _kWarnBg,
                   desc: '由客户二组调至大客户部，负责豪华车线；汇报线调整为林哲。',

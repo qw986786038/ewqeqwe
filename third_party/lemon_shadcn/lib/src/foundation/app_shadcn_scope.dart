@@ -339,6 +339,15 @@ class AppTheme extends InheritedWidget {
     return context.dependOnInheritedWidgetOfExactType<AppTheme>()?.config;
   }
 
+  /// 把当前 Scope 的主题挂到浮层内容上。
+  /// 日期等 popover 挂在根 Overlay，看不到弹窗里的 [AppShadcnScope]。
+  /// 不用 [maybeOf]：浮层 build 时不能给锚点登记依赖。
+  static Widget capture(BuildContext context, Widget child) {
+    final theme = context.findAncestorWidgetOfExactType<AppTheme>();
+    if (theme == null) return child;
+    return AppTheme._(config: theme.config, child: child);
+  }
+
   @override
   bool updateShouldNotify(AppTheme oldWidget) => config != oldWidget.config;
 }

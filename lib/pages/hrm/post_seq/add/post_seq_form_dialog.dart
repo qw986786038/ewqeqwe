@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../../models/hrm_post_seq.dart';
@@ -7,15 +8,16 @@ import '../post_seq_controller.dart';
 
 const _kChannelOptions = <AppOption<String>>[
   AppOption(value: 'M', label: '管理岗'),
+  AppOption(value: 'S', label: '销售岗'),
   AppOption(value: 'T', label: '技术岗'),
 ];
 
-/// 打开「新增岗位序列」弹窗；成功后刷新列表。
+/// 打开「新增序列」弹窗；成功后刷新列表。
 Future<void> showPostSeqAddDialog(BuildContext context) {
   return _showPostSeqFormDialog(context, editing: null);
 }
 
-/// 打开「修改岗位序列」弹窗；成功后刷新列表。
+/// 打开「修改序列」弹窗；成功后刷新列表。
 Future<void> showPostSeqEditDialog(BuildContext context, HrmPostSeq seq) {
   return _showPostSeqFormDialog(context, editing: seq);
 }
@@ -29,24 +31,24 @@ Future<void> _showPostSeqFormDialog(
   final isEdit = editing != null;
   final editId = editing?.id?.trim();
   if (isEdit && (editId == null || editId.isEmpty)) {
-    AppToast.show(context: context, title: '岗位序列 id 无效');
+    AppToast.show(context: context, title: '序列 id 无效');
     return Future.value();
   }
 
   final channel = editing?.channel?.trim().toUpperCase();
   final initialChannel =
-      (channel == 'M' || channel == 'T') ? channel! : 'M';
+      (channel == 'M' || channel == 'S' || channel == 'T') ? channel! : 'M';
 
-  return AppDialog.show<void>(
+  return showHyperDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => _PostSeqFormDialog(
-      title: isEdit ? '修改岗位序列' : '新增岗位序列',
+      title: isEdit ? '修改序列' : '新增序列',
       initialCode: editing?.code?.trim() ?? '',
       initialName: editing?.name?.trim() ?? '',
       initialChannel: initialChannel,
       initialOrderNum: editing?.orderNum ?? c.nextOrderNum,
-      onClose: () => AppOverlay.close<void>(dialogContext),
+      onClose: () => Navigator.of(dialogContext).pop(),
       onSubmit: (payload) async {
         if (isEdit) {
           await c.updateSeq(
@@ -57,7 +59,7 @@ Future<void> _showPostSeqFormDialog(
             orderNum: payload.orderNum,
           );
           if (hostContext.mounted) {
-            AppToast.show(context: hostContext, title: '修改岗位序列成功');
+            AppToast.show(context: hostContext, title: '修改序列成功');
           }
         } else {
           await c.createSeq(
@@ -67,12 +69,12 @@ Future<void> _showPostSeqFormDialog(
             orderNum: payload.orderNum,
           );
           if (hostContext.mounted) {
-            AppToast.show(context: hostContext, title: '新增岗位序列成功');
+            AppToast.show(context: hostContext, title: '新增序列成功');
           }
         }
       },
     ),
-  ).future;
+  );
 }
 
 class _PostSeqFormPayload {
@@ -162,9 +164,11 @@ class _PostSeqFormDialogState extends State<_PostSeqFormDialog> {
   Widget build(BuildContext context) {
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: Text(widget.title),
-        constraints: const BoxConstraints(minWidth: 440, maxWidth: 480),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 480),
+        onClose: _saving ? null : widget.onClose,
         content: AppFieldScope.horizontal(
           labelWidth: 88,
           child: Column(
@@ -224,19 +228,18 @@ class _PostSeqFormDialogState extends State<_PostSeqFormDialog> {
           ),
         ),
         actions: [
-          AppButton.primary(
+          HyperButton.filled(
             loading: _saving,
-            loadingLabel: '提交中…',
             onPressed: _saving
                 ? null
                 : () async {
                     await _submit();
                   },
-            child: const Text('确定'),
+            label: Text(_saving ? '提交中…' : '确定'),
           ),
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: _saving ? null : widget.onClose,
-            child: const Text('取消'),
+            label: const Text('取消'),
           ),
         ],
       ),

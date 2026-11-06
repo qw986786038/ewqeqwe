@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/hrm_office_location.dart';
 import 'add/workplace_form_dialog.dart';
+import '../../location_breadcrumb.dart';
 import 'workplace_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -40,6 +42,7 @@ class _Body extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const LocationBreadcrumb(segments: ['HRM', '工作地点']),
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               decoration: BoxDecoration(
@@ -227,6 +230,9 @@ class _Body extends StatelessWidget {
                                   id: 'name',
                                   title: '办公地址名称',
                                   width: 160,
+                                  minWidth: 120,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
+                                  flex: 1,
                                   value: (row) =>
                                       row.name?.trim().isNotEmpty == true
                                           ? row.name!.trim()
@@ -236,6 +242,9 @@ class _Body extends StatelessWidget {
                                   id: 'address',
                                   title: '详细地址',
                                   width: 280,
+                                  minWidth: 160,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
+                                  flex: 2,
                                   value: (row) =>
                                       row.address?.trim().isNotEmpty == true
                                           ? row.address!.trim()
@@ -330,23 +339,23 @@ Future<void> _confirmDelete(
       : id;
   final hostContext = context;
   final c = context.lx.find<WorkplaceController>();
-  final ok = await AppDialog.show<bool>(
+  final ok = await showHyperDialog<bool>(
     context: context,
-    builder: (dialogContext) => AppAlertDialog(
+    builder: (dialogContext) => HyperDialog(
       title: const Text('确认删除'),
       content: Text('确定删除办公地「$name」吗？'),
       actions: [
-        AppButton.outline(
-          onPressed: () => AppOverlay.close(dialogContext, false),
-          child: const Text('取消'),
+        HyperButton.outlined(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          label: const Text('取消'),
         ),
-        AppButton.destructive(
-          onPressed: () => AppOverlay.close(dialogContext, true),
-          child: const Text('删除'),
+        HyperButton.filled(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          label: const Text('删除'),
         ),
       ],
     ),
-  ).future;
+  );
   if (ok != true) return;
   try {
     await c.deleteLocation(id);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../../models/hrm_dept.dart';
 import '../../../../models/hrm_employee_assign.dart';
@@ -35,15 +36,15 @@ Future<bool> showEmployeeRelieveDialog(
     return '用户 $userId';
   }();
 
-  return AppDialog.show<bool>(
+  return showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => _EmployeeRelieveDialog(
       employeeUserId: userId,
       fallbackName: fallbackName,
-      onClose: (ok) => AppOverlay.close<bool>(dialogContext, ok),
+      onClose: (ok) => Navigator.of(dialogContext).pop(ok),
     ),
-  ).future.then((v) => v == true);
+  ).then((v) => v == true);
 }
 
 class _EmployeeRelieveDialog extends StatefulWidget {
@@ -234,9 +235,11 @@ class _EmployeeRelieveDialogState extends State<_EmployeeRelieveDialog> {
 
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: const Text('卸任'),
-        constraints: const BoxConstraints(minWidth: 440, maxWidth: 480),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 480),
+        onClose: _saving ? null : () => widget.onClose(false),
         content: _loading
             ? const SizedBox(
                 height: 200,
@@ -264,9 +267,9 @@ class _EmployeeRelieveDialogState extends State<_EmployeeRelieveDialog> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          AppButton.outline(
+                          HyperButton.outlined(
                             onPressed: _loadOptions,
-                            child: const Text('重试'),
+                            label: const Text('重试'),
                           ),
                         ],
                       ),
@@ -326,13 +329,12 @@ class _EmployeeRelieveDialogState extends State<_EmployeeRelieveDialog> {
                     ),
                   ),
         actions: [
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: _saving ? null : () => widget.onClose(false),
-            child: const Text('取消'),
+            label: const Text('取消'),
           ),
-          AppButton.primary(
+          HyperButton.filled(
             loading: _saving,
-            loadingLabel: '提交中…',
             onPressed: (_saving ||
                     _loading ||
                     _loadError != null ||
@@ -341,7 +343,7 @@ class _EmployeeRelieveDialogState extends State<_EmployeeRelieveDialog> {
                 : () async {
                     await _submit();
                   },
-            child: const Text('确定'),
+            label: Text(_saving ? '提交中…' : '确定'),
           ),
         ],
       ),

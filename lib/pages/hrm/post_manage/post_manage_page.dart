@@ -4,6 +4,7 @@ import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/hrm_post.dart';
 import 'add/post_manage_add_dialog.dart';
+import '../../location_breadcrumb.dart';
 import 'post_manage_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -12,7 +13,7 @@ const _kMuted = Color(0xFF8C8C8C);
 const _kBorder = Color(0xFFE5E6EB);
 const _kLabel = Color(0xFF4E5969);
 
-/// HRM · 岗位管理。
+/// HRM · 职务。
 class PostManagePage extends StatelessWidget {
   const PostManagePage({super.key});
 
@@ -40,6 +41,7 @@ class _Body extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const LocationBreadcrumb(segments: ['HRM', '职务']),
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               decoration: BoxDecoration(
@@ -50,7 +52,7 @@ class _Body extends StatelessWidget {
               child: Row(
                 children: [
                   const Text(
-                    '岗位名称',
+                    '职务名称',
                     style: TextStyle(fontSize: 13, color: _kLabel),
                   ),
                   const SizedBox(width: 10),
@@ -62,7 +64,7 @@ class _Body extends StatelessWidget {
                       onSubmitted: (_) => c.search(),
                       decoration: InputDecoration(
                         isDense: true,
-                        hintText: '请输入岗位名称',
+                        hintText: '请输入职务名称',
                         hintStyle: const TextStyle(
                           fontSize: 13,
                           color: Color(0xFFC9CDD4),
@@ -214,37 +216,21 @@ class _Body extends StatelessWidget {
                               cellTextStyle: const TextStyle(fontSize: 12),
                               empty: const Center(
                                 child: Text(
-                                  '暂无岗位',
+                                  '暂无职务',
                                   style: TextStyle(color: _kMuted),
                                 ),
                               ),
                               columns: [
                                 AppDataGridColumn(
                                   id: 'name',
-                                  title: '岗位名称',
+                                  title: '职务名称',
                                   width: 140,
+                                  minWidth: 120,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
                                   value: (row) =>
                                       row.name?.trim().isNotEmpty == true
                                           ? row.name!.trim()
                                           : '-',
-                                ),
-                                AppDataGridColumn(
-                                  id: 'seq',
-                                  title: '岗位序列',
-                                  width: 220,
-                                  value: (row) => c.seqDisplay(row),
-                                ),
-                                AppDataGridColumn(
-                                  id: 'levelMin',
-                                  title: '职级下限',
-                                  width: 100,
-                                  value: (row) => c.levelCodeMin(row),
-                                ),
-                                AppDataGridColumn(
-                                  id: 'levelMax',
-                                  title: '职级上限',
-                                  width: 100,
-                                  value: (row) => c.levelCodeMax(row),
                                 ),
                                 AppDataGridColumn(
                                   id: 'order',
@@ -287,12 +273,8 @@ class _Body extends StatelessWidget {
                                           ),
                                         ),
                                         AppInkWell(
-                                          onPressed: () {
-                                            AppToast.show(
-                                              context: context,
-                                              title: '删除岗位待接入',
-                                            );
-                                          },
+                                          onPressed: () =>
+                                              confirmDeletePost(context, row),
                                           borderRadius:
                                               BorderRadius.circular(4),
                                           child: const Padding(

@@ -309,7 +309,10 @@ class _OverviewCard extends StatelessWidget {
                           label: '关联关系',
                           value: c.entityRelationLabel,
                         ),
-                        const _TableInfoCell.empty(),
+                        _TableInfoCell(
+                          label: '企业简称',
+                          value: c.entityShortName,
+                        ),
                         const _TableInfoCell.empty(),
                       ],
                     ),

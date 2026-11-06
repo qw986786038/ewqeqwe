@@ -1,6 +1,8 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_shadcn/shadcn.dart' show CheckboxState;
 import 'package:lemon_x/lemon_x.dart';
 
@@ -256,8 +258,7 @@ class _Body extends StatelessWidget {
                         _FilterField(
                           width: 148,
                           label: '供应商类型',
-                          child: _FilterDropdown(
-                            fieldKey: 'st',
+                          child: _FilterSelect(
                             value: c.supplierType.value,
                             options:
                                 SupplierListController.supplierTypeOptions,
@@ -309,6 +310,9 @@ class _Body extends StatelessWidget {
                                   child: TextField(
                                     controller: c.teamSizeMinCtrl,
                                     keyboardType: TextInputType.number,
+                                    inputFormatters:  [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
                                     decoration: _inputDecoration('最小'),
                                     onSubmitted: (_) => c.search(),
                                   ),
@@ -324,6 +328,9 @@ class _Body extends StatelessWidget {
                                   child: TextField(
                                     controller: c.teamSizeMaxCtrl,
                                     keyboardType: TextInputType.number,
+                                    inputFormatters:  [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
                                     decoration: _inputDecoration('最大'),
                                     onSubmitted: (_) => c.search(),
                                   ),
@@ -334,8 +341,7 @@ class _Body extends StatelessWidget {
                           _FilterField(
                             width: 148,
                             label: '合作模式',
-                            child: _FilterDropdown(
-                              fieldKey: 'cm',
+                            child: _FilterSelect(
                               value: c.cooperationMode.value,
                               options: SupplierListController
                                   .cooperationModeOptions,
@@ -345,19 +351,21 @@ class _Body extends StatelessWidget {
                           _FilterField(
                             width: 148,
                             label: '结算方式',
-                            child: _FilterDropdown(
-                              fieldKey: 'sm',
+                            child: _FilterSelect(
                               value: c.settlementMethod.value,
                               options: SupplierListController
                                   .settlementMethodOptions,
-                              onChanged: (v) => c.settlementMethod.value = v,
+                              labelBuilder: _settleFilterLabel,
+                              selectedOptions: _settleSelectedOption(
+                                c.settlementMethod.value,
+                              ),
+                              onChanged: c.setSettlementFromTop,
                             ),
                           ),
                           _FilterField(
                             width: 140,
                             label: '合作状态',
-                            child: _FilterDropdown(
-                              fieldKey: 'cs',
+                            child: _FilterSelect(
                               value: c.status.value,
                               options: SupplierListController.statusOptions,
                               onChanged: (v) => c.status.value = v,
@@ -366,8 +374,7 @@ class _Body extends StatelessWidget {
                           _FilterField(
                             width: 120,
                             label: '黑名单',
-                            child: _FilterDropdown(
-                              fieldKey: 'bl',
+                            child: _FilterSelect(
                               value: c.blacklistStatus.value,
                               options: SupplierListController.blacklistOptions,
                               onChanged: (v) => c.blacklistStatus.value = v,
@@ -459,12 +466,8 @@ class _Body extends StatelessWidget {
                         const SizedBox(width: 8),
                         AppButton.primary(
                           onPressed: () async {
-                            final ok = await Navigator.of(context).push<bool>(
-                              MaterialPageRoute(
-                                builder: (_) => const SupplierEditPage(),
-                              ),
-                            );
-                            if (ok == true && context.mounted) {
+                            final ok = await showSupplierEditDialog(context);
+                            if (ok && context.mounted) {
                               await c.refreshAll(clearSelected: true);
                             }
                           },
@@ -1113,39 +1116,98 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _FilterDropdown extends StatelessWidget {
-  const _FilterDropdown({
-    required this.fieldKey,
+final _customSettleDay = RegExp(r'^(\d+)天$');
+
+bool _isPresetSettle(String text) {
+  return SupplierListController.settlementMethodOptions
+      .any((item) => item.$1 == text);
+}
+
+String _settleFilterLabel(String raw) {
+  final text = raw.trim();
+  if (_customSettleDay.hasMatch(text) && !_isPresetSettle(text)) {
+    return text.substring(0, text.length - 1);
+  }
+  return text;
+}
+
+List<HyperSelectOption<String>> _settleSelectedOption(String? value) {
+  final text = value?.trim();
+  if (text == null || text.isEmpty) return const [];
+  if (_isPresetSettle(text)) return const [];
+  return [HyperSelectOption(value: text, label: _settleFilterLabel(text))];
+}
+
+/// 筛选区下拉：lemon_ui `HyperSelect`，白底圆角。
+class _FilterSelect extends StatelessWidget {
+  const _FilterSelect({
     required this.value,
     required this.options,
     required this.onChanged,
+    this.labelBuilder,
+    this.selectedOptions = const [],
   });
 
-  final String fieldKey;
   final String? value;
   final List<(String? value, String label)> options;
   final ValueChanged<String?> onChanged;
+  final String Function(String value)? labelBuilder;
+  final List<HyperSelectOption<String>> selectedOptions;
+
+  static const _arrow = Color(0xFF86909C);
+  static const _placeholder = Color(0xFFC9CDD4);
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String?>(
-      key: ValueKey('$fieldKey-$value'),
-      initialValue: value,
-      isDense: true,
-      isExpanded: true,
-      decoration: _inputDecoration('全部'),
-      items: [
-        for (final o in options)
-          DropdownMenuItem(
-            value: o.$1,
-            child: Text(
-              o.$2,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    final empty = value == null || value!.trim().isEmpty;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return HyperSelect<String>(
+          value: empty ? null : value,
+          placeholder: '全部',
+          allowDeselect: true,
+          labelBuilder: labelBuilder,
+          selectedOptions: selectedOptions,
+          size: HyperButtonSizeVariant.small,
+          options: [
+            for (final option in options)
+              if (option.$1 != null)
+                HyperSelectOption(value: option.$1!, label: option.$2),
+          ],
+          onChanged: onChanged,
+          menuStyle: const HyperMenuStyle(
+            surfaceRadius: 10,
+            itemRadius: 8,
+            itemHeight: 34,
+          ),
+          style: HyperSelectStyle(
+            width: width,
+            arrowSize: 16,
+            arrowSpacing: 4,
+            arrowColor: _arrow,
+            foregroundColor: empty ? _placeholder : _kTitle,
+            buttonStyle: HyperButtonStyle(
+              width: width,
+              height: 34,
+              background: HyperFill.color(Colors.white),
+              boxBorder: Border.all(color: _kBorder),
+              borderRadius: BorderRadius.circular(8),
+              padding: const EdgeInsets.fromLTRB(10, 0, 8, 0),
+              textStyle: TextStyle(
+                fontSize: 13,
+                height: 1.2,
+                fontWeight: FontWeight.w400,
+                color: empty ? _placeholder : _kTitle,
+              ),
+              boxShadow: const [],
+              hoveredBoxShadow: const [],
+              pressedBoxShadow: const [],
+              focusedBoxShadow: const [],
             ),
           ),
-      ],
-      onChanged: onChanged,
+        );
+      },
     );
   }
 }
@@ -1244,37 +1306,42 @@ class _PageSizeMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
-        side: const BorderSide(color: _kBorder),
+    const color = Color(0xFF4E5969);
+    return HyperSelect<int>(
+      value: size,
+      size: HyperButtonSizeVariant.small,
+      labelBuilder: (v) => '$v条/页',
+      options: [
+        for (final v in _options)
+          HyperSelectOption(value: v, label: '$v条/页'),
+      ],
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+      menuStyle: const HyperMenuStyle(
+        width: 120,
+        surfaceRadius: 10,
+        itemRadius: 8,
+        itemHeight: 32,
       ),
-      child: PopupMenuButton<int>(
-        initialValue: size,
-        tooltip: '每页条数',
-        padding: EdgeInsets.zero,
-        onSelected: onChanged,
-        itemBuilder: (context) => [
-          for (final v in _options)
-            PopupMenuItem<int>(
-              value: v,
-              height: 36,
-              child: Text('$v条/页'),
-            ),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$size条/页',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF4E5969)),
-              ),
-              const Icon(Icons.arrow_drop_down, size: 18, color: Color(0xFF4E5969)),
-            ],
-          ),
+      style: HyperSelectStyle(
+        width: 108,
+        arrowSize: 16,
+        arrowSpacing: 2,
+        arrowColor: color,
+        foregroundColor: color,
+        buttonStyle: HyperButtonStyle(
+          width: 108,
+          height: 32,
+          background: HyperFill.color(Colors.white),
+          boxBorder: Border.all(color: _kBorder),
+          borderRadius: BorderRadius.circular(8),
+          padding: const EdgeInsets.fromLTRB(8, 0, 4, 0),
+          textStyle: const TextStyle(fontSize: 12, color: color),
+          boxShadow: const [],
+          hoveredBoxShadow: const [],
+          pressedBoxShadow: const [],
+          focusedBoxShadow: const [],
         ),
       ),
     );
@@ -1512,18 +1579,7 @@ class _SupplierGridWithColumnFiltersState
 
   double _hScroll = 0;
 
-  List<String> _optionsFor(String id) {
-    return switch (id) {
-      'supplierType' => SupplierListController.columnSupplierTypeOptions,
-      'category' => SupplierListController.columnCategoryOptions,
-      'nature' => SupplierListController.columnNatureOptions,
-      'teamSize' => SupplierListController.columnTeamSizeOptions,
-      'coop' => SupplierListController.columnCoopOptions,
-      'settle' => SupplierListController.columnSettleOptions,
-      'city' => SupplierListController.columnCityOptions,
-      _ => const <String>[],
-    };
-  }
+  List<String> _optionsFor(String id) => widget.controller.columnOptionsOf(id);
 
   @override
   Widget build(BuildContext context) {
@@ -1625,6 +1681,7 @@ class _SupplierGridWithColumnFiltersState
                                   width: col.width,
                                   options: _optionsFor(col.id),
                                   selected: selected,
+                                  customDayInput: col.id == 'settle',
                                   alignment:
                                       col.titleAlignment ?? col.alignment,
                                   onApply: (next) =>

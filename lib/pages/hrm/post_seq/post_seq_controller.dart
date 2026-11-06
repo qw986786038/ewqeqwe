@@ -63,8 +63,8 @@ class PostSeqController extends LxController {
   Future<void> selectSeq(String id) async {
     final next = id.trim();
     if (next.isEmpty) return;
-    if (selectedSeqId.value == next && levels.isNotEmpty) return;
     selectedSeqId.value = next;
+    // 始终按选中序列拉职级：`GET …/post-seq-level/post-seq/{postSeqId}`。
     await loadLevels(next);
   }
 
@@ -73,6 +73,8 @@ class PostSeqController extends LxController {
     levelError.value = null;
     try {
       final list = await _api.fetchPostSeqLevelsBySeq(postSeqId);
+      // 右侧列表按排序降序展示（与截图一致：高 order 在上）。
+      list.sort((a, b) => (b.orderNum ?? 0).compareTo(a.orderNum ?? 0));
       levels
         ..clear()
         ..addAll(list);
@@ -114,7 +116,7 @@ class PostSeqController extends LxController {
   }) async {
     final seqId = selectedSeqId.value?.trim();
     if (seqId == null || seqId.isEmpty) {
-      throw HrmApiException('请先选择岗位序列');
+      throw HrmApiException('请先选择序列');
     }
     await _api.createPostSeqLevel(
       postSeqId: seqId,
@@ -135,7 +137,7 @@ class PostSeqController extends LxController {
   }) async {
     final seqId = selectedSeqId.value?.trim();
     if (seqId == null || seqId.isEmpty) {
-      throw HrmApiException('请先选择岗位序列');
+      throw HrmApiException('请先选择序列');
     }
     await _api.updatePostSeqLevel(
       id: id,
@@ -203,25 +205,19 @@ class PostSeqController extends LxController {
     switch (channel?.trim().toUpperCase()) {
       case 'M':
         return '管理岗';
+      case 'S':
+        return '销售岗';
       case 'T':
+      case 'P':
         return '技术岗';
       default:
         return channel?.trim() ?? '';
     }
   }
 
-  /// `10000` → `10,000.00`
+  /// 薪资展示：`3` → `3.00`（与截图一致）。
   static String moneyText(num? value) {
     if (value == null) return '-';
-    final fixed = value.toStringAsFixed(2);
-    final parts = fixed.split('.');
-    final digits = parts[0];
-    final buf = StringBuffer();
-    for (var i = 0; i < digits.length; i++) {
-      final fromEnd = digits.length - i;
-      buf.write(digits[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) buf.write(',');
-    }
-    return '${buf.toString()}.${parts[1]}';
+    return value.toStringAsFixed(2);
   }
 }

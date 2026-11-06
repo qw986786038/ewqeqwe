@@ -129,7 +129,7 @@ void _initializeReflectable(JsonMapperAdapter adapter) {
 }
 
 final mapperGeneratedAdapter = JsonMapperAdapter(
-  title: 'smart_admin',
+  title: 'yidivination',
   url: 'package:yidivination/bokong/mapper.dart',
   reflectableData: _data,
   memberSymbolMap: _memberSymbolMap,

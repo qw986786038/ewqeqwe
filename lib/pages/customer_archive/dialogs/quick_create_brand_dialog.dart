@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:pinyin/pinyin.dart';
 
 import '../../../config/api_config.dart';
@@ -15,6 +17,9 @@ import '../../../services/ad_code_api.dart';
 import '../../../services/auth_session.dart';
 import '../../../services/customer_api.dart';
 import '../../../services/dict_api.dart';
+import '../../../services/file_center_api.dart';
+import 'contact_image_ocr_dialog.dart';
+import 'ocr_text_confirm_dialog.dart';
 import 'contact_vcf_import_dialog.dart';
 import 'contact_vcf_parser.dart';
 import 'select_sales_person_dialog.dart';
@@ -24,7 +29,6 @@ const _kTitle = Color(0xFF141414);
 const _kSectionTitle = Color(0xFF0F172A);
 const _kLabel = Color(0xFF334155);
 const _kMuted = Color(0xFF64748B);
-const _kBarrier = Color(0x99000000);
 const _kCardBorder = Color(0xFFD0D5DD);
 const _kCardBg = Color(0xFFF4F5F7);
 const _kEmptyBg = Color(0xFFEEF0F3);
@@ -38,6 +42,7 @@ const _kStatusOptions = [
 const _kGenderOptions = [
   AppOption(value: '1', label: '男'),
   AppOption(value: '2', label: '女'),
+  AppOption(value: '0', label: '未知'),
 ];
 
 /// 渠道广告公司 · 企业类型 / 所属类型（对照新建表）。
@@ -125,7 +130,7 @@ const _kDictTypes = [
   OacDictTypes.selfMediaMatrix,
 ];
 
-/// 打开「新建客户档案」弹窗。
+/// 打开「新建客户档案」弹窗（与主体概览同款 HyperDialog 小窗）。
 /// [onCreated]：保存成功并关闭弹窗后回调（用于刷新外层列表）。
 /// [customerId]：非空则为编辑，先拉详情回显。
 Future<void> showCreateCustomerArchiveDialog(
@@ -137,11 +142,9 @@ Future<void> showCreateCustomerArchiveDialog(
 }) {
   // 关闭后提示用宿主 context（弹窗内 SnackBar 会被遮罩挡住）。
   final hostContext = context;
-  return AppDialog.show<void>(
+  return showHyperDialog<void>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
-    barrierColor: _kBarrier,
     builder: (dialogContext) {
       final mq = MediaQuery.of(dialogContext);
       return AppShadcnScope(
@@ -164,13 +167,13 @@ Future<void> showCreateCustomerArchiveDialog(
             title: title,
             customerId: customerId,
             hostContext: hostContext,
-            onClose: () => AppOverlay.close<void>(dialogContext),
+            onClose: () => Navigator.of(dialogContext).pop(),
             onCreated: onCreated,
           ),
         ),
       );
     },
-  ).future;
+  );
 }
 
 /// 打开「编辑客户档案」弹窗（与新建同页，拉取详情回显）。
@@ -231,6 +234,7 @@ class _CreateCustomerArchiveDialogState
   final _dictApi = DictApi();
   final _adCodeApi = AdCodeApi();
   final _customerApi = CustomerApi();
+  final _fileCenterApi = FileCenterApi();
 
   var _nextId = 1;
   var _bootLoading = true;
@@ -266,6 +270,7 @@ class _CreateCustomerArchiveDialogState
   String? _lastAppliedBrandLibraryId;
   var _brandLibraryFilling = false;
 
+  Map<String, List<DictDataItem>> _dictItems = const {};
   List<AppOption<String>> _customerTypeOptions = const [];
   List<AppOption<String>> _marketScaleOptions = const [];
   List<AppOption<String>> _brandNatureOptions = const [];
@@ -527,18 +532,24 @@ class _CreateCustomerArchiveDialogState
       );
       _putInit(
         'brandNature',
-        _valueFromLabelOrValue(_brandNatureOptions, data['brandNature']),
+        _libraryDictLabel(
+          OacDictTypes.brandNature,
+          data['brandNatureName'] ?? data['brandNature'],
+        ),
       );
       _putInit(
         'revenueScale',
-        _valueFromLabelOrValue(_revenueOptions, data['revenueScale']),
+        _libraryDictLabel(
+          OacDictTypes.revenueScale,
+          data['revenueScaleName'] ?? data['revenueScale'],
+        ),
       );
       _putInit(
         'spokesperson',
         _spokespersonFromLibrary(data['spokespersons']),
       );
       _putInit('website', _websitesFromLibrary(data['websites']));
-      _putInit('serviceAgencyId', data['serviceAgency']);
+      _applyLibraryServiceAgency(data);
 
       // 经营主体：用品牌库 enterprises 覆盖当前草稿（不带 serverId）。
       for (final e in _entities) {
@@ -560,20 +571,47 @@ class _CreateCustomerArchiveDialogState
           final fullName = _asTrimmed(e['name']);
           _putInit('${p}_name', fullName);
           _putInit(
+            '${p}_shortName',
+            e['shortName'] ??
+                e['aliasName'] ??
+                e['enterpriseShort'] ??
+                (_entities.length == 1 ? brandName : null),
+          );
+          _putInit(
             '${p}_relation',
-            _valueFromLabelOrValue(_relationOptions, e['relationType']),
+            _libraryDictLabel(
+              OacDictTypes.relationType,
+              e['relationTypeName'] ?? e['relationName'] ?? e['relationType'],
+            ),
           );
           _putInit(
             '${p}_nature',
-            _valueFromLabelOrValue(_entityNatureOptions, e['entityNature']),
+            _libraryDictLabel(
+              OacDictTypes.entityNature,
+              e['entityNatureName'] ?? e['natureName'] ?? e['entityNature'],
+            ),
           );
           _putInit('${p}_legalPerson', e['legalPerson']);
           _putInit('${p}_creditCode', e['creditCode']);
-          final address = [
+          final addressParts = [
             _asTrimmed(e['address1']) ?? '',
             _asTrimmed(e['address2']) ?? '',
           ].where((s) => s.isNotEmpty).join('');
-          if (address.isNotEmpty) _putInit('${p}_address', address);
+          final detailAddress =
+              _asTrimmed(e['address']) ??
+              (addressParts.isEmpty ? null : addressParts);
+          if (detailAddress != null) {
+            _putInit('${p}_address', detailAddress);
+          }
+          // 注册地址：优先显式字段，否则回退 address1+address2（品牌库常见结构）。
+          final regAddress =
+              _asTrimmed(e['regAddress']) ??
+              _asTrimmed(e['registeredAddress']) ??
+              _asTrimmed(e['businessAddress']) ??
+              (addressParts.isEmpty ? null : addressParts);
+          if (regAddress != null) {
+            _putInit('${p}_regAddress', regAddress);
+          }
           _putInit('${p}_regPhone', e['phone1'] ?? e['phone2'] ?? e['phone3']);
           final provCode = _valueFromLabelOrValue(
             _provinceOptions,
@@ -610,6 +648,7 @@ class _CreateCustomerArchiveDialogState
           );
           _putInit('media_${draft.id}_account', m['accountName']);
           _putInit('media_${draft.id}_link', m['accountUrl']);
+          await _hydrateMediaQr(draft, m);
         }
       }
 
@@ -718,17 +757,21 @@ class _CreateCustomerArchiveDialogState
     _namePrefixByPersonId.remove(personId);
   }
 
-  void _tryAutofillNameEn(int personId, String namePrefix) {
+  void _tryAutofillNameEn(
+    int personId,
+    String namePrefix, {
+    String? nameZh,
+    bool force = false,
+  }) {
     final enState = _nameEnKeys[personId]?.currentState;
     if (enState == null) return;
     final current = (enState.value ?? '').trim();
-    if (current.isNotEmpty) return;
+    if (!force && current.isNotEmpty) return;
 
-    final zh = (_form.value<String>('${namePrefix}_nameZh') ?? '').trim();
-    if (zh.isEmpty) return;
-
-    final en = _chineseToEnglishName(zh);
-    if (en.isEmpty) return;
+    final zh =
+        (nameZh ?? _form.value<String>('${namePrefix}_nameZh') ?? '').trim();
+    final en = zh.isEmpty ? '' : _chineseToEnglishName(zh);
+    if (!force && en.isEmpty) return;
     enState.didChange(en);
   }
 
@@ -797,6 +840,7 @@ class _CreateCustomerArchiveDialogState
       if (!mounted) return;
 
       final dicts = results[0] as Map<String, List<DictDataItem>>;
+      _dictItems = dicts;
       final provinces = results[1] as List<AdCodeItem>;
       final agencyPage = results[2] as OacCustomerListPage;
       final channelPage = results[3] as OacCustomerListPage;
@@ -1434,6 +1478,137 @@ class _CreateCustomerArchiveDialogState
     return _resolveMediaUrl(_asTrimmed(e['licenseOssId'] ?? e['ossId']));
   }
 
+  /// 品牌库自媒体二维码：URL / data URL / 文件中心 fileId。
+  Future<void> _hydrateMediaQr(
+    _MediaDraft draft,
+    Map<String, dynamic> media,
+  ) async {
+    var raw = _firstMediaQrRaw(media);
+    if (raw is List && raw.isNotEmpty) raw = raw.first;
+    if (raw == null) return;
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      final url = _mediaQrUrlFromMap(map);
+      if (url != null) {
+        draft.qrUrl = url;
+        return;
+      }
+      final id = _asTrimmed(map['fileId'] ?? map['ossId'] ?? map['id']);
+      if (id != null) draft.qrUrl = await _urlFromFileId(id);
+      return;
+    }
+    final text = _asTrimmed(raw);
+    if (text == null) return;
+    if (text.startsWith('data:image')) {
+      draft.qrBytes = _bytesFromDataUrl(text);
+      return;
+    }
+    final resolved = _resolveMediaUrl(text);
+    if (resolved != null) {
+      draft.qrUrl = resolved;
+      return;
+    }
+    draft.qrUrl = await _urlFromFileId(text);
+  }
+
+  dynamic _firstMediaQrRaw(Map<String, dynamic> media) {
+    const preferred = [
+      'qrCodeUrl',
+      'qrUrl',
+      'qrCode',
+      'qrcode',
+      'qrImage',
+      'qrImageUrl',
+      'qrOssUrl',
+      'qrOssURL',
+      'qrFileUrl',
+      'qrOssId',
+      'qrFileId',
+      'qrCodeOssId',
+      'accountQr',
+      'accountQrUrl',
+      'wechatQr',
+      'qr',
+    ];
+    for (final key in preferred) {
+      final value = media[key];
+      if (_qrRawUsable(value)) return value;
+    }
+    for (final entry in media.entries) {
+      final key = entry.key.toLowerCase();
+      if (key == 'accounturl' || key == 'accountname' || key == 'mediatype') {
+        continue;
+      }
+      if (!key.contains('qr') &&
+          !key.contains('image') &&
+          !key.contains('img') &&
+          !key.contains('oss') &&
+          !key.contains('pic')) {
+        continue;
+      }
+      if (_qrRawUsable(entry.value)) return entry.value;
+    }
+    return null;
+  }
+
+  bool _qrRawUsable(dynamic value) {
+    if (value == null) return false;
+    if (value is String) return value.trim().isNotEmpty;
+    if (value is Map || value is List) return value.isNotEmpty;
+    return true;
+  }
+
+  String? _mediaQrUrlFromMap(Map<String, dynamic> map) {
+    for (final key in const [
+      'displayUrl',
+      'previewUrl',
+      'url',
+      'qrUrl',
+      'qrCodeUrl',
+      'ossUrl',
+      'fileUrl',
+      'path',
+      'objectUrl',
+      'thumbnailUrl',
+      'relativeUrl',
+    ]) {
+      final resolved = _resolveMediaUrl(_asTrimmed(map[key]));
+      if (resolved != null) return resolved;
+    }
+    return null;
+  }
+
+  Uint8List? _bytesFromDataUrl(String dataUrl) {
+    final comma = dataUrl.indexOf(',');
+    if (comma < 0 || comma >= dataUrl.length - 1) return null;
+    try {
+      final bytes = base64Decode(dataUrl.substring(comma + 1));
+      return bytes.isEmpty ? null : bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _urlFromFileId(String id) async {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final info = await _fileCenterApi.fetchInfo(trimmed);
+      final url = _resolveMediaUrl(info.displayUrl) ??
+          _resolveMediaUrl(info.previewUrl) ??
+          _resolveMediaUrl(info.url) ??
+          _resolveMediaUrl(info.objectUrl) ??
+          _resolveMediaUrl(info.thumbnailUrl) ??
+          _resolveMediaUrl(info.relativeUrl) ??
+          _resolveMediaUrl(info.objectRelativeUrl);
+      if (url != null) return url;
+    } catch (_) {}
+    if (RegExp(r'^\d+$').hasMatch(trimmed)) {
+      return '${ApiConfig.baseUrl}/desktop/resource/oss/download/$trimmed';
+    }
+    return null;
+  }
+
   String? _resolveMediaUrl(String? raw) {
     final s = raw?.trim() ?? '';
     if (s.isEmpty) return null;
@@ -1908,7 +2083,8 @@ class _CreateCustomerArchiveDialogState
     return switch (s) {
       '男' => '1',
       '女' => '2',
-      '1' || '2' => s,
+      '未知' => '0',
+      '0' || '1' || '2' => s,
       _ => s.isEmpty ? null : s,
     };
   }
@@ -1918,6 +2094,7 @@ class _CreateCustomerArchiveDialogState
     return switch (api) {
       '1' => '男',
       '2' => '女',
+      '0' => '未知',
       _ => (raw?.toString().trim().isNotEmpty ?? false)
           ? raw.toString().trim()
           : '-',
@@ -1929,6 +2106,101 @@ class _CreateCustomerArchiveDialogState
     final normalized = _kMediaTypeFromApi[type] ?? type;
     return _valueFromLabelOrValue(_mediaPlatformOptions, normalized) ??
         normalized;
+  }
+
+  /// 品牌库回填：字典编码转成中文标签（表单选项 value 即 dictLabel）。
+  String? _libraryDictLabel(String dictType, dynamic raw) {
+    final text = _libraryText(raw);
+    if (text == null) return null;
+    for (final item in _dictItems[dictType] ?? const <DictDataItem>[]) {
+      final label = item.dictLabel?.trim();
+      final code = item.dictValue?.trim();
+      if (label == null || label.isEmpty) continue;
+      if (text == label || text == code) return label;
+    }
+    return text;
+  }
+
+  /// 服务 4A：下拉展示中文名称。能对上已有客户则用其 id，否则用中文名补一条选项。
+  void _applyLibraryServiceAgency(Map<String, dynamic> data) {
+    var raw = data['serviceAgency'] ??
+        data['serviceAgencyName'] ??
+        data['agencyName'];
+    if (raw is List) {
+      raw = raw.isEmpty ? null : raw.first;
+    }
+    String? id = _asTrimmed(data['serviceAgencyId']);
+    String? name;
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      id ??= _asTrimmed(map['id'] ?? map['customerId'] ?? map['agencyId']);
+      name = _libraryText(
+        map['name'] ??
+            map['brandName'] ??
+            map['agencyName'] ??
+            map['label'] ??
+            map['nameZh'] ??
+            map['fullName'],
+      );
+    } else {
+      name = _libraryText(data['serviceAgencyName'] ?? data['agencyName']);
+      final plain = _libraryText(raw);
+      id ??= plain;
+      name ??= plain;
+    }
+    final resolved = _resolveAgencyOption(id: id, name: name);
+    if (resolved != null) _putInit('serviceAgencyId', resolved);
+  }
+
+  String? _resolveAgencyOption({String? id, String? name}) {
+    for (final option in _agencyOptions) {
+      if (id != null && id.isNotEmpty && option.value == id) return option.value;
+      if (name != null &&
+          name.isNotEmpty &&
+          (option.label == name || option.value == name)) {
+        return option.value;
+      }
+    }
+    final display = _preferChinese([name, id]);
+    if (display == null) return null;
+    if (!_agencyOptions.any(
+      (option) => option.value == display || option.label == display,
+    )) {
+      _agencyOptions = [
+        ..._agencyOptions,
+        AppOption(value: display, label: display),
+      ];
+    }
+    for (final option in _agencyOptions) {
+      if (option.label == display || option.value == display) return option.value;
+    }
+    return display;
+  }
+
+  String? _libraryText(dynamic raw) {
+    if (raw is Map) {
+      return _preferChinese([
+        _asTrimmed(raw['dictLabel']),
+        _asTrimmed(raw['label']),
+        _asTrimmed(raw['name']),
+        _asTrimmed(raw['nameZh']),
+        _asTrimmed(raw['dictValue']),
+        _asTrimmed(raw['value']),
+        _asTrimmed(raw['code']),
+      ]);
+    }
+    return _asTrimmed(raw);
+  }
+
+  String? _preferChinese(List<String?> parts) {
+    String? fallback;
+    for (final part in parts) {
+      final text = part?.trim() ?? '';
+      if (text.isEmpty) continue;
+      fallback ??= text;
+      if (RegExp(r'[\u4e00-\u9fff]').hasMatch(text)) return text;
+    }
+    return fallback;
   }
 
   String? _valueFromLabelOrValue(
@@ -2144,6 +2416,36 @@ class _CreateCustomerArchiveDialogState
     );
   }
 
+  Widget _ocrTextLink(VoidCallback onPressed) {
+    return AppInkWell(
+      onPressed: onPressed,
+      borderRadius: BorderRadius.circular(4),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Text(
+          '上传图片识别文本',
+          style: TextStyle(
+            color: _kPrimary,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionActions(List<Widget> actions) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < actions.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          actions[i],
+        ],
+      ],
+    );
+  }
+
   Widget _textLink(String label, VoidCallback onPressed) {
     return AppInkWell(
       onPressed: onPressed,
@@ -2162,72 +2464,60 @@ class _CreateCustomerArchiveDialogState
     );
   }
 
-  Widget _subHeading(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        height: 1.2,
-        color: _kTitle,
-      ),
+  Widget _subHeading(String text, {Widget? action}) {
+    return Row(
+      children: [
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
+            color: _kTitle,
+          ),
+        ),
+        const Spacer(),
+        ?action,
+      ],
+    );
+  }
+
+  Widget _contactBasicInfoActions(
+    int contactIndex,
+    void Function(VoidCallback) setContactState,
+  ) {
+    return _textLink(
+      '上传 VCF',
+      () => _importVcfForContact(contactIndex, setContactState),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // 扣掉标题/底栏/内边距，避免 AppFormDialog Column 底边溢出闪红。
-    final screenH = MediaQuery.sizeOf(context).height;
-    final dialogMaxH = screenH * 0.9;
-    final bodyH = (dialogMaxH - 110).clamp(360.0, 720.0);
-
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
-        title: Text(
-          widget.title,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
-            color: _kTitle,
-          ),
-        ),
-        barrierColor: _kBarrier,
-        borderRadius: BorderRadius.circular(10),
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-        constraints: BoxConstraints(
-          minWidth: 720,
-          maxWidth: 860,
-          maxHeight: dialogMaxH,
-        ),
+      child: HyperDialog(
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 860),
+        onClose: widget.onClose,
+        title: Text(widget.title),
         content: DefaultTextStyle.merge(
           style: const TextStyle(fontSize: 12, color: _kLabel, height: 1.35),
-          child: SizedBox(
-            height: bodyH,
-            // AppFormDialog 内容区偶发横向无界；先钉死宽度，避免 Row+Expanded 撑爆。
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final contentW =
-                    constraints.maxWidth.isFinite && constraints.maxWidth > 0
-                    ? constraints.maxWidth
-                    : 824.0;
-                if (_bootLoading) {
-                  return const Center(
+          child: _bootLoading
+              ? const SizedBox(
+                  height: 180,
+                  child: Center(
                     child: SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(strokeWidth: 2.2),
                     ),
-                  );
-                }
-                return SingleChildScrollView(
-                  child: SizedBox(
-                    width: contentW,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _sectionTitle('基础信息'),
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _sectionTitle('基础信息'),
                         const SizedBox(height: 8),
                         _row(
                           AppSelectFormField<String>(
@@ -2255,7 +2545,10 @@ class _CreateCustomerArchiveDialogState
                           ),
                         ),
                         const SizedBox(height: 14),
-                        _sectionTitle('品牌信息'),
+                        _sectionTitle(
+                          '品牌信息',
+                          action: _ocrTextLink(_ocrFillBrand),
+                        ),
                         const SizedBox(height: 8),
                         KeyedSubtree(
                           key: ValueKey(
@@ -2275,13 +2568,18 @@ class _CreateCustomerArchiveDialogState
                               children: [
                                 _sectionTitle(
                                   '自媒体矩阵',
-                                  action: _addLink('添加', () {
-                                    setMediaState(
-                                      () => _medias.add(
-                                        _MediaDraft(_nextId++),
-                                      ),
-                                    );
-                                  }),
+                                  action: _sectionActions([
+                                    _ocrTextLink(
+                                      () => _ocrFillMedia(setMediaState),
+                                    ),
+                                    _addLink('添加', () {
+                                      setMediaState(
+                                        () => _medias.add(
+                                          _MediaDraft(_nextId++),
+                                        ),
+                                      );
+                                    }),
+                                  ]),
                                 ),
                                 if (_medias.isEmpty)
                                   Padding(
@@ -2357,15 +2655,16 @@ class _CreateCustomerArchiveDialogState
                                           const SizedBox(width: 8),
                                           _MediaQrPicker(
                                             bytes: _medias[i].qrBytes,
+                                            networkUrl: _medias[i].qrUrl,
                                             onPicked: (bytes) =>
-                                                setMediaState(
-                                              () =>
-                                                  _medias[i].qrBytes = bytes,
-                                            ),
-                                            onCleared: () => setMediaState(
-                                              () =>
-                                                  _medias[i].qrBytes = null,
-                                            ),
+                                                setMediaState(() {
+                                              _medias[i].qrBytes = bytes;
+                                              _medias[i].qrUrl = null;
+                                            }),
+                                            onCleared: () => setMediaState(() {
+                                              _medias[i].qrBytes = null;
+                                              _medias[i].qrUrl = null;
+                                            }),
                                           ),
                                           const SizedBox(width: 8),
                                           AppInkWell(
@@ -2404,12 +2703,17 @@ class _CreateCustomerArchiveDialogState
                               children: [
                                 _sectionTitle(
                                   '经营主体信息',
-                                  action: _addLink('添加', () {
-                                    setEntityState(() {
-                                      _entities.add(_newEntityDraft());
-                                      _bumpEntities();
-                                    });
-                                  }),
+                                  action: _sectionActions([
+                                    _ocrTextLink(
+                                      () => _ocrFillEntity(setEntityState),
+                                    ),
+                                    _addLink('添加', () {
+                                      setEntityState(() {
+                                        _entities.add(_newEntityDraft());
+                                        _bumpEntities();
+                                      });
+                                    }),
+                                  ]),
                                 ),
                                 for (var i = 0; i < _entities.length; i++)
                                   _card(
@@ -2492,25 +2796,23 @@ class _CreateCustomerArchiveDialogState
                               children: [
                                 _sectionTitle(
                                   '联系人信息',
-                                  action: _addLink('添加', () {
-                                    setContactState(
-                                      () => _contacts.add(
-                                        _ContactDraft(_nextId++),
-                                      ),
-                                    );
-                                  }),
+                                  action: _sectionActions([
+                                    _ocrTextLink(
+                                      () => _ocrFillContact(setContactState),
+                                    ),
+                                    _addLink('添加', () {
+                                      setContactState(
+                                        () => _contacts.add(
+                                          _ContactDraft(_nextId++),
+                                        ),
+                                      );
+                                    }),
+                                  ]),
                                 ),
                                 for (var i = 0; i < _contacts.length; i++)
                                   _card(
                                     title: '联系人 ${i + 1}',
                                     deleteLabel: '删除联系人',
-                                    trailingAction: _textLink(
-                                      '上传 VCF',
-                                      () => _importVcfForContact(
-                                        i,
-                                        setContactState,
-                                      ),
-                                    ),
                                     onDelete: () {
                                       if (_contacts.length <= 1) return;
                                       final contact = _contacts[i];
@@ -2596,27 +2898,15 @@ class _CreateCustomerArchiveDialogState
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
-            ),
-          ),
         ),
         actions: [
-          AppButton.primary(
+          HyperButton.filled(
             onPressed: _bootLoading ? null : _submit,
-            loadingLabel: '提交中',
-            child: const Text(
-              '确定',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+            label: const Text('确定'),
           ),
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: widget.onClose,
-            child: const Text(
-              '取消',
-              style: TextStyle(color: _kLabel, fontWeight: FontWeight.w500),
-            ),
+            label: const Text('取消'),
           ),
         ],
       ),
@@ -3064,112 +3354,124 @@ class _CreateCustomerArchiveDialogState
     void Function(VoidCallback) setEntityState,
   ) {
     final id = _entities[i].id;
+    final ocrEpoch = _entityEpochByDraftId[id] ?? 0;
     return [
-      AppTextFormField(
-        name: 'ent_${id}_name',
-        label: '主体全称',
-        required: true,
-        density: AppDensity.compact,
-        hintText: '请输入经营主体全称',
-        initialValue: _initStr('ent_${id}_name'),
-        validator: AppValidators.required(message: '请输入主体全称'),
-      ),
-      const SizedBox(height: 8),
-      AppTextFormField(
-        name: 'ent_${id}_shortName',
-        label: '企业简称',
-        density: AppDensity.compact,
-        hintText: '经营主体的企业/品牌简称',
-        initialValue: _initStr('ent_${id}_shortName'),
-      ),
-      const SizedBox(height: 8),
-      _row(
-        AppSelectFormField<String>(
-          name: 'ent_${id}_relation',
-          label: '关联关系',
-          hintText: '请选择',
-          options: _relationOptions,
-          initialValue: _initStr('ent_${id}_relation') ?? _relationInitial,
-          clearable: true,
-        ),
-        AppSelectFormField<String>(
-          name: 'ent_${id}_nature',
-          label: '主体性质',
-          hintText: '请选择',
-          options: _entityNatureOptions,
-          initialValue: _initStr('ent_${id}_nature') ?? _entityNatureInitial,
-          clearable: true,
-        ),
-      ),
-      const SizedBox(height: 8),
-      if (_showEntityMarketScope) ...[
-        AppMultiSelectFormField<String>(
-          name: 'ent_${id}_scope',
-          label: '市场范围',
-          options: _marketScopeOptions,
-          initialValue: _initList('ent_${id}_scope'),
-        ),
-        const SizedBox(height: 8),
-      ] else if (_showEntityBizTypes) ...[
-        AppMultiSelectFormField<String>(
-          name: 'ent_${id}_bizTypes',
-          label: '业务类型',
-          options: _kBizTypeOptions,
-          initialValue: _initList('ent_${id}_bizTypes'),
-        ),
-        const SizedBox(height: 8),
-      ],
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: AppSelectFormField<String>(
-              name: 'ent_${id}_province',
-              label: '所在城市',
-              hintText: '省',
-              options: _provinceOptions,
-              clearable: true,
-              initialValue: _initStr('ent_${id}_province'),
-              onChanged: (v) => _onProvinceChanged(id, v),
+      // OCR 回填会改 initials；需 Key 重建才能吃到新 initialValue。
+      KeyedSubtree(
+        key: ValueKey('ent-ocr-basic-$id-$ocrEpoch'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppTextFormField(
+              name: 'ent_${id}_name',
+              label: '主体全称',
+              required: true,
+              density: AppDensity.compact,
+              hintText: '请输入经营主体全称',
+              initialValue: _initStr('ent_${id}_name'),
+              validator: AppValidators.required(message: '请输入主体全称'),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: ValueListenableBuilder<int>(
-              valueListenable: _cityRevision,
-              builder: (context, _, _) {
-                return KeyedSubtree(
-                  key: ValueKey(
-                    'ent-city-$id-${_cityEpochByDraftId[id] ?? 0}',
-                  ),
+            const SizedBox(height: 8),
+            AppTextFormField(
+              name: 'ent_${id}_shortName',
+              label: '企业简称',
+              density: AppDensity.compact,
+              hintText: '经营主体的企业/品牌简称',
+              initialValue: _initStr('ent_${id}_shortName'),
+            ),
+            const SizedBox(height: 8),
+            _row(
+              AppSelectFormField<String>(
+                name: 'ent_${id}_relation',
+                label: '关联关系',
+                hintText: '请选择',
+                options: _relationOptions,
+                initialValue:
+                    _initStr('ent_${id}_relation') ?? _relationInitial,
+                clearable: true,
+              ),
+              AppSelectFormField<String>(
+                name: 'ent_${id}_nature',
+                label: '主体性质',
+                hintText: '请选择',
+                options: _entityNatureOptions,
+                initialValue:
+                    _initStr('ent_${id}_nature') ?? _entityNatureInitial,
+                clearable: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (_showEntityMarketScope) ...[
+              AppMultiSelectFormField<String>(
+                name: 'ent_${id}_scope',
+                label: '市场范围',
+                options: _marketScopeOptions,
+                initialValue: _initList('ent_${id}_scope'),
+              ),
+              const SizedBox(height: 8),
+            ] else if (_showEntityBizTypes) ...[
+              AppMultiSelectFormField<String>(
+                name: 'ent_${id}_bizTypes',
+                label: '业务类型',
+                options: _kBizTypeOptions,
+                initialValue: _initList('ent_${id}_bizTypes'),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
                   child: AppSelectFormField<String>(
-                    name: 'ent_${id}_city',
-                    label: ' ',
-                    hintText: '市',
-                    options: _cityOptionsByDraftId[id] ?? const [],
+                    name: 'ent_${id}_province',
+                    label: '所在城市',
+                    hintText: '省',
+                    options: _provinceOptions,
                     clearable: true,
-                    initialValue: _initStr('ent_${id}_city'),
+                    initialValue: _initStr('ent_${id}_province'),
+                    onChanged: (v) => _onProvinceChanged(id, v),
                   ),
-                );
-              },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _cityRevision,
+                    builder: (context, _, _) {
+                      return KeyedSubtree(
+                        key: ValueKey(
+                          'ent-city-$id-${_cityEpochByDraftId[id] ?? 0}',
+                        ),
+                        child: AppSelectFormField<String>(
+                          name: 'ent_${id}_city',
+                          label: ' ',
+                          hintText: '市',
+                          options: _cityOptionsByDraftId[id] ?? const [],
+                          clearable: true,
+                          initialValue: _initStr('ent_${id}_city'),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 6),
-      AppTextFormField(
-        name: 'ent_${id}_address',
-        label: '详细地址',
-        density: AppDensity.compact,
-        hintText: '详细地址',
-        initialValue: _initStr('ent_${id}_address'),
+            const SizedBox(height: 6),
+            AppTextFormField(
+              name: 'ent_${id}_address',
+              label: '详细地址',
+              density: AppDensity.compact,
+              hintText: '详细地址',
+              initialValue: _initStr('ent_${id}_address'),
+            ),
+          ],
+        ),
       ),
       if (_showEntityLicense) ...[
       const SizedBox(height: 10),
       _subHeading('营业执照信息'),
       const SizedBox(height: 4),
       const Text(
-        '可上传电子营业执照；支持 OCR 识别填充法人/注册地址',
+        '可上传电子营业执照；上传后自动识别填充法人/注册地址等',
         style: TextStyle(fontSize: 11, color: _kMuted, height: 1.35),
       ),
       const SizedBox(height: 8),
@@ -3191,45 +3493,49 @@ class _CreateCustomerArchiveDialogState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _LicenseAttachmentPicker(
-              bytes: _entities[i].licenseBytes,
-              networkUrl: _entities[i].licenseUrl,
-              onPicked: (bytes) => setEntityState(() {
-                _entities[i].licenseBytes = bytes;
-                // 新上传覆盖服务端图，避免提交仍带旧 oss。
-                _entities[i].licenseUrl = null;
-                _entities[i].licenseOssId = null;
-              }),
-              onCleared: () => setEntityState(() {
-                _entities[i].licenseBytes = null;
-                _entities[i].licenseUrl = null;
-                _entities[i].licenseOssId = null;
-              }),
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                _LicenseAttachmentPicker(
+                  bytes: _entities[i].licenseBytes,
+                  networkUrl: _entities[i].licenseUrl,
+                  enabled: !_licenseOcrLoadingIds.contains(id),
+                  onPicked: (bytes, fileName) => _onLicensePicked(
+                    id,
+                    bytes,
+                    fileName,
+                    setEntityState,
+                  ),
+                  onCleared: () => setEntityState(() {
+                    _entities[i].licenseBytes = null;
+                    _entities[i].licenseUrl = null;
+                    _entities[i].licenseOssId = null;
+                  }),
+                ),
+                if (_licenseOcrLoadingIds.contains(id))
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
             ),
             const SizedBox(width: 12),
-            const SizedBox(
+            SizedBox(
               width: 280,
               child: Text(
-                '请上传大小不超过 10MB、格式为 png/jpg/jpeg 的文件',
-                style: TextStyle(fontSize: 11, color: _kMuted, height: 1.35),
+                _licenseOcrLoadingIds.contains(id)
+                    ? '正在上传并识别营业执照…'
+                    : '请上传大小不超过 10MB、格式为 png/jpg/jpeg 的文件',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: _kMuted,
+                  height: 1.35,
+                ),
               ),
             ),
           ],
         ),
-      ),
-      const SizedBox(height: 8),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: _licenseOcrLoadingIds.contains(id)
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : AppButton.outline(
-                onPressed: () => _ocrBusinessLicense(id, setEntityState),
-                child: const Text('OCR 识别填充'),
-              ),
       ),
       const SizedBox(height: 8),
       KeyedSubtree(
@@ -3390,11 +3696,14 @@ class _CreateCustomerArchiveDialogState
       const SizedBox(height: 12),
       _sectionTitle(
         '银税信息',
-        action: _addLink('添加', () {
-          setEntityState(() {
-            _entities[i].taxEntries.add(_TaxEntryDraft(_nextId++));
-          });
-        }),
+        action: _sectionActions([
+          _ocrTextLink(() => _ocrFillTax(i, setEntityState)),
+          _addLink('添加', () {
+            setEntityState(() {
+              _entities[i].taxEntries.add(_TaxEntryDraft(_nextId++));
+            });
+          }),
+        ]),
       ),
       const SizedBox(height: 8),
       KeyedSubtree(
@@ -3427,8 +3736,11 @@ class _CreateCustomerArchiveDialogState
     ];
   }
 
-  Future<void> _ocrBusinessLicense(
+  /// 选图后：filecenter 预签名直传 → 登记 → 详情 → OCR 自动回填。
+  Future<void> _onLicensePicked(
     int entityId,
+    Uint8List bytes,
+    String fileName,
     void Function(VoidCallback) setEntityState,
   ) async {
     if (_licenseOcrLoadingIds.contains(entityId)) return;
@@ -3441,86 +3753,145 @@ class _CreateCustomerArchiveDialogState
     }
     if (entity == null) return;
 
-    setEntityState(() => _licenseOcrLoadingIds.add(entityId));
+    setEntityState(() {
+      _licenseOcrLoadingIds.add(entityId);
+      entity!.licenseBytes = bytes;
+      entity.licenseUrl = null;
+      entity.licenseOssId = null;
+    });
+
     try {
-      final imageUrl = await _ensureLicensePublicUrl(entity);
-      final result = await _customerApi.ocrBusinessLicenseByUrl(
-        imageUrl: imageUrl,
+      final upload = await _fileCenterApi.uploadBytes(
+        bytes: bytes,
+        fileName: fileName.trim().isEmpty ? 'business_license.jpg' : fileName,
       );
       if (!mounted) return;
+      entity.licenseOssId = upload.fileId;
+      entity.licenseUrl =
+          upload.displayUrl?.trim().isNotEmpty == true
+              ? upload.displayUrl
+              : upload.publicUrl;
+
+      final result = await _customerApi.ocrBusinessLicenseByUrl(
+        imageUrl: upload.publicUrl,
+      );
+      if (!mounted) return;
+      setEntityState(() => _licenseOcrLoadingIds.remove(entityId));
+      final confirmed = await showOcrTextConfirmDialog(
+        context,
+        title: '确认营业执照信息',
+        rawText: [
+          result.companyName,
+          result.creditCode,
+          result.legalPerson,
+          result.businessAddress,
+          result.registeredCapital,
+          result.registrationDate ?? result.issueDate,
+          result.licenseExpireText,
+          result.businessScope,
+        ].where((e) => (e ?? '').trim().isNotEmpty).join('\n'),
+        fields: [
+          OcrConfirmField(key: 'name', label: '企业名称', value: result.companyName),
+          OcrConfirmField(key: 'shortName', label: '企业简称', value: result.companyName),
+          OcrConfirmField(key: 'legalPerson', label: '法定代表人', value: result.legalPerson),
+          OcrConfirmField(key: 'creditCode', label: '统一社会信用代码', value: result.creditCode),
+          OcrConfirmField(
+            key: 'nature',
+            label: '企业类型',
+            value: result.companyType ?? result.companyForm,
+          ),
+          OcrConfirmField(
+            key: 'regCapital',
+            label: '注册资本',
+            value: result.registeredCapital,
+          ),
+          OcrConfirmField(
+            key: 'establishDate',
+            label: '成立日期',
+            value: result.registrationDate ?? result.issueDate,
+          ),
+          OcrConfirmField(
+            key: 'licenseExpire',
+            label: '营业期限',
+            value: result.licenseExpireText,
+          ),
+          OcrConfirmField(
+            key: 'regAddress',
+            label: '注册地址',
+            maxLines: 2,
+            value: result.businessAddress,
+          ),
+          OcrConfirmField(
+            key: 'address',
+            label: '经营地址',
+            maxLines: 2,
+            value: result.businessAddress,
+          ),
+          OcrConfirmField(
+            key: 'businessScope',
+            label: '经营范围',
+            maxLines: 3,
+            value: result.businessScope,
+          ),
+        ],
+      );
+      if (!mounted || confirmed == null) return;
       _snapshotEntityLicenseFormToInitials(entityId);
       final p = 'ent_$entityId';
-      void put(String key, String? value) {
-        final v = value?.trim();
-        if (v == null || v.isEmpty) return;
+      void put(String key, {bool overwrite = true}) {
+        final v = _confirmed(confirmed, key);
+        if (v == null) return;
+        if (!overwrite) {
+          final cur = (_form.value<String>('${p}_$key') ??
+                  _initStr('${p}_$key') ??
+                  '')
+              .trim();
+          if (cur.isNotEmpty) return;
+        }
         _putInit('${p}_$key', v);
       }
 
-      put('legalPerson', result.legalPerson);
-      put('regAddress', result.businessAddress);
-      put('creditCode', result.creditCode);
-      put('regCapital', result.registeredCapital);
-      put('establishDate', result.registrationDate ?? result.issueDate);
-      put('licenseExpire', result.licenseExpireText);
-      put('businessScope', result.businessScope);
-      // 主体全称为空时用证照名称回填。
-      final fullName = (_form.value<String>('${p}_name') ??
-              _initStr('${p}_name') ??
-              '')
-          .trim();
-      if (fullName.isEmpty) {
-        put('name', result.companyName);
+      put('name');
+      put('shortName', overwrite: false);
+      put('legalPerson');
+      put('regAddress');
+      put('address', overwrite: false);
+      put('creditCode');
+      put('regCapital');
+      put('establishDate');
+      put('licenseExpire');
+      put('businessScope');
+      final nature = _optionValue(_entityNatureOptions, confirmed['nature']);
+      if (nature != null) {
+        final cur = (_form.value<String>('${p}_nature') ??
+                _initStr('${p}_nature') ??
+                '')
+            .trim();
+        if (cur.isEmpty) _putInit('${p}_nature', nature);
       }
       setEntityState(() {
-        _licenseOcrLoadingIds.remove(entityId);
         _entityEpochByDraftId[entityId] =
             (_entityEpochByDraftId[entityId] ?? 0) + 1;
       });
-      final tip = result.message?.trim();
-      _toast((tip != null && tip.isNotEmpty) ? tip : '识别成功');
+      _toast('已根据识别结果回填营业执照信息');
     } catch (e) {
       if (!mounted) return;
-      setEntityState(() => _licenseOcrLoadingIds.remove(entityId));
+      setEntityState(() {
+        _licenseOcrLoadingIds.remove(entityId);
+        // 上传/识别失败时保留本地预览，便于重试；不提交无 fileId 的附件。
+        entity?.licenseOssId = null;
+        entity?.licenseUrl = null;
+      });
       _toast(e.toString(), error: true);
     }
-  }
-
-  /// 确保有可供 OCR 使用的公网图片 URL：已有直链优先，否则先 OSS 上传本地图。
-  Future<String> _ensureLicensePublicUrl(_EntityDraft draft) async {
-    final existing = draft.licenseUrl?.trim() ?? '';
-    if (existing.startsWith('http://') || existing.startsWith('https://')) {
-      return existing;
-    }
-    final bytes = draft.licenseBytes;
-    if (bytes == null || bytes.isEmpty) {
-      throw CustomerApiException('请先上传营业执照图片');
-    }
-    final path = await _customerApi.uploadOssFile(
-      bytes: bytes,
-      fileName: 'business_license.jpg',
-    );
-    final resolved = _resolveMediaUrl(path) ?? path.trim();
-    if (resolved.isEmpty) {
-      throw CustomerApiException('上传成功但未获得可访问地址');
-    }
-    draft.licenseUrl = resolved;
-    draft.licenseOssId ??= path.trim().isEmpty ? null : path.trim();
-    if (!resolved.startsWith('http://') && !resolved.startsWith('https://')) {
-      // 接口要求公网 URL；相对路径再尝试拼一次。
-      final abs = _resolveMediaUrl(resolved);
-      if (abs != null &&
-          (abs.startsWith('http://') || abs.startsWith('https://'))) {
-        draft.licenseUrl = abs;
-        return abs;
-      }
-      throw CustomerApiException('未能获得公网图片地址，请检查 OSS 返回');
-    }
-    return resolved;
   }
 
   void _snapshotEntityLicenseFormToInitials(int entityId) {
     const keys = [
       'name',
+      'shortName',
+      'nature',
+      'address',
       'legalPerson',
       'regAddress',
       'regPhone',
@@ -3624,10 +3995,26 @@ class _CreateCustomerArchiveDialogState
         fileName: file.name,
       );
       if (!mounted) return;
+      setEntityState(() => _bankOcrLoadingIds.remove(entityId));
+      final confirmed = await showOcrTextConfirmDialog(
+        context,
+        title: '确认开户信息',
+        rawText: [
+          result.customerName,
+          result.depositaryBank,
+          result.bankAccount,
+        ].where((e) => (e ?? '').trim().isNotEmpty).join('\n'),
+        fields: [
+          OcrConfirmField(key: 'invoiceName', label: '名称', value: result.customerName),
+          OcrConfirmField(key: 'bankName', label: '开户行', value: result.depositaryBank),
+          OcrConfirmField(key: 'bankAccount', label: '银行账号', value: result.bankAccount),
+        ],
+      );
+      if (!mounted || confirmed == null) return;
       _snapshotEntityTaxFormToInitials(entityId);
-      final bank = result.depositaryBank?.trim();
-      final account = result.bankAccount?.trim();
-      final name = result.customerName?.trim();
+      final bank = _confirmed(confirmed, 'bankName');
+      final account = _confirmed(confirmed, 'bankAccount');
+      final name = _confirmed(confirmed, 'invoiceName');
       _EntityDraft? entity;
       for (final e in _entities) {
         if (e.id == entityId) {
@@ -3657,8 +4044,7 @@ class _CreateCustomerArchiveDialogState
         _entityEpochByDraftId[entityId] =
             (_entityEpochByDraftId[entityId] ?? 0) + 1;
       });
-      final tip = result.message?.trim();
-      _toast((tip != null && tip.isNotEmpty) ? tip : '识别成功');
+      _toast('已根据识别结果回填开户信息');
     } catch (e) {
       if (!mounted) return;
       setEntityState(() => _bankOcrLoadingIds.remove(entityId));
@@ -3699,6 +4085,118 @@ class _CreateCustomerArchiveDialogState
     }
   }
 
+  Future<void> _ocrFillContact(
+    void Function(VoidCallback) setContactState,
+  ) async {
+    final ocr = await _recognizeModuleImage('识别联系人信息');
+    if (!mounted || ocr == null) return;
+    final data = await showContactOcrPreviewDialog(
+      context,
+      initialContent: _ocrPlain(ocr),
+      kvData: ocr.kvData,
+    );
+    if (!mounted || data == null || !data.hasAny) return;
+    final index = _contactIndexForOcrFill(setContactState);
+    if (!mounted || index < 0) return;
+    await _applyOcrToContact(index, data, setContactState);
+    if (!mounted) return;
+    _toast('已根据识别结果回填联系人信息');
+  }
+
+  /// 优先填到还没写姓名和手机的联系人；都有内容时新增一条。
+  int _contactIndexForOcrFill(void Function(VoidCallback) setContactState) {
+    for (var i = 0; i < _contacts.length; i++) {
+      final prefix = 'ct_${_contacts[i].id}';
+      final name = (_form.value<String>('${prefix}_nameZh') ??
+              _initStr('${prefix}_nameZh') ??
+              '')
+          .trim();
+      final mobile = (_form.value<String>('${prefix}_mobile') ??
+              _initStr('${prefix}_mobile') ??
+              '')
+          .trim();
+      if (name.isEmpty && mobile.isEmpty) return i;
+    }
+    late final int newIndex;
+    setContactState(() {
+      _contacts.add(_ContactDraft(_nextId++));
+      newIndex = _contacts.length - 1;
+    });
+    return newIndex;
+  }
+
+  Future<void> _applyOcrToContact(
+    int contactIndex,
+    ContactOcrFillData data,
+    void Function(VoidCallback) setContactState,
+  ) async {
+    if (contactIndex < 0 || contactIndex >= _contacts.length) return;
+    final contact = _contacts[contactIndex];
+    final personId = contact.id;
+    final prefix = 'ct_$personId';
+    _snapshotPersonFormToInitials(prefix);
+
+    final nameZh = data.nameZh?.trim();
+    var nameEn = data.nameEn?.trim();
+    if ((nameEn == null || nameEn.isEmpty) &&
+        nameZh != null &&
+        nameZh.isNotEmpty) {
+      final py = _chineseToEnglishName(nameZh);
+      if (py.isNotEmpty) nameEn = py;
+    }
+    _putInit('${prefix}_nameZh', nameZh);
+    _putInit('${prefix}_nameEn', nameEn);
+    _putInit('${prefix}_gender', data.gender);
+    _putInit('${prefix}_age', data.ageDesc);
+    _putInit('${prefix}_mobile', data.mobile);
+    _putInit('${prefix}_phone', data.phone);
+    _putInit('${prefix}_email', data.email);
+    _putInit('${prefix}_address', data.address);
+    _putInit('${prefix}_title', data.deptTitle);
+    _putInit('${prefix}_role', data.jobDesc);
+    _putInit('${prefix}_remark', data.remark);
+
+    final org = data.relatedEnterprise?.trim();
+    if (org != null && org.isNotEmpty) {
+      final entKey = _matchEnterpriseKey(org);
+      if (entKey != null) {
+        _putInit('${prefix}_enterprise', entKey);
+      } else if ((_initStr('${prefix}_remark') ?? '').isEmpty &&
+          (data.remark == null || data.remark!.trim().isEmpty)) {
+        _putInit('${prefix}_remark', '组织：$org');
+      }
+    }
+
+    final pending = <_PendingCity>[];
+    final cityText = data.city?.trim().isNotEmpty == true
+        ? data.city!.trim()
+        : data.address?.trim();
+    if (cityText != null && cityText.isNotEmpty) {
+      final split = _splitCombinedCity(cityText);
+      final provCode = _valueFromLabelOrValue(_provinceOptions, split.$1);
+      _putInit('${prefix}_province', provCode);
+      pending.add(
+        _PendingCity(
+          draftId: personId,
+          fieldName: '${prefix}_city',
+          provinceCode: provCode,
+          cityLabel: split.$2,
+        ),
+      );
+    }
+
+    await _loadPendingCities(pending);
+    if (!mounted) return;
+    setContactState(() {
+      _personEpochByDraftId[personId] =
+          (_personEpochByDraftId[personId] ?? 0) + 1;
+      _cityEpochByDraftId[personId] =
+          (_cityEpochByDraftId[personId] ?? 0) + 1;
+      _nameEnKeys[personId] = GlobalKey<FormFieldState<String>>();
+      _cityRevision.value++;
+    });
+  }
+
   Future<void> _importVcfForContact(
     int contactIndex,
     void Function(VoidCallback) setContactState,
@@ -3723,6 +4221,574 @@ class _CreateCustomerArchiveDialogState
         ? '已根据 VCF 填充 ${parsed.length} 位联系人'
         : '已根据 VCF 填充联系人';
     AppToast.show(context: context, title: tip);
+  }
+
+  Future<OacGeneralOcrResult?> _recognizeModuleImage(String title) {
+    return recognizeImageText(context, dialogTitle: title);
+  }
+
+  String _ocrPlain(OacGeneralOcrResult ocr) {
+    final content = ocr.content?.trim() ?? '';
+    if (content.isNotEmpty) return content;
+    return ocr.words.join('\n').trim();
+  }
+
+  String? _ocrKv(OacGeneralOcrResult ocr, List<String> keys) {
+    final kv = ocr.kvData;
+    if (kv == null || kv.isEmpty) return null;
+    for (final entry in kv.entries) {
+      final k = entry.key.toString().trim();
+      for (final want in keys) {
+        if (k == want || k.contains(want)) {
+          final v = entry.value?.toString().trim() ?? '';
+          if (v.isNotEmpty) return v;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _ocrPick(String text, RegExp re) {
+    final m = re.firstMatch(text);
+    final v = m?.group(1)?.trim();
+    if (v == null || v.isEmpty) return null;
+    return v;
+  }
+
+  String? _matchOptionInText(List<AppOption<String>> options, String text) {
+    String? best;
+    var bestLen = 0;
+    for (final o in options) {
+      final label = o.label.trim();
+      if (label.length < 2) continue;
+      if (text.contains(label) && label.length > bestLen) {
+        best = o.value;
+        bestLen = label.length;
+      }
+    }
+    return best;
+  }
+
+  List<String> _matchOptionsInText(
+    List<AppOption<String>> options,
+    String text,
+  ) {
+    final hits = <String>[];
+    for (final o in options) {
+      final label = o.label.trim();
+      if (label.length < 2) continue;
+      if (text.contains(label)) hits.add(o.value);
+    }
+    return hits;
+  }
+
+  void _snapshotNamed(List<String> names) {
+    for (final name in names) {
+      final v = _form.value<Object?>(name);
+      if (v == null) continue;
+      if (v is String && v.trim().isEmpty) continue;
+      if (v is List && v.isEmpty) continue;
+      _initials[name] = v;
+    }
+  }
+
+  String? _optionValue(List<AppOption<String>> options, String? raw) {
+    final v = _valueFromLabelOrValue(options, raw);
+    if (v == null) return null;
+    for (final o in options) {
+      if (o.value == v) return v;
+    }
+    return null;
+  }
+
+  String? _confirmed(Map<String, String> data, String key) {
+    final v = data[key]?.trim();
+    if (v == null || v.isEmpty) return null;
+    return v;
+  }
+
+  List<OcrConfirmField> _brandConfirmFields(
+    String text, [
+    OacGeneralOcrResult? ocr,
+  ]) {
+    String? kv(List<String> keys) => ocr == null ? null : _ocrKv(ocr, keys);
+    final industries = _matchOptionsInText(_industryOptions, text)
+        .map((v) => _optionLabel(_industryOptions, v) ?? v)
+        .join('、');
+    return [
+      OcrConfirmField(
+        key: 'name',
+        label: '品牌简称',
+        value: kv(const ['品牌简称', '品牌名称', '企业简称']) ??
+            _ocrPick(text, RegExp(r'品牌(?:简称|名称)[:：\s]*([^\s，,；;]{1,40})')),
+      ),
+      OcrConfirmField(
+        key: 'industry',
+        label: '所属行业',
+        value: industries.isEmpty ? null : industries,
+      ),
+      OcrConfirmField(
+        key: 'brandNature',
+        label: '品牌性质',
+        value: _optionLabel(
+          _brandNatureOptions,
+          kv(const ['品牌性质']) ?? _matchOptionInText(_brandNatureOptions, text),
+        ),
+      ),
+      OcrConfirmField(
+        key: 'spokesperson',
+        label: '代言人信息',
+        value: kv(const ['代言人', '代言人信息']) ??
+            _ocrPick(text, RegExp(r'代言人(?:信息)?[:：\s]*([^\s，,；;]{1,20})')),
+      ),
+      OcrConfirmField(
+        key: 'website',
+        label: '网址',
+        value: kv(const ['网址', '官网']) ?? _ocrPick(text, RegExp(r'(https?://\S+)')),
+      ),
+      OcrConfirmField(
+        key: 'revenueScale',
+        label: '营收规模/年',
+        value: _optionLabel(
+          _revenueOptions,
+          kv(const ['营收规模']) ?? _matchOptionInText(_revenueOptions, text),
+        ),
+      ),
+      OcrConfirmField(
+        key: 'staffScale',
+        label: '人员规模',
+        value: _optionLabel(
+          _kStaffScaleOptions,
+          _matchOptionInText(_kStaffScaleOptions, text),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _ocrFillBrand() async {
+    final ocr = await _recognizeModuleImage('识别品牌信息');
+    if (!mounted || ocr == null) return;
+    final text = _ocrPlain(ocr);
+    final confirmed = await showOcrTextConfirmDialog(
+      context,
+      title: '确认品牌信息',
+      rawText: text,
+      fields: _brandConfirmFields(text, ocr),
+      reparse: _brandConfirmFields,
+    );
+    if (!mounted || confirmed == null) return;
+    _snapshotNamed(const [
+      'name',
+      'industry',
+      'brandNature',
+      'spokesperson',
+      'website',
+      'revenueScale',
+      'staffScale',
+      'marketingBudget',
+    ]);
+    var filled = 0;
+    void put(String name, Object? value) {
+      if (value == null) return;
+      if (value is String && value.trim().isEmpty) return;
+      if (value is List && value.isEmpty) return;
+      _putInit(name, value);
+      filled++;
+    }
+
+    put('name', _confirmed(confirmed, 'name'));
+    final industry = <String>[];
+    for (final part in (_confirmed(confirmed, 'industry') ?? '').split(
+      RegExp(r'[、,，;；]'),
+    )) {
+      final v = _optionValue(_industryOptions, part.trim());
+      if (v != null && !industry.contains(v)) industry.add(v);
+    }
+    put('industry', industry);
+    put('brandNature', _optionValue(_brandNatureOptions, confirmed['brandNature']));
+    put('spokesperson', _confirmed(confirmed, 'spokesperson'));
+    put('website', _confirmed(confirmed, 'website'));
+    put('revenueScale', _optionValue(_revenueOptions, confirmed['revenueScale']));
+    put('staffScale', _optionValue(_kStaffScaleOptions, confirmed['staffScale']));
+    if (filled == 0) {
+      _toast('未识别到可回填的品牌信息', error: true);
+      return;
+    }
+    final name = _initStr('name');
+    if (name != null) _syncBrandChoices(name: name);
+    setState(() => _brandInfoEpoch++);
+    _toast('已根据识别结果回填品牌信息');
+  }
+
+  List<({String? platform, String? account, String? link})> _parseMediaRows(
+    String text, [
+    OacGeneralOcrResult? ocr,
+  ]) {
+    final rows = <({String? platform, String? account, String? link})>[];
+    final seen = <String>{};
+    for (final opt in _mediaPlatformOptions) {
+      final label = opt.label.trim();
+      if (label.length < 2) continue;
+      final idx = text.indexOf(label);
+      if (idx < 0) continue;
+      final rest = text.substring(idx + label.length);
+      final account = _ocrPick(
+        rest,
+        RegExp(r'^[:：\s]*([^\s，,；;\n]{1,40})'),
+      );
+      final link = RegExp(r'https?://\S+').firstMatch(rest)?.group(0);
+      final key = '$label|${account ?? ''}|${link ?? ''}';
+      if (!seen.add(key)) continue;
+      if ((account == null || account.isEmpty) &&
+          (link == null || link.isEmpty)) {
+        continue;
+      }
+      rows.add((platform: opt.value, account: account, link: link));
+    }
+    final kvAccount = ocr == null ? null : _ocrKv(ocr, const ['账号', '账号名']);
+    final kvLink = ocr == null ? null : _ocrKv(ocr, const ['链接', '网址']);
+    final kvPlatform = ocr == null ? null : _ocrKv(ocr, const ['平台']);
+    if (rows.isEmpty &&
+        ((kvAccount != null && kvAccount.isNotEmpty) ||
+            (kvLink != null && kvLink.isNotEmpty))) {
+      rows.add((
+        platform: kvPlatform == null
+            ? null
+            : _valueFromLabelOrValue(_mediaPlatformOptions, kvPlatform),
+        account: kvAccount,
+        link: kvLink,
+      ));
+    }
+    return rows;
+  }
+
+  List<OcrConfirmField> _mediaConfirmFields(
+    String text, [
+    OacGeneralOcrResult? ocr,
+  ]) {
+    final rows = _parseMediaRows(text, ocr);
+    final shown = rows.isEmpty
+        ? <({String? platform, String? account, String? link})>[
+            (platform: null, account: null, link: null),
+          ]
+        : rows;
+    final fields = <OcrConfirmField>[];
+    for (var i = 0; i < shown.length; i++) {
+      final n = shown.length == 1 ? '' : ' ${i + 1}';
+      final row = shown[i];
+      fields.add(
+        OcrConfirmField(
+          key: 'platform_$i',
+          label: '平台$n',
+          value: _optionLabel(_mediaPlatformOptions, row.platform),
+        ),
+      );
+      fields.add(
+        OcrConfirmField(key: 'account_$i', label: '账号名$n', value: row.account),
+      );
+      fields.add(
+        OcrConfirmField(key: 'link_$i', label: '链接$n', value: row.link),
+      );
+    }
+    return fields;
+  }
+
+  Future<void> _ocrFillMedia(void Function(VoidCallback) setMediaState) async {
+    final ocr = await _recognizeModuleImage('识别自媒体矩阵');
+    if (!mounted || ocr == null) return;
+    final text = _ocrPlain(ocr);
+    final confirmed = await showOcrTextConfirmDialog(
+      context,
+      title: '确认自媒体矩阵',
+      rawText: text,
+      fields: _mediaConfirmFields(text, ocr),
+      reparse: _mediaConfirmFields,
+    );
+    if (!mounted || confirmed == null) return;
+    final rows = <({String? platform, String? account, String? link})>[];
+    for (var i = 0;; i++) {
+      if (!confirmed.containsKey('platform_$i') &&
+          !confirmed.containsKey('account_$i') &&
+          !confirmed.containsKey('link_$i')) {
+        break;
+      }
+      final account = _confirmed(confirmed, 'account_$i');
+      final link = _confirmed(confirmed, 'link_$i');
+      if ((account == null || account.isEmpty) &&
+          (link == null || link.isEmpty)) {
+        continue;
+      }
+      rows.add((
+        platform: _optionValue(_mediaPlatformOptions, confirmed['platform_$i']),
+        account: account,
+        link: link,
+      ));
+    }
+    if (rows.isEmpty) {
+      _toast('未识别到可回填的自媒体信息', error: true);
+      return;
+    }
+    setMediaState(() {
+      final firstId = _medias.isEmpty ? null : _medias.first.id;
+      final account = firstId == null
+          ? ''
+          : (_form.value<String>('media_${firstId}_account') ??
+                  _initStr('media_${firstId}_account') ??
+                  '')
+              .trim();
+      final link = firstId == null
+          ? ''
+          : (_form.value<String>('media_${firstId}_link') ??
+                  _initStr('media_${firstId}_link') ??
+                  '')
+              .trim();
+      final reusable = _medias.length == 1 && account.isEmpty && link.isEmpty;
+      if (reusable) _medias.clear();
+      for (final row in rows) {
+        final draft = _MediaDraft(_nextId++);
+        _medias.add(draft);
+        _putInit('media_${draft.id}_platform', row.platform);
+        _putInit('media_${draft.id}_account', row.account);
+        _putInit('media_${draft.id}_link', row.link);
+      }
+    });
+    _toast('已根据识别结果回填自媒体矩阵');
+  }
+
+  List<OcrConfirmField> _entityConfirmFields(
+    String text, [
+    OacGeneralOcrResult? ocr,
+  ]) {
+    String? kv(List<String> keys) => ocr == null ? null : _ocrKv(ocr, keys);
+    return [
+      OcrConfirmField(
+        key: 'name',
+        label: '企业名称',
+        value: kv(const ['企业名称', '公司名称', '主体全称', '名称']) ??
+            _ocrPick(text, RegExp(r'(?:企业名称|公司名称|主体全称)[:：\s]*([^\n]{2,80})')),
+      ),
+      OcrConfirmField(
+        key: 'shortName',
+        label: '企业简称',
+        value: kv(const ['企业简称', '简称']) ??
+            _ocrPick(text, RegExp(r'(?:企业简称|简称)[:：\s]*([^\s，,；;\n]{1,40})')),
+      ),
+      OcrConfirmField(
+        key: 'legalPerson',
+        label: '法定代表人',
+        value: kv(const ['法定代表人', '法人']) ??
+            _ocrPick(text, RegExp(r'(?:法定代表人|法人)[:：\s]*([^\s，,；;\n]{2,20})')),
+      ),
+      OcrConfirmField(
+        key: 'creditCode',
+        label: '统一社会信用代码',
+        value: kv(const ['统一社会信用代码', '信用代码']) ??
+            _ocrPick(text, RegExp(r'([0-9A-Z]{18})')),
+      ),
+      OcrConfirmField(
+        key: 'nature',
+        label: '企业类型',
+        value: _optionLabel(
+          _entityNatureOptions,
+          _matchOptionInText(_entityNatureOptions, text),
+        ),
+      ),
+      OcrConfirmField(
+        key: 'regPhone',
+        label: '注册电话',
+        value: kv(const ['注册电话', '联系电话']) ??
+            _ocrPick(text, RegExp(r'(?:注册电话|联系电话)[:：\s]*([0-9\-]{7,20})')),
+      ),
+      OcrConfirmField(
+        key: 'regCapital',
+        label: '注册资本',
+        value: kv(const ['注册资本', '注册资金']) ??
+            _ocrPick(text, RegExp(r'(?:注册资本|注册资金)[:：\s]*([^\n]{2,40})')),
+      ),
+      OcrConfirmField(
+        key: 'establishDate',
+        label: '成立日期',
+        value: kv(const ['成立日期', '注册日期']) ??
+            _ocrPick(text, RegExp(r'(?:成立日期|注册日期)[:：\s]*([0-9年月日./\-]{6,20})')),
+      ),
+      OcrConfirmField(
+        key: 'regAddress',
+        label: '注册地址',
+        maxLines: 2,
+        value: kv(const ['注册地址', '住所']) ??
+            _ocrPick(text, RegExp(r'(?:注册地址|住所)[:：\s]*([^\n]{4,120})')),
+      ),
+      OcrConfirmField(
+        key: 'address',
+        label: '经营地址',
+        maxLines: 2,
+        value: kv(const ['详细地址', '经营地址']) ??
+            _ocrPick(text, RegExp(r'(?:详细地址|经营地址)[:：\s]*([^\n]{4,120})')),
+      ),
+      OcrConfirmField(
+        key: 'businessScope',
+        label: '经营范围',
+        maxLines: 3,
+        value: kv(const ['经营范围']) ??
+            _ocrPick(text, RegExp(r'经营范围[:：\s]*([^\n]{4,500})')),
+      ),
+    ];
+  }
+
+  Future<void> _ocrFillEntity(
+    void Function(VoidCallback) setEntityState,
+  ) async {
+    if (_entities.isEmpty) return;
+    final ocr = await _recognizeModuleImage('识别经营主体信息');
+    if (!mounted || ocr == null) return;
+    final id = _entities.first.id;
+    final text = _ocrPlain(ocr);
+    final confirmed = await showOcrTextConfirmDialog(
+      context,
+      title: '确认经营主体信息',
+      rawText: text,
+      fields: _entityConfirmFields(text, ocr),
+      reparse: _entityConfirmFields,
+    );
+    if (!mounted || confirmed == null) return;
+    _snapshotEntityLicenseFormToInitials(id);
+    var filled = 0;
+    void put(String key, String? value) {
+      final v = value?.trim();
+      if (v == null || v.isEmpty) return;
+      _putInit('ent_${id}_$key', v);
+      filled++;
+    }
+
+    for (final key in const [
+      'name',
+      'shortName',
+      'legalPerson',
+      'creditCode',
+      'regPhone',
+      'regCapital',
+      'establishDate',
+      'regAddress',
+      'address',
+      'businessScope',
+    ]) {
+      put(key, _confirmed(confirmed, key));
+    }
+    final nature = _optionValue(_entityNatureOptions, confirmed['nature']);
+    if (nature != null) {
+      _putInit('ent_${id}_nature', nature);
+      filled++;
+    }
+    if (filled == 0) {
+      _toast('未识别到可回填的经营主体信息', error: true);
+      return;
+    }
+    setEntityState(() {
+      _entityEpochByDraftId[id] = (_entityEpochByDraftId[id] ?? 0) + 1;
+    });
+    _toast('已根据识别结果回填经营主体信息');
+  }
+
+  List<OcrConfirmField> _taxConfirmFields(
+    String text, [
+    OacGeneralOcrResult? ocr,
+  ]) {
+    String? kv(List<String> keys) => ocr == null ? null : _ocrKv(ocr, keys);
+    final account = kv(const ['银行账号', '账号']) ??
+        _ocrPick(text, RegExp(r'(?:银行账号|账号)[:：\s]*([0-9 ]{8,40})'));
+    return [
+      OcrConfirmField(
+        key: 'bankName',
+        label: '开户行',
+        value: kv(const ['开户行', '开户银行']) ??
+            _ocrPick(text, RegExp(r'(?:开户银行|开户行)[:：\s]*([^\n]{2,80})')),
+      ),
+      OcrConfirmField(
+        key: 'bankAccount',
+        label: '银行账号',
+        value: account?.replaceAll(' ', ''),
+      ),
+      OcrConfirmField(
+        key: 'taxNo',
+        label: '税号',
+        value: kv(const ['税号', '纳税人识别号']) ??
+            _ocrPick(text, RegExp(r'(?:税号|纳税人识别号)[:：\s]*([0-9A-Z]{15,20})')),
+      ),
+      OcrConfirmField(
+        key: 'invoiceName',
+        label: '开票名称',
+        value: kv(const ['开票名称', '发票抬头']) ??
+            _ocrPick(text, RegExp(r'(?:开票名称|发票抬头)[:：\s]*([^\n]{2,80})')),
+      ),
+      OcrConfirmField(
+        key: 'invoiceAddress',
+        label: '注册地址',
+        maxLines: 2,
+        value: kv(const ['注册地址']) ??
+            _ocrPick(text, RegExp(r'注册地址[:：\s]*([^\n]{4,120})')),
+      ),
+      OcrConfirmField(
+        key: 'invoicePhone',
+        label: '注册电话',
+        value: kv(const ['注册电话']) ??
+            _ocrPick(text, RegExp(r'注册电话[:：\s]*([0-9\-]{7,20})')),
+      ),
+    ];
+  }
+
+  Future<void> _ocrFillTax(
+    int entityIndex,
+    void Function(VoidCallback) setEntityState,
+  ) async {
+    if (entityIndex < 0 || entityIndex >= _entities.length) return;
+    final ocr = await _recognizeModuleImage('识别银税信息');
+    if (!mounted || ocr == null) return;
+    final entity = _entities[entityIndex];
+    final text = _ocrPlain(ocr);
+    final confirmed = await showOcrTextConfirmDialog(
+      context,
+      title: '确认银税信息',
+      rawText: text,
+      fields: _taxConfirmFields(text, ocr),
+      reparse: _taxConfirmFields,
+    );
+    if (!mounted || confirmed == null) return;
+    if (entity.taxEntries.isEmpty) {
+      setEntityState(() {
+        entity.taxEntries.add(_TaxEntryDraft(_nextId++));
+      });
+    }
+    if (!mounted || entity.taxEntries.isEmpty) return;
+    final tax = entity.taxEntries.first;
+    final prefix = 'ent_${entity.id}_tax_${tax.id}';
+    _snapshotEntityTaxFormToInitials(entity.id);
+    var filled = 0;
+    void put(String key, String? value) {
+      final v = value?.trim();
+      if (v == null || v.isEmpty) return;
+      _putInit('${prefix}_$key', v);
+      filled++;
+    }
+
+    final bank = _confirmed(confirmed, 'bankName');
+    final account = _confirmed(confirmed, 'bankAccount')?.replaceAll(' ', '');
+    put('bankName', bank);
+    put('invoiceBank', bank);
+    put('bankAccount', account);
+    put('invoiceAccount', account);
+    put('taxNo', _confirmed(confirmed, 'taxNo'));
+    put('invoiceName', _confirmed(confirmed, 'invoiceName'));
+    put('invoiceAddress', _confirmed(confirmed, 'invoiceAddress'));
+    put('invoicePhone', _confirmed(confirmed, 'invoicePhone'));
+    if (filled == 0) {
+      _toast('未识别到可回填的银税信息', error: true);
+      return;
+    }
+    setEntityState(() {
+      _entityEpochByDraftId[entity.id] =
+          (_entityEpochByDraftId[entity.id] ?? 0) + 1;
+    });
+    _toast('已根据识别结果回填银税信息');
   }
 
   Future<void> _applyVcfToContact(
@@ -3863,7 +4929,10 @@ class _CreateCustomerArchiveDialogState
     final contact = _contacts[i];
     final id = contact.id;
     return [
-      _subHeading('基本信息'),
+      _subHeading(
+        '基本信息',
+        action: _contactBasicInfoActions(i, setContactState),
+      ),
       const SizedBox(height: 8),
       ..._buildPersonFields(
         namePrefix: 'ct_$id',
@@ -4072,6 +5141,12 @@ class _CreateCustomerArchiveDialogState
                     validator: nameRequired
                         ? AppValidators.required(message: '请输入姓名')
                         : null,
+                    onChanged: (v) => _tryAutofillNameEn(
+                      personId,
+                      namePrefix,
+                      nameZh: v,
+                      force: true,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -4288,9 +5363,9 @@ class _EntityDraft {
   final int id;
   final Object? serverId;
   Uint8List? licenseBytes;
-  /// 编辑回显：服务端营业执照图片地址。
+  /// 编辑回显 / 预览：营业执照图片地址。
   String? licenseUrl;
-  /// 编辑回显 / 提交保留：OSS id 或路径。
+  /// 业务入库：文件中心 fileId（兼容旧字段名 licenseOssId）。
   String? licenseOssId;
   final List<_TaxEntryDraft> taxEntries = [];
 }
@@ -4333,6 +5408,8 @@ class _MediaDraft {
   final int id;
   final Object? serverId;
   Uint8List? qrBytes;
+  /// 品牌库回填的二维码地址（本地未重新选图时用于预览）。
+  String? qrUrl;
 }
 
 /// 营业执照附件：虚线方框 +，旁侧提示文案。
@@ -4342,14 +5419,17 @@ class _LicenseAttachmentPicker extends StatelessWidget {
     required this.onPicked,
     required this.onCleared,
     this.networkUrl,
+    this.enabled = true,
   });
 
   final Uint8List? bytes;
   final String? networkUrl;
-  final ValueChanged<Uint8List> onPicked;
+  final void Function(Uint8List bytes, String fileName) onPicked;
   final VoidCallback onCleared;
+  final bool enabled;
 
   Future<void> _pick() async {
+    if (!enabled) return;
     final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['png', 'jpg', 'jpeg'],
@@ -4358,7 +5438,8 @@ class _LicenseAttachmentPicker extends StatelessWidget {
     final data = await file.readAsBytes();
     if (data.isEmpty) return;
     if (data.lengthInBytes > 10 * 1024 * 1024) return;
-    onPicked(data);
+    final name = file.name.trim().isEmpty ? 'business_license.jpg' : file.name;
+    onPicked(data, name);
   }
 
   @override
@@ -4370,7 +5451,7 @@ class _LicenseAttachmentPicker extends StatelessWidget {
       width: 64,
       height: 64,
       child: AppInkWell(
-        onPressed: _pick,
+        onPressed: enabled ? _pick : null,
         borderRadius: BorderRadius.circular(6),
         child: CustomPaint(
           painter: hasImage
@@ -4451,9 +5532,11 @@ class _MediaQrPicker extends StatelessWidget {
     required this.bytes,
     required this.onPicked,
     required this.onCleared,
+    this.networkUrl,
   });
 
   final Uint8List? bytes;
+  final String? networkUrl;
   final ValueChanged<Uint8List> onPicked;
   final VoidCallback onCleared;
 
@@ -4470,7 +5553,9 @@ class _MediaQrPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = bytes != null && bytes!.isNotEmpty;
+    final local = bytes != null && bytes!.isNotEmpty;
+    final remote = networkUrl?.trim().isNotEmpty ?? false;
+    final hasImage = local || remote;
     return SizedBox(
       width: 56,
       height: 56,
@@ -4494,13 +5579,30 @@ class _MediaQrPicker extends StatelessWidget {
                   ? Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.memory(
-                          bytes!,
-                          fit: BoxFit.cover,
-                          width: 56,
-                          height: 56,
-                          gaplessPlayback: true,
-                        ),
+                        if (local)
+                          Image.memory(
+                            bytes!,
+                            fit: BoxFit.cover,
+                            width: 56,
+                            height: 56,
+                            gaplessPlayback: true,
+                          )
+                        else
+                          Image.network(
+                            networkUrl!.trim(),
+                            fit: BoxFit.cover,
+                            width: 56,
+                            height: 56,
+                            headers: AuthSession.headers(),
+                            errorBuilder: (_, _, _) => const ColoredBox(
+                              color: _kEmptyBg,
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                size: 18,
+                                color: _kMuted,
+                              ),
+                            ),
+                          ),
                         Positioned(
                           right: 0,
                           top: 0,

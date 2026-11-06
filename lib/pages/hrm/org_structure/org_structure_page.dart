@@ -1,7 +1,11 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
+import '../../location_breadcrumb.dart';
+import 'dialogs/dept_form_dialog.dart';
 import 'org_structure_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -16,7 +20,7 @@ const _kWarnFg = Color(0xFFD46B08);
 const _kPurple = Color(0xFF722ED1);
 const _kSideW = 280.0;
 
-/// HRM · 组织架构（部门树 + 组织图）。
+/// HRM · 部门（组织架构图谱：部门树 + 组织图）。
 class OrgStructurePage extends StatelessWidget {
   const OrgStructurePage({super.key});
 
@@ -39,7 +43,15 @@ class _Body extends StatelessWidget {
     final c = context.lx.find<OrgStructureController>();
     return ColoredBox(
       color: _kPageBg,
-      child: Obx(() {
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 14, 20, 0),
+            child: LocationBreadcrumb(segments: ['HRM', '部门']),
+          ),
+          Expanded(
+            child: Obx(() {
         if (c.loading.value && c.roots.isEmpty) {
           return const Center(
             child: SizedBox(
@@ -65,16 +77,456 @@ class _Body extends StatelessWidget {
             ),
           );
         }
-        return Row(
+        return const Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(width: _kSideW, child: _DeptTreePanel()),
-            const VerticalDivider(width: 1, color: _kBorder),
-            const Expanded(child: _ChartPanel()),
+            _PageHeader(),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: _kSideW, child: _DeptTreePanel()),
+                  VerticalDivider(width: 1, color: _kBorder),
+                  Expanded(child: _ChartPanel()),
+                ],
+              ),
+            ),
           ],
         );
       }),
+          ),
+        ],
+      ),
     );
+  }
+}
+
+class _PageHeader extends StatelessWidget {
+  const _PageHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.lx.find<OrgStructureController>();
+    return ColoredBox(
+      color: Colors.white,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: _kBorder)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '组织架构图谱',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: _kTitle,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '按行政汇报关系树形展示直接上下级与部门职务配置，支持搜索定位与汇报链高亮。',
+                    style: TextStyle(fontSize: 12, color: _kMuted, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Obx(() {
+              final active = c.hasDeptFilter;
+              final n = c.filterDeptIds.length;
+              return Builder(
+                builder: (anchorCtx) => _HeaderOutlineButton(
+                  onPressed: () {
+                    // Overlay 不在页面 LxScope 内，需 putInstance 注入。
+                    final ctrl =
+                        anchorCtx.lx.find<OrgStructureController>();
+                    AppPopover.show<void>(
+                      context: anchorCtx,
+                      alignment: Alignment.topRight,
+                      anchorAlignment: Alignment.bottomRight,
+                      offset: const Offset(0, 6),
+                      builder: (_) => LxScope(
+                        bindings: (container) {
+                          container.putInstance<OrgStructureController>(
+                            ctrl,
+                            owned: false,
+                          );
+                        },
+                        child: const _DeptFilterPopover(),
+                      ),
+                    );
+                  },
+                  leading: Icon(
+                    Icons.filter_alt_outlined,
+                    size: 16,
+                    color: active ? _kPurple : _kLabel,
+                  ),
+                  trailing: Icon(
+                    Icons.expand_more,
+                    size: 16,
+                    color: active ? _kPurple : _kMuted,
+                  ),
+                  active: active,
+                  child: Text(
+                    active ? '部门筛选 ($n)' : '部门筛选',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: active ? _kPurple : _kLabel,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(width: 8),
+            _HeaderOutlineButton(
+              onPressed: () {
+                c.expandAllDepts();
+                c.setZoom(1);
+                AppToast.show(
+                  context: context,
+                  title: '已展开全部组织点并重置缩放',
+                );
+              },
+              leading: const Icon(
+                Icons.open_in_full,
+                size: 15,
+                color: _kLabel,
+              ),
+              child: const Text(
+                '展开全部',
+                style: TextStyle(fontSize: 13, color: _kLabel),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Obx(() {
+              final busy = c.exporting.value;
+              return _HeaderFilledButton(
+                onPressed: busy ? null : () => _exportChartPng(context, c),
+                leading: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.download_outlined,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                child: Text(
+                  busy ? '导出中…' : '导出架构图',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _exportChartPng(
+  BuildContext context,
+  OrgStructureController c,
+) async {
+  if (c.exporting.value) return;
+  c.exporting.value = true;
+  try {
+    final bytes = await c.captureChartPng();
+    if (!context.mounted) return;
+    final stamp = DateTime.now();
+    final name =
+        '组织架构图_${stamp.year}${stamp.month.toString().padLeft(2, '0')}${stamp.day.toString().padLeft(2, '0')}_${stamp.hour.toString().padLeft(2, '0')}${stamp.minute.toString().padLeft(2, '0')}.png';
+    final savedUri = await FilePicker.saveFile(
+      dialogTitle: '导出架构图',
+      fileName: name,
+      bytes: bytes,
+      type: FileType.custom,
+      allowedExtensions: const ['png'],
+      windowsOptions: const WindowsOptions(lockParentWindow: true),
+    );
+    if (!context.mounted) return;
+    if (savedUri == null) return;
+    AppToast.show(context: context, title: '组织架构图已导出为 PNG');
+  } catch (e) {
+    if (!context.mounted) return;
+    AppToast.show(context: context, title: e.toString());
+  } finally {
+    c.exporting.value = false;
+  }
+}
+
+class _HeaderOutlineButton extends StatelessWidget {
+  const _HeaderOutlineButton({
+    required this.onPressed,
+    required this.child,
+    this.leading,
+    this.trailing,
+    this.active = false,
+  });
+
+  final VoidCallback onPressed;
+  final Widget child;
+  final Widget? leading;
+  final Widget? trailing;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppInkWell(
+      onPressed: onPressed,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: active ? _kPurple : _kBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: 6),
+            ],
+            child,
+            if (trailing != null) ...[
+              const SizedBox(width: 4),
+              trailing!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderFilledButton extends StatelessWidget {
+  const _HeaderFilledButton({
+    required this.onPressed,
+    required this.child,
+    this.leading,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget child;
+  final Widget? leading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: onPressed == null ? 0.7 : 1,
+      child: AppInkWell(
+        onPressed: onPressed,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: _kPrimary,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (leading != null) ...[
+                leading!,
+                const SizedBox(width: 6),
+              ],
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 部门筛选弹层：树形多选 + 人数。
+class _DeptFilterPopover extends StatelessWidget {
+  const _DeptFilterPopover();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.lx.find<OrgStructureController>();
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      shadowColor: const Color(0x33000000),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 320,
+        constraints: const BoxConstraints(maxHeight: 420),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _kBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '按部门筛选（可多选）',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _kTitle,
+                      ),
+                    ),
+                  ),
+                  AppInkWell(
+                    onPressed: c.clearDeptFilter,
+                    borderRadius: BorderRadius.circular(4),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Text(
+                        '全部部门',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: _kPurple,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _kBorder),
+            Flexible(
+              child: Obx(() {
+                c.filterDeptIds.length;
+                c.roots.length;
+                final entries = _filterEntries(c);
+                if (entries.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: Text(
+                        '暂无部门',
+                        style: TextStyle(fontSize: 13, color: _kMuted),
+                      ),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+                  shrinkWrap: true,
+                  itemCount: entries.length,
+                  itemBuilder: (ctx, i) {
+                    final e = entries[i];
+                    final checked = c.filterDeptIds.contains(e.id);
+                    return AppInkWell(
+                      onPressed: () => c.toggleFilterDept(e.id),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          left: 8.0 + e.depth * 18,
+                          right: 8,
+                          top: 7,
+                          bottom: 7,
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: Checkbox(
+                                value: checked,
+                                onChanged: (_) => c.toggleFilterDept(e.id),
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                                side: const BorderSide(color: _kBorder),
+                                activeColor: _kPurple,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                e.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: e.depth == 0
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                  color: _kTitle,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${e.onDuty} 人',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: _kMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 弹层树：公司根有子级时从子级起列（与截图一致）；否则列全部根。
+  List<({String id, String name, int onDuty, int depth})> _filterEntries(
+    OrgStructureController c,
+  ) {
+    final out = <({String id, String name, int onDuty, int depth})>[];
+    void walk(OrgDeptNode n, int depth) {
+      final id = n.id;
+      if (id == null || id.isEmpty) return;
+      final name = n.dept.deptName?.trim().isNotEmpty == true
+          ? n.dept.deptName!.trim()
+          : '未命名部门';
+      out.add((id: id, name: name, onDuty: n.subtreeOnDuty, depth: depth));
+      for (final child in n.children) {
+        walk(child, depth + 1);
+      }
+    }
+
+    if (c.roots.length == 1 && c.roots.first.children.isNotEmpty) {
+      for (final child in c.roots.first.children) {
+        walk(child, 0);
+      }
+    } else {
+      for (final root in c.roots) {
+        walk(root, 0);
+      }
+    }
+    return out;
   }
 }
 
@@ -160,7 +612,24 @@ class _DeptTreeItem extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppInkWell(
+        HyperContextMenu(
+          enabled: id.isNotEmpty,
+          items: const [
+            HyperMenuItem(id: 'add', label: '添加'),
+            HyperMenuItem(id: 'edit', label: '修改'),
+            HyperMenuItem(id: 'delete', label: '删除'),
+          ],
+          onSelected: (action) {
+            switch (action) {
+              case 'add':
+                showDeptAddDialog(context, parent: node.dept);
+              case 'edit':
+                showDeptEditDialog(context, node.dept);
+              case 'delete':
+                confirmDeleteDept(context, node.dept);
+            }
+          },
+          child: AppInkWell(
           onPressed: () {
             if (id.isNotEmpty) c.selectDept(id);
           },
@@ -214,16 +683,16 @@ class _DeptTreeItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (node.hasPeople)
-                  Text(
-                    '${node.subtreeOnDuty}人',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: selected ? _kPrimary : _kMuted,
-                    ),
+                Text(
+                  '${node.subtreeOnDuty}人',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: selected ? _kPrimary : _kMuted,
                   ),
+                ),
               ],
             ),
+          ),
           ),
         ),
         if (hasChildren && expanded)
@@ -259,7 +728,7 @@ class _CompanyConfigCard extends StatelessWidget {
             _kv('总编制', '${c.companyHeadcount}'),
             _kv('在岗人数', '${c.companyOnDuty}'),
             _kv(
-              '空缺岗位',
+              '空缺职务',
               '${c.companyVacancy}',
               valueColor: c.companyVacancy > 0 ? _kDanger : null,
             ),
@@ -337,13 +806,14 @@ class _ChartPanel extends StatelessWidget {
             // 组织图根固定为公司树根，点选左侧只改蓝框链路，不换根、不挪视角。
             final reportMode =
                 c.viewMode.value == OrgChartViewMode.reportChain;
-            // 订阅选中链路 / 岗位标签 / 汇报树等；InteractiveViewer 保持同一实例。
+            // 订阅选中链路 / 职务标签 / 汇报树等；InteractiveViewer 保持同一实例。
             c.selectionPathIds.length;
             c.reportPathIds.length;
             c.reportRoots.length;
             c.selectedPositionId.value;
             c.postTagsByDept.length;
             c.vacancyByDept.length;
+            c.filterDeptIds.length;
             c.searchQuery.value;
             c.highlightReport.value;
             final vertical = c.layout.value == OrgChartLayout.vertical;
@@ -365,13 +835,21 @@ class _ChartPanel extends StatelessWidget {
                     boundaryMargin: const EdgeInsets.all(200),
                     minScale: 0.5,
                     maxScale: 1.8,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
-                      child: vertical
-                          ? _ReportChartVertical(roots: c.reportRoots.toList())
-                          : _ReportChartHorizontal(
-                              roots: c.reportRoots.toList(),
-                            ),
+                    child: RepaintBoundary(
+                      key: c.chartExportKey,
+                      child: ColoredBox(
+                        color: Colors.white,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
+                          child: vertical
+                              ? _ReportChartVertical(
+                                  roots: c.reportRoots.toList(),
+                                )
+                              : _ReportChartHorizontal(
+                                  roots: c.reportRoots.toList(),
+                                ),
+                        ),
+                      ),
                     ),
                   ),
                   if (c.chartLoading.value)
@@ -405,11 +883,17 @@ class _ChartPanel extends StatelessWidget {
                   boundaryMargin: const EdgeInsets.all(200),
                   minScale: 0.5,
                   maxScale: 1.8,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
-                    child: vertical
-                        ? _OrgChartVertical(root: root)
-                        : _OrgChartHorizontal(root: root),
+                  child: RepaintBoundary(
+                    key: c.chartExportKey,
+                    child: ColoredBox(
+                      color: Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
+                        child: vertical
+                            ? _OrgChartVertical(root: root)
+                            : _OrgChartHorizontal(root: root),
+                      ),
+                    ),
                   ),
                 ),
                 if (c.chartLoading.value)
@@ -497,7 +981,7 @@ class _ChartToolbar extends StatelessWidget {
                     onChanged: c.setSearch,
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText: '搜索姓名、岗位',
+                      hintText: '搜索姓名、职务',
                       hintStyle: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFFC9CDD4),
@@ -641,7 +1125,8 @@ class _VNode extends StatelessWidget {
     if (!isChartRoot && !node.shouldShow) {
       return const SizedBox.shrink();
     }
-    final children = node.visibleChildren;
+    final c = context.lx.find<OrgStructureController>();
+    final children = c.chartChildrenOf(node);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -759,7 +1244,8 @@ class _HNode extends StatelessWidget {
     if (!isChartRoot && !node.shouldShow) {
       return const SizedBox.shrink();
     }
-    final children = node.visibleChildren;
+    final c = context.lx.find<OrgStructureController>();
+    final children = c.chartChildrenOf(node);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
@@ -1036,10 +1522,10 @@ class _PersonCard extends StatelessWidget {
                       height: 1.25,
                     ),
                   ),
-                  if (node.postName.isNotEmpty) ...[
+                  if (node.subtitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      node.postName,
+                      node.subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -1090,8 +1576,8 @@ class _DeptCard extends StatelessWidget {
     final searching = c.searchQuery.value.isNotEmpty;
     final inPath = c.isInSelectionPath(node.id);
     final hit = c.matchesSearch(node);
-    final hasChildren = node.visibleChildren.isNotEmpty;
-    // 截图：有子节点的中心卡展示「编制/空缺」；叶子卡展示岗位席位标签。
+    final hasChildren = c.chartChildrenOf(node).isNotEmpty;
+    // 截图：有子节点的中心卡展示「编制/空缺」；叶子卡展示职务编制标签。
     // 总经办图根：只展示「全员」人数。
     final showStaffing = !isChartRoot && hasChildren;
     final tags = (!isChartRoot && !hasChildren) ? c.tagsFor(node) : const <({
@@ -1100,6 +1586,12 @@ class _DeptCard extends StatelessWidget {
       bool vacancy,
     })>[];
     final staffing = showStaffing ? c.staffingLine(node) : (0, 0);
+    final leader = isChartRoot ? null : c.leaderNameOf(node.id);
+    final metaLine = isChartRoot
+        ? null
+        : showStaffing
+            ? '${(leader != null && leader.isNotEmpty) ? '负责人 $leader · ' : ''}编制 ${staffing.$1} · 空缺 ${staffing.$2}'
+            : ((leader != null && leader.isNotEmpty) ? '负责人 $leader' : null);
     // 搜索中：命中亮起蓝框，其余变灰；无搜索时按高亮路径。
     final emphasized = searching
         ? hit
@@ -1180,10 +1672,12 @@ class _DeptCard extends StatelessWidget {
                 '全员 ${c.companyOnDuty} 人',
                 style: const TextStyle(fontSize: 12, color: _kMuted),
               ),
-            ] else if (showStaffing) ...[
+            ] else if (metaLine != null) ...[
               const SizedBox(height: 4),
               Text(
-                '编制 ${staffing.$1} · 空缺 ${staffing.$2}',
+                metaLine,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 11, color: _kMuted),
               ),
             ],

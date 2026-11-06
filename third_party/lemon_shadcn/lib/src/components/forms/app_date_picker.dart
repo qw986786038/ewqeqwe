@@ -157,8 +157,14 @@ class _AppSingleDateEditor extends StatefulWidget {
   State<_AppSingleDateEditor> createState() => _AppSingleDateEditorState();
 }
 
+DateTime? _dateOnly(DateTime? value) {
+  if (value == null) return null;
+  final local = value.toLocal();
+  return DateTime(local.year, local.month, local.day);
+}
+
 class _AppSingleDateEditorState extends State<_AppSingleDateEditor> {
-  late final DateTime? _initialValue = widget.handler.value;
+  late final DateTime? _initialValue = _dateOnly(widget.handler.value);
   late DateTime? _value = _initialValue;
 
   @override
@@ -178,9 +184,10 @@ class _AppSingleDateEditorState extends State<_AppSingleDateEditor> {
                 : shad.CalendarValue.single(_value!),
             stateBuilder: widget.stateBuilder,
             onChanged: (value) {
-              final next = value == null
-                  ? null
-                  : (value as shad.SingleCalendarValue).date;
+              // 日历再点已选日期会回传 null。表单里清空走「清空」，这里保持当前选择。
+              if (value == null) return;
+              final picked = (value as shad.SingleCalendarValue).date;
+              final next = DateTime(picked.year, picked.month, picked.day);
               setState(() => _value = next);
               if (!widget.showActions) widget.handler.value = next;
             },

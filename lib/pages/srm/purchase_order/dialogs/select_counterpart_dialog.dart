@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../customer_archive/dialogs/select_sales_person_dialog.dart'
     show hrmEmployeeDeptPost, hrmEmployeeStatusLabel;
@@ -15,12 +16,14 @@ const _kHoverBg = Color(0xFFF5F7FA);
 const _kBarrier = Color(0x99000000);
 
 /// 打开「选择对接人员」弹窗（单选）；点行即选中返回，取消返回 `null`。
-Future<HrmEmployee?> showSelectCounterpartDialog(BuildContext context) {
-  return AppDialog.show<HrmEmployee>(
+Future<HrmEmployee?> showSelectCounterpartDialog(BuildContext context) async {
+  // 与供应商编辑弹窗一致：等 pointer 结束再推路由，避免 MouseTracker 重入。
+  await Future<void>.delayed(Duration.zero);
+  if (!context.mounted) return null;
+  return showHyperDialog<HrmEmployee>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
-    barrierColor: _kBarrier,
+    style: const HyperDialogStyle(barrierColor: _kBarrier),
     builder: (dialogContext) {
       final mq = MediaQuery.of(dialogContext);
       return AppShadcnScope(
@@ -39,13 +42,13 @@ Future<HrmEmployee?> showSelectCounterpartDialog(BuildContext context) {
         child: MediaQuery(
           data: mq.copyWith(textScaler: TextScaler.noScaling),
           child: _SelectCounterpartDialog(
-            onClose: () => AppOverlay.close<HrmEmployee>(dialogContext),
-            onPick: (e) => AppOverlay.close<HrmEmployee>(dialogContext, e),
+            onClose: () => Navigator.of(dialogContext).pop(),
+            onPick: (e) => Navigator.of(dialogContext).pop(e),
           ),
         ),
       );
     },
-  ).future;
+  );
 }
 
 class _SelectCounterpartDialog extends StatefulWidget {
@@ -289,9 +292,9 @@ class _SelectCounterpartDialogState extends State<_SelectCounterpartDialog> {
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                   child: Align(
                     alignment: Alignment.centerRight,
-                    child: AppButton.outline(
+                    child: HyperButton.outlined(
                       onPressed: widget.onClose,
-                      child: const Text('取消'),
+                      label: const Text('取消'),
                     ),
                   ),
                 ),

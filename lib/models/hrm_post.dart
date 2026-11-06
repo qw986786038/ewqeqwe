@@ -1,4 +1,4 @@
-/// HRM 岗位（对接 desktop/hrm/post）。
+/// HRM 职务（对接 desktop/hrm/post）。
 class HrmPost {
   String? id;
   String? name;

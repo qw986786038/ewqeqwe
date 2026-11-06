@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../models/hrm_dept.dart';
 import '../../../models/hrm_employee.dart';
-import '../../../models/hrm_employee_assign.dart';
-import '../../../models/hrm_employee_profile.dart';
-import '../../../models/hrm_position.dart';
-import '../../../models/hrm_post.dart';
 import '../../../services/hrm_api.dart';
 
 const _kPrimary = Color(0xFF0958D9);
@@ -14,21 +11,17 @@ const _kTitle = Color(0xFF141414);
 const _kMuted = Color(0xFF64748B);
 const _kBorder = Color(0xFFD0D5DD);
 const _kSelectedBg = Color(0xFFE8F3FF);
-const _kBarrier = Color(0x99000000);
 
 /// 打开「选择销售人员」弹窗；确定后返回选中员工列表。
 ///
-/// 人员数据与 HRM 组织架构同源：部门树 + 在任任职 + 员工档案 + 席位/岗位，
-/// 不再走 `employee-directory`。
+/// 人员数据与 HRM 企业通讯录同源：部门树 + `employee-directory`。
 Future<List<HrmEmployee>?> showSelectSalesPersonDialog(
   BuildContext context, {
   Set<int> alreadySelectedUserIds = const {},
 }) {
-  return AppDialog.show<List<HrmEmployee>>(
+  return showHyperDialog<List<HrmEmployee>>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
-    barrierColor: _kBarrier,
     builder: (dialogContext) {
       final mq = MediaQuery.of(dialogContext);
       return AppShadcnScope(
@@ -48,14 +41,13 @@ Future<List<HrmEmployee>?> showSelectSalesPersonDialog(
           data: mq.copyWith(textScaler: TextScaler.noScaling),
           child: _SelectSalesPersonDialog(
             alreadySelectedUserIds: alreadySelectedUserIds,
-            onClose: () => AppOverlay.close<List<HrmEmployee>>(dialogContext),
-            onConfirm: (list) =>
-                AppOverlay.close<List<HrmEmployee>>(dialogContext, list),
+            onClose: () => Navigator.of(dialogContext).pop(),
+            onConfirm: (list) => Navigator.of(dialogContext).pop(list),
           ),
         ),
       );
     },
-  ).future;
+  );
 }
 
 class _DeptNode {
@@ -91,13 +83,6 @@ class _SelectSalesPersonDialogState extends State<_SelectSalesPersonDialog> {
   List<_DeptNode> _roots = const [];
   String? _selectedDeptId;
 
-  /// 与 HRM 组织架构同源：在任 + 员工档案 + 席位 + 岗位。
-  List<HrmEmployeeAssign> _assigns = const [];
-  final Map<int, HrmEmployeeProfile> _profileByUserId = {};
-  final Map<String, HrmPosition> _positionById = {};
-  final Map<String, String> _postNameById = {};
-  final Map<String, String> _deptNameById = {};
-
   var _empLoading = false;
   String? _empError;
   List<HrmEmployee> _employees = const [];
@@ -124,80 +109,12 @@ class _SelectSalesPersonDialogState extends State<_SelectSalesPersonDialog> {
       _bootError = null;
     });
     try {
-      // 数据源与组织架构 refreshAll 一致。
-      final results = await Future.wait([
-        _api.fetchDepts(),
-        _api.fetchOnDutyAssigns(),
-        _api.fetchEmployeeProfiles(pageNum: 1, pageSize: 10000),
-        _api.fetchPosts(),
-      ]);
+      final depts = await _api.fetchDepts();
       if (!mounted) return;
-      final depts = results[0] as List<HrmDept>;
-      _assigns = results[1] as List<HrmEmployeeAssign>;
-      final profiles = results[2] as List<HrmEmployeeProfile>;
-      final posts = results[3] as List<HrmPost>;
-
-      _profileByUserId
-        ..clear()
-        ..addEntries([
-          for (final e in profiles)
-            if (e.userId != null) MapEntry(e.userId!, e),
-        ]);
-      _postNameById
-        ..clear()
-        ..addEntries([
-          for (final p in posts)
-            if (p.id != null && p.id!.trim().isNotEmpty)
-              MapEntry(p.id!.trim(), (p.name ?? '').trim()),
-        ]);
-      _deptNameById
-        ..clear()
-        ..addEntries([
-          for (final d in depts)
-            if (d.deptId != null && d.deptId!.trim().isNotEmpty)
-              MapEntry(d.deptId!.trim(), (d.deptName ?? '').trim()),
-        ]);
-
-      // 席位拉取与组织架构相同：先全量，空则按部门+岗位补拉。
-      var positions = <HrmPosition>[];
-      try {
-        positions = await _api.fetchPositions();
-      } catch (_) {
-        positions = const [];
-      }
-      if (positions.isEmpty) {
-        try {
-          positions = await _api.fetchPositionsForDepts(
-            [
-              for (final d in depts)
-                if (d.deptId != null) d.deptId!,
-            ],
-            postIds: [
-              for (final p in posts)
-                if (p.id != null) p.id!,
-            ],
-          );
-        } catch (_) {
-          positions = const [];
-        }
-      }
-      if (!mounted) return;
-      _positionById
-        ..clear()
-        ..addEntries([
-          for (final p in positions)
-            if (p.id != null && p.id!.trim().isNotEmpty)
-              MapEntry(p.id!.trim(), p),
-        ]);
-
       final roots = _buildTree(depts);
       String? firstId;
       if (roots.isNotEmpty) {
         firstId = roots.first.dept.deptId;
-        // 默认选中第一个有子节点的子部门，更贴近「选部门看人」场景。
-        if (roots.first.children.isNotEmpty) {
-          firstId = roots.first.children.first.dept.deptId;
-        }
       }
       setState(() {
         _roots = roots;
@@ -253,70 +170,7 @@ class _SelectSalesPersonDialogState extends State<_SelectSalesPersonDialog> {
     return roots;
   }
 
-  /// 选中部门及其下级部门 id（与组织架构部门筛选一致）。
-  Set<String> _deptSubtreeIds(String deptId) {
-    _DeptNode? find(List<_DeptNode> nodes) {
-      for (final n in nodes) {
-        if (n.dept.deptId?.trim() == deptId) return n;
-        final hit = find(n.children);
-        if (hit != null) return hit;
-      }
-      return null;
-    }
-
-    final node = find(_roots);
-    if (node == null) return {deptId};
-    final out = <String>{};
-    void walk(_DeptNode n) {
-      final id = n.dept.deptId?.trim();
-      if (id != null && id.isNotEmpty) out.add(id);
-      for (final c in n.children) {
-        walk(c);
-      }
-    }
-
-    walk(node);
-    return out;
-  }
-
-  HrmEmployee _toEmployee({
-    required int userId,
-    required HrmEmployeeProfile? profile,
-    required HrmPosition? position,
-  }) {
-    final deptId = position?.sysDeptId?.trim();
-    final postId = position?.postId?.trim();
-    final deptName = (position?.deptName?.trim().isNotEmpty ?? false)
-        ? position!.deptName!.trim()
-        : (deptId != null ? (_deptNameById[deptId] ?? '') : '');
-    final postName = (position?.postName?.trim().isNotEmpty ?? false)
-        ? position!.postName!.trim()
-        : (postId != null ? (_postNameById[postId] ?? '') : '');
-    final name = profile?.name?.trim();
-    return HrmEmployee()
-      ..userId = userId
-      ..no = profile?.no
-      ..name = (name != null && name.isNotEmpty) ? name : '用户$userId'
-      ..englishName = profile?.englishName
-      ..aliasName = profile?.aliasName
-      ..gender = profile?.gender
-      ..empStatus = profile?.empStatus ?? 'ACTIVE'
-      ..mobile = profile?.mobile
-      ..corpEmail = profile?.corpEmail
-      ..imAccount = profile?.imAccount
-      ..titleList = [
-        HrmEmployeeTitle()
-          ..positionId = position?.id
-          ..sysDeptId = deptId
-          ..deptName = deptName.isEmpty ? null : deptName
-          ..postId = postId
-          ..postName = postName.isEmpty ? null : postName
-          ..isPrimary = 1,
-      ];
-  }
-
-  /// 按组织架构同源数据筛人：在任 ∩ 席位.部门（含下级）。
-  /// 页面交互仍与原先一致：点左侧部门 → 右侧列表刷新。
+  /// 与 HRM 企业通讯录一致：`employee-directory` + 含下级部门。
   Future<void> _loadEmployees(String deptId) async {
     setState(() {
       _empLoading = true;
@@ -324,16 +178,10 @@ class _SelectSalesPersonDialogState extends State<_SelectSalesPersonDialog> {
       _employees = const [];
     });
     try {
-      var deptIds = _deptSubtreeIds(deptId);
-      var list = _employeesOfDepts(deptIds);
-      // 子树无在任时，再试「仅当前部门」（避免树节点匹配偏差导致空列表）。
-      if (list.isEmpty) {
-        list = _employeesOfDepts({deptId.trim()});
-      }
-      // 席位未拉到时无法按部门过滤，退化为展示全部在任（与组织架构同源数据）。
-      if (list.isEmpty && _assigns.isNotEmpty && _positionById.isEmpty) {
-        list = _employeesOfDepts(null);
-      }
+      final list = await _api.fetchEmployees(
+        sysDeptId: deptId,
+        includeChildren: true,
+      );
       list.sort((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
       if (!mounted) return;
       setState(() {
@@ -353,35 +201,6 @@ class _SelectSalesPersonDialogState extends State<_SelectSalesPersonDialog> {
         _empError = e.toString();
       });
     }
-  }
-
-  /// [deptIds] 为 null 时不过滤部门（展示全部在任）。
-  List<HrmEmployee> _employeesOfDepts(Set<String>? deptIds) {
-    final seen = <int>{};
-    final list = <HrmEmployee>[];
-    for (final a in _assigns) {
-      final posId = a.positionId?.trim();
-      final uid = a.employeeUserId;
-      if (posId == null || posId.isEmpty || uid == null) continue;
-      final pos = _positionById[posId];
-      if (deptIds != null) {
-        final posDept = pos?.sysDeptId?.trim();
-        if (posDept == null || posDept.isEmpty || !deptIds.contains(posDept)) {
-          continue;
-        }
-      }
-      if (!seen.add(uid)) continue;
-      final profile = _profileByUserId[uid];
-      // 档案尚未同步时仍展示在任（至少有 userId）。
-      list.add(
-        _toEmployee(
-          userId: uid,
-          profile: profile,
-          position: pos,
-        ),
-      );
-    }
-    return list;
   }
 
   void _selectDept(_DeptNode node) {
@@ -476,101 +295,52 @@ class _SelectSalesPersonDialogState extends State<_SelectSalesPersonDialog> {
     final dialogH = (screen.height * 0.82).clamp(480.0, 720.0);
     final dialogW = (screen.width * 0.72).clamp(720.0, 960.0);
 
-    return Material(
-      color: Colors.transparent,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: dialogW,
-            maxHeight: dialogH,
-            minWidth: 720,
-            minHeight: 480,
-          ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _kBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-                  child: Row(
+    final contentH = dialogH - 100;
+
+    return HyperDialog(
+      title: const Text('选择销售人员'),
+      scrollable: false,
+      style: HyperDialogStyle(maxWidth: dialogW),
+      onClose: widget.onClose,
+      content: SizedBox(
+        height: contentH,
+        child: _bootLoading
+            ? const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                ),
+              )
+            : _bootError != null
+                ? Center(
+                    child: Text(
+                      _bootError!,
+                      style: const TextStyle(color: Color(0xFFCF1322)),
+                    ),
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        '选择销售人员',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: _kTitle,
-                        ),
+                      SizedBox(
+                        width: 240,
+                        child: _buildDeptPane(),
                       ),
-                      const Spacer(),
-                      AppInkWell(
-                        onPressed: widget.onClose,
-                        borderRadius: BorderRadius.circular(4),
-                        child: const Padding(
-                          padding: EdgeInsets.all(6),
-                          child: Icon(Icons.close, size: 18, color: _kMuted),
-                        ),
-                      ),
+                      const VerticalDivider(width: 1, color: _kBorder),
+                      Expanded(child: _buildEmployeePane()),
                     ],
                   ),
-                ),
-                const Divider(height: 1, color: _kBorder),
-                Expanded(
-                  child: _bootLoading
-                      ? const Center(
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2.2),
-                          ),
-                        )
-                      : _bootError != null
-                      ? Center(
-                          child: Text(
-                            _bootError!,
-                            style: const TextStyle(color: Color(0xFFCF1322)),
-                          ),
-                        )
-                      : Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SizedBox(
-                              width: 240,
-                              child: _buildDeptPane(),
-                            ),
-                            const VerticalDivider(width: 1, color: _kBorder),
-                            Expanded(child: _buildEmployeePane()),
-                          ],
-                        ),
-                ),
-                const Divider(height: 1, color: _kBorder),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      AppButton.outline(
-                        onPressed: widget.onClose,
-                        child: const Text('取消'),
-                      ),
-                      const SizedBox(width: 10),
-                      AppButton.primary(
-                        onPressed: _confirm,
-                        child: const Text('确定'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
+      actions: [
+        HyperButton.outlined(
+          onPressed: widget.onClose,
+          label: const Text('取消'),
+        ),
+        HyperButton.filled(
+          onPressed: _confirm,
+          label: const Text('确定'),
+        ),
+      ],
     );
   }
 

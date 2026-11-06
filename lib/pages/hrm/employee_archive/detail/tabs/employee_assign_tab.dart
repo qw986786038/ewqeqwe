@@ -78,9 +78,9 @@ class EmployeeAssignTab extends StatelessWidget {
                               child: Column(
                                 children: [
                                   _Field(label: '一级部门', value: dept1),
-                                  _Field(label: '岗位', value: post),
+                                  _Field(label: '职务', value: post),
                                   const _Field(
-                                    label: '岗位性质',
+                                    label: '职务性质',
                                     value: '管理岗 · 全职',
                                   ),
                                   _Field(
@@ -372,7 +372,7 @@ class _HistoryCard extends StatelessWidget {
                         children: [
                           _HCell('生效日期', 100),
                           _HCell('部门', 150),
-                          _HCell('岗位', 100),
+                          _HCell('职务', 100),
                           _HCell('职级', 56),
                           _HCell('汇报对象', 72),
                           _HCell('变动类型', 72),

@@ -3,6 +3,7 @@ import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import 'employee_edit_controller.dart';
+import 'employee_edit_overview.dart';
 
 const _kPrimary = Color(0xFF1677FF);
 const _kPageBg = Color(0xFFF0F2F5);
@@ -162,7 +163,9 @@ class _Body extends StatelessWidget {
                   ),
                 );
               }
-              return _EditForm(onBack: onBack);
+              return c.isCreate
+                  ? _EditForm(onBack: onBack)
+                  : const EmployeeEditOverview();
             }),
           ),
         ],
@@ -884,9 +887,9 @@ class _AssignBlock extends StatelessWidget {
             ),
             right: AppSelectFormField<String>(
               name: 'assign_post_${item.localKey}',
-              label: '当前岗位',
+              label: '当前职务',
               required: true,
-              hintText: '请选择岗位',
+              hintText: '请选择职务',
               options: c.postOptions(),
               initialValue: item.postId,
               onChanged: (v) => item.postId = v,
@@ -895,7 +898,7 @@ class _AssignBlock extends StatelessWidget {
           _ThreeCol(
             left: AppSelectFormField<String>(
               name: 'assign_seq_${item.localKey}',
-              label: '岗位序列',
+              label: '职务序列',
               hintText: '请选择',
               options: c.postSeqOptions(),
               initialValue: item.postSeqId,
@@ -927,9 +930,9 @@ class _AssignBlock extends StatelessWidget {
               ),
               child: AppSelectFormField<String>(
                 name: 'assign_position_${item.localKey}',
-                label: '席位',
+                label: '编制',
                 required: true,
-                hintText: '请选择席位',
+                hintText: '请选择编制',
                 options: c.positionOptions(item.deptId),
                 initialValue: item.positionId,
                 onChanged: (v) {
@@ -950,8 +953,8 @@ class _AssignBlock extends StatelessWidget {
                 label: '汇报对象',
                 readOnly: true,
                 enabled: false,
-                hintText: '由席位自动带出',
-                initialValue: item.reportTo == '由席位自动带出'
+                hintText: '由编制自动带出',
+                initialValue: item.reportTo == '由编制自动带出'
                     ? null
                     : item.reportTo,
               ),
@@ -960,8 +963,8 @@ class _AssignBlock extends StatelessWidget {
                 label: '虚线汇报对象',
                 readOnly: true,
                 enabled: false,
-                hintText: '由席位自动带出',
-                initialValue: item.dottedReport == '由席位自动带出'
+                hintText: '由编制自动带出',
+                initialValue: item.dottedReport == '由编制自动带出'
                     ? null
                     : item.dottedReport,
               ),

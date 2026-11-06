@@ -4,23 +4,21 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import 'contact_vcf_parser.dart';
 
 const _kPrimary = Color(0xFF0958D9);
 const _kLabel = Color(0xFF334155);
 const _kMuted = Color(0xFF64748B);
-const _kBarrier = Color(0x99000000);
 const _kCardBorder = Color(0xFFD0D5DD);
 const _kCardBg = Color(0xFFF8FAFC);
 
 /// 打开「上传 VCF」弹窗；确认填充后返回解析结果列表，取消返回 `null`。
 Future<List<ContactVcfData>?> showContactVcfImportDialog(BuildContext context) {
-  return AppDialog.show<List<ContactVcfData>>(
+  return showHyperDialog<List<ContactVcfData>>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
-    barrierColor: _kBarrier,
     builder: (dialogContext) => AppShadcnScope(
       config: AppThemeConfig.standard(
         primary: _kPrimary,
@@ -35,11 +33,10 @@ Future<List<ContactVcfData>?> showContactVcfImportDialog(BuildContext context) {
         ),
       ),
       child: _ContactVcfImportDialog(
-        onClose: (data) =>
-            AppOverlay.close<List<ContactVcfData>>(dialogContext, data),
+        onClose: (data) => Navigator.of(dialogContext).pop(data),
       ),
     ),
-  ).future;
+  );
 }
 
 class _ContactVcfImportDialog extends StatefulWidget {
@@ -138,9 +135,11 @@ class _ContactVcfImportDialogState extends State<_ContactVcfImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AppFormDialog(
+    return HyperDialog(
       title: const Text('上传 VCF'),
-      constraints: const BoxConstraints(minWidth: 480, maxWidth: 560),
+      scrollable: true,
+      style: const HyperDialogStyle(maxWidth: 560),
+      onClose: () => widget.onClose(null),
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -231,18 +230,17 @@ class _ContactVcfImportDialogState extends State<_ContactVcfImportDialog> {
         ],
       ),
       actions: [
-        AppButton.primary(
+        HyperButton.filled(
           onPressed: _parsed.isEmpty || _reading ? null : _apply,
-          child: Text(
+          label: Text(
             _parsed.length > 1
                 ? '填充 ${_parsed.length} 位联系人'
                 : '填充到联系人',
-            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
-        AppButton.outline(
+        HyperButton.outlined(
           onPressed: _reading ? null : () => widget.onClose(null),
-          child: const Text('取消'),
+          label: const Text('取消'),
         ),
       ],
     );

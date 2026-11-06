@@ -11,6 +11,8 @@ import 'customer_archive_controller.dart';
 import 'detail/customer_brand_detail_page.dart';
 import 'detail/customer_contact_detail_page.dart';
 import 'detail/customer_entity_detail_page.dart';
+import 'dialogs/contact_import_dialog.dart';
+import 'dialogs/enterprise_import_dialog.dart';
 import 'dialogs/quick_create_brand_dialog.dart';
 
 /// 列设置可开关的列（序号 / 操作固定显示）。
@@ -324,11 +326,21 @@ class _Body extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       AppButton.outline(
-                        onPressed: () {
-                          AppToast.show(context: context, title: '导入待接入');
+                        onPressed: () async {
+                          final ok = await showContactImportDialog(context);
+                          if (ok && context.mounted) await c.refreshAll();
                         },
                         leading: const Icon(Icons.upload_outlined, size: 16),
-                        child: const Text('导入'),
+                        child: const Text('导入联系人'),
+                      ),
+                      const SizedBox(width: 8),
+                      AppButton.outline(
+                        onPressed: () async {
+                          final ok = await showEnterpriseImportDialog(context);
+                          if (ok && context.mounted) await c.refreshAll();
+                        },
+                        leading: const Icon(Icons.upload_outlined, size: 16),
+                        child: const Text('导入经营主体'),
                       ),
                       const SizedBox(width: 8),
                       Obx(

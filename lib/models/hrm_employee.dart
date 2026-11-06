@@ -16,6 +16,9 @@ class HrmEmployee {
 class HrmEmployeeTitle {
   String? id;
   String? positionId;
+  String? reportPositionId;
+  int? reportEmployeeId;
+  String? reportEmployeeName;
   String? sysDeptId;
   String? deptName;
   String? postId;
@@ -23,6 +26,8 @@ class HrmEmployeeTitle {
   int? postOrderNum;
   String? postSeqLevelId;
   String? postSeqLeveName;
+  String? postSeqId;
+  String? postSeqName;
   int? postSeqLeveOrderNum;
   int? isPrimary;
   String? startDate;

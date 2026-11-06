@@ -411,7 +411,7 @@ class _RuleData {
 const _rules = <_RuleData>[
   _RuleData(field: '头像', all: '开启', dept: '开启', hr: '开启'),
   _RuleData(field: '姓名 / 英文名', all: '开启', dept: '开启', hr: '开启'),
-  _RuleData(field: '部门 / 岗位 / 职级', all: '开启', dept: '开启', hr: '开启'),
+  _RuleData(field: '部门 / 职务 / 职级', all: '开启', dept: '开启', hr: '开启'),
   _RuleData(
     field: '手机号',
     all: '中间四位隐藏',

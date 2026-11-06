@@ -6,18 +6,24 @@ import 'package:lemon_x/lemon_x.dart';
 
 import '../bokong/http/bokong_auto_auth.dart';
 import '../bokong/main.dart';
+import '../models/oac_agency.dart';
 import '../models/oac_brand.dart';
 import '../models/oac_enterprise.dart';
+import '../models/oac_person.dart';
 import '../services/auth_session.dart';
 import 'brand_detail/brand_detail_page.dart';
 import 'brand_detail/dialogs/add_order_dialog.dart';
 import 'customer_archive/customer_archive_page.dart';
 import 'home_controller.dart';
+import 'location_breadcrumb.dart';
 import 'hrm/directory/enterprise_directory_page.dart';
 import 'hrm/hrm_placeholder_page.dart';
 import 'hrm/org_structure/org_structure_page.dart';
 import 'hrm/post_manage/post_manage_page.dart';
 import 'hrm/employee_archive/employee_archive_page.dart';
+import 'hrm/offboarding/offboarding_page.dart';
+import 'hrm/onboarding/onboarding_page.dart';
+import 'hrm/regularization/regularization_page.dart';
 import 'hrm/seat/seat_page.dart';
 import 'hrm/post_seq/post_seq_page.dart';
 import 'hrm/workplace/workplace_page.dart';
@@ -33,7 +39,8 @@ const _kTrendDown = Color(0xFFFF4D4F);
 const _kMuted = Color(0xFF8C8C8C);
 const _kBorder = Color(0xFFE5E6EB);
 const _kTitle = Color(0xFF1D2129);
-const _kAmount = Color(0xFFFA8C16);
+/// 订单金额展示色（金橙，对齐企业视角稿）。
+const _kAmount = Color(0xFFE6A23C);
 const _kSideBg = Color(0xFFFFFFFF);
 const _kSideWidth = 200.0;
 
@@ -123,7 +130,7 @@ class _Body extends StatelessWidget {
                   _openBokong(context);
                   return;
                 }
-                c.sideMenu.value = id;
+                c.openSideMenu(id);
               },
             ),
           ),
@@ -165,6 +172,15 @@ class _Body extends StatelessWidget {
                     if (menu == 'hrm_archive') {
                       return const EmployeeArchivePage();
                     }
+                    if (menu == 'hrm_onboarding') {
+                      return const OnboardingPage();
+                    }
+                    if (menu == 'hrm_regularization') {
+                      return const RegularizationPage();
+                    }
+                    if (menu == 'hrm_offboarding') {
+                      return const OffboardingPage();
+                    }
                     if (menu == 'hrm_directory') {
                       return const EnterpriseDirectoryPage();
                     }
@@ -202,16 +218,28 @@ Future<void> _exportBrands(BuildContext context, HomeController c) async {
   if (c.exporting.value) return;
   try {
     final hidden = c.hiddenColumnIds.toSet();
-    final source =
-        c.isEnterpriseTab ? _kEnterpriseToggleableColumns : _kToggleableColumns;
+    final source = c.isPersonTab
+        ? _kPersonToggleableColumns
+        : c.isAgencyTab
+            ? _kAgencyToggleableColumns
+            : c.isEnterpriseTab
+                ? _kEnterpriseToggleableColumns
+                : _kToggleableColumns;
     final columns = [
       for (final col in source)
         if (!hidden.contains(col.$1)) col,
     ];
     final file = await c.exportExcel(columns: columns);
     if (!context.mounted) return;
+    final dialogTitle = c.isPersonTab
+        ? '导出联系人汇总'
+        : c.isAgencyTab
+            ? '导出4A公司主体汇总'
+            : c.isEnterpriseTab
+                ? '导出企业主体汇总'
+                : '导出品牌主体汇总';
     final savedUri = await FilePicker.saveFile(
-      dialogTitle: c.isEnterpriseTab ? '导出企业主体汇总' : '导出品牌主体汇总',
+      dialogTitle: dialogTitle,
       fileName: file.fileName,
       bytes: file.bytes,
       mimeType: 'application/vnd.ms-excel',
@@ -238,6 +266,9 @@ class _OrderBrandPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       children: [
+                  const LocationBreadcrumb(
+                    segments: ['户外传媒CRM', '订单管理'],
+                  ),
                   // ── Tabs + 状态行 ──────────────────────────────────────
                   Row(
                     children: [
@@ -252,9 +283,12 @@ class _OrderBrandPage extends StatelessWidget {
                       Expanded(
                         child: Obx(() {
                           final tab = c.entityTab.value;
-                          final asOf = tab == 1
-                              ? c.enterpriseOverview.value?.dataAsOf
-                              : c.overview.value?.dataAsOf;
+                          final asOf = switch (tab) {
+                            1 => c.enterpriseOverview.value?.dataAsOf,
+                            2 => c.agencyOverview.value?.dataAsOf,
+                            3 => c.personOverview.value?.dataAsOf,
+                            _ => c.overview.value?.dataAsOf,
+                          };
                           final asOfText =
                               asOf == null || asOf.isEmpty ? '—' : asOf;
                           final dim = switch (tab) {
@@ -281,21 +315,18 @@ class _OrderBrandPage extends StatelessWidget {
                   // ── KPI 六卡 ───────────────────────────────────────────
                   Obx(() {
                     final tab = c.entityTab.value;
-                    if (tab >= 2) {
-                      return const SizedBox(
-                        height: 96,
-                        child: Center(
-                          child: Text(
-                            '该视角敬请期待',
-                            style: TextStyle(color: _kMuted, fontSize: 13),
-                          ),
-                        ),
-                      );
-                    }
                     final brandO = c.overview.value;
                     final entO = c.enterpriseOverview.value;
+                    final agencyO = c.agencyOverview.value;
+                    final personO = c.personOverview.value;
                     final loading = c.overviewLoading.value &&
-                        (tab == 1 ? entO == null : brandO == null);
+                        (tab == 3
+                            ? personO == null
+                            : tab == 2
+                                ? agencyO == null
+                                : tab == 1
+                                    ? entO == null
+                                    : brandO == null);
                     if (loading) {
                       return const SizedBox(
                         height: 96,
@@ -304,45 +335,253 @@ class _OrderBrandPage extends StatelessWidget {
                         ),
                       );
                     }
-                    final totalOrderCount = tab == 1
-                        ? entO?.totalOrderCount
-                        : brandO?.totalOrderCount;
-                    final totalOrderAmount = tab == 1
-                        ? entO?.totalOrderAmount
-                        : brandO?.totalOrderAmount;
-                    final orderCountMom = tab == 1
-                        ? entO?.orderCountMomRate
-                        : brandO?.orderCountMomRate;
-                    final orderAmountMom = tab == 1
-                        ? entO?.orderAmountMomRate
-                        : brandO?.orderAmountMomRate;
-                    final relatedCount = tab == 1
-                        ? entO?.relatedBrandCount
-                        : brandO?.relatedEnterpriseCount;
-                    final relatedLabel = tab == 1 ? '关联品牌数' : '关联企业数';
-                    final industryCount = tab == 1
-                        ? entO?.industryCount
-                        : brandO?.industryCount;
-                    final agencyCount = tab == 1
-                        ? entO?.relatedAgencyCount
-                        : brandO?.relatedAgencyCount;
-                    final intlAgency = tab == 1
-                        ? entO?.internationalAgencyCount
-                        : brandO?.internationalAgencyCount;
-                    final contactCount =
-                        tab == 1 ? entO?.contactCount : brandO?.contactCount;
-                    final contactNew = tab == 1
-                        ? entO?.contactNewThisWeek
-                        : brandO?.contactNewThisWeek;
-                    final latestRaw = tab == 1
-                        ? entO?.latestOrderTime?.trim()
-                        : brandO?.latestOrderTime?.trim();
+                    if (tab == 3) {
+                      final latestRaw = personO?.latestOrderTime?.trim();
+                      final latestDate = _fmtDate(latestRaw);
+                      final latestTime = _fmtTimeOnly(latestRaw);
+                      final latestName =
+                          personO?.latestOrderContactName?.trim();
+                      final latestSub = [
+                        ?latestTime,
+                        if (latestName != null && latestName.isNotEmpty)
+                          latestName,
+                      ].join(' · ');
+                      final avg = personO?.avgBrandPerContact?.trim();
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              label: '联系人总数',
+                              value: _fmtInt(personO?.contactCount),
+                              subtitle:
+                                  '本周新增 ${personO?.contactNewThisWeek ?? 0} 人',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '总订单数',
+                              value: _fmtInt(personO?.totalOrderCount),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '总订单金额',
+                              value: _fmtMoney(personO?.totalOrderAmount),
+                              valueStyle: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: _kAmount,
+                                height: 1.1,
+                              ),
+                              subtitle: '金额单位：万元',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '关联品牌数',
+                              value: _fmtInt(personO?.relatedBrandCount),
+                              subtitle: avg == null || avg.isEmpty
+                                  ? '人均关联品牌'
+                                  : '人均 $avg 个品牌',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '关联企业数',
+                              value: _fmtInt(personO?.relatedEnterpriseCount),
+                              subtitle:
+                                  '关联4A ${personO?.relatedAgencyCount ?? 0} 家',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '最新订单时间',
+                              value: latestDate,
+                              valueStyle: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: _kPrimary,
+                                height: 1.1,
+                              ),
+                              subtitle: latestSub.isEmpty ? null : latestSub,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    if (tab == 2) {
+                      final latestRaw = agencyO?.latestOrderTime?.trim();
+                      final latestDate = _fmtDate(latestRaw);
+                      final latestTime = _fmtTimeOnly(latestRaw);
+                      final latestName =
+                          agencyO?.latestOrderAgencyName?.trim();
+                      final latestSub = [
+                        ?latestTime,
+                        if (latestName != null && latestName.isNotEmpty)
+                          latestName,
+                      ].join(' · ');
+                      final avg = agencyO?.avgBrandPerAgency?.trim();
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              label: '总订单数',
+                              value: _fmtInt(agencyO?.totalOrderCount),
+                              trend: _fmtMomRate(agencyO?.orderCountMomRate),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '总订单金额',
+                              value: _fmtMoney(agencyO?.totalOrderAmount),
+                              valueStyle: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: _kAmount,
+                                height: 1.1,
+                              ),
+                              trend: _fmtMomRate(agencyO?.orderAmountMomRate),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '关联品牌数',
+                              value: _fmtInt(agencyO?.relatedBrandCount),
+                              subtitle: avg == null || avg.isEmpty
+                                  ? '平均关联品牌'
+                                  : '平均 $avg 个品牌/家4A',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '关联企业数',
+                              value: _fmtInt(agencyO?.relatedEnterpriseCount),
+                              subtitle: '覆盖合作企业',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '联系人数量',
+                              value: _fmtInt(agencyO?.contactCount),
+                              subtitle:
+                                  '本周新增 ${agencyO?.contactNewThisWeek ?? 0} 人',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '最新订单时间',
+                              value: latestDate,
+                              valueStyle: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: _kPrimary,
+                                height: 1.1,
+                              ),
+                              subtitle: latestSub.isEmpty ? null : latestSub,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    if (tab == 1) {
+                      final latestRaw = entO?.latestOrderTime?.trim();
+                      final latestDate = _fmtDate(latestRaw);
+                      final latestTime = _fmtTimeOnly(latestRaw);
+                      final latestName =
+                          entO?.latestOrderEnterpriseName?.trim() ??
+                              entO?.latestOrderBrandName?.trim();
+                      final latestSub = [
+                        ?latestTime,
+                        if (latestName != null && latestName.isNotEmpty)
+                          latestName,
+                      ].join(' · ');
+                      final entTotal = c.total.value;
+                      final brandCnt = entO?.relatedBrandCount ?? 0;
+                      final avgBrand = entTotal > 0
+                          ? (brandCnt / entTotal)
+                              .toStringAsFixed(1)
+                              .replaceFirst(RegExp(r'\.0$'), '')
+                          : '0';
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              label: '总订单数',
+                              value: _fmtInt(entO?.totalOrderCount),
+                              subtitle: '当前筛选范围合计',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '总订单金额',
+                              value: _fmtMoney(entO?.totalOrderAmount),
+                              valueStyle: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: _kAmount,
+                                height: 1.1,
+                              ),
+                              subtitle: '金额单位：万元',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '关联品牌数',
+                              value: _fmtInt(entO?.relatedBrandCount),
+                              subtitle: '媒体主平均 $avgBrand 家',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '关联4A数',
+                              value: _fmtInt(entO?.relatedAgencyCount),
+                              subtitle:
+                                  '国际4A占 ${entO?.internationalAgencyCount ?? 0} 家',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '联系人总数量',
+                              value: _fmtInt(entO?.contactCount),
+                              subtitle:
+                                  '本周新增 ${entO?.contactNewThisWeek ?? 0} 人',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '最新订单时间',
+                              value: latestDate,
+                              valueStyle: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: _kPrimary,
+                                height: 1.1,
+                              ),
+                              subtitle: latestSub.isEmpty ? null : latestSub,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    final latestRaw = brandO?.latestOrderTime?.trim();
                     final latestDate = _fmtDate(latestRaw);
                     final latestTime = _fmtTimeOnly(latestRaw);
-                    final latestName = tab == 1
-                        ? (entO?.latestOrderEnterpriseName?.trim() ??
-                            entO?.latestOrderBrandName?.trim())
-                        : brandO?.latestOrderBrandName?.trim();
+                    final latestName = brandO?.latestOrderBrandName?.trim();
                     final latestSub = [
                       ?latestTime,
                       if (latestName != null && latestName.isNotEmpty)
@@ -353,48 +592,49 @@ class _OrderBrandPage extends StatelessWidget {
                         Expanded(
                           child: _StatCard(
                             label: '总订单数',
-                            value: _fmtInt(totalOrderCount),
-                            trend: _fmtMomRate(orderCountMom),
+                            value: _fmtInt(brandO?.totalOrderCount),
+                            trend: _fmtMomRate(brandO?.orderCountMomRate),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _StatCard(
                             label: '总订单金额',
-                            value: _fmtMoney(totalOrderAmount),
+                            value: _fmtMoney(brandO?.totalOrderAmount),
                             valueStyle: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
                               color: _kAmount,
                               height: 1.1,
                             ),
-                            trend: _fmtMomRate(orderAmountMom),
+                            trend: _fmtMomRate(brandO?.orderAmountMomRate),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _StatCard(
-                            label: relatedLabel,
-                            value: _fmtInt(relatedCount),
-                            subtitle: '覆盖 ${industryCount ?? 0} 个行业',
+                            label: '关联企业数',
+                            value: _fmtInt(brandO?.relatedEnterpriseCount),
+                            subtitle:
+                                '覆盖 ${brandO?.industryCount ?? 0} 个行业',
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _StatCard(
                             label: '关联 4A 数',
-                            value: _fmtInt(agencyCount),
+                            value: _fmtInt(brandO?.relatedAgencyCount),
                             subtitle:
-                                '国际 4A 占 ${intlAgency ?? 0} 家',
+                                '国际 4A 占 ${brandO?.internationalAgencyCount ?? 0} 家',
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _StatCard(
                             label: '联系人数量',
-                            value: _fmtInt(contactCount),
+                            value: _fmtInt(brandO?.contactCount),
                             subtitle:
-                                '本周新增 ${contactNew ?? 0} 人',
+                                '本周新增 ${brandO?.contactNewThisWeek ?? 0} 人',
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -448,65 +688,235 @@ class _OrderBrandPage extends StatelessWidget {
                                 runSpacing: 12,
                                 children: [
                                   Obx(() {
-                                    final ent = c.isEnterpriseTab;
+                                    final hint = switch (c.entityTab.value) {
+                                      1 => '企业名称 / 标签',
+                                      2 => '4A名称 / 服务标签',
+                                      3 => '姓名 / 职位 / 企业',
+                                      _ => '品牌名 / 标签 / 代言人',
+                                    };
                                     return _FilterField(
                                       width: 180,
                                       label: '关键词',
                                       child: TextField(
                                         controller: c.keywordCtrl,
-                                        decoration: _filterDecoration(
-                                          ent
-                                              ? '企业名 / 标签 / 城市'
-                                              : '品牌名 / 标签 / 代言人',
-                                        ),
+                                        decoration: _filterDecoration(hint),
                                         onSubmitted: (_) => c.search(),
                                       ),
                                     );
                                   }),
-                                  _FilterField(
-                                    width: 140,
-                                    label: '所属行业',
-                                    child: Obx(() {
-                                      final opts = c.industryOptions;
-                                      return _FilterSelect<String>(
-                                        width: 140,
-                                        value: c.industry.value,
-                                        options: [
-                                          for (final o in opts)
-                                            HyperSelectOption(
-                                              value: o.value,
-                                              label: o.label,
-                                            ),
-                                        ],
-                                        onChanged: (v) => c.industry.value = v,
-                                      );
-                                    }),
-                                  ),
-                                  _FilterField(
-                                    width: 140,
-                                    label: '所在城市',
-                                    child: Obx(() {
-                                      final opts = c.cityOptions.toList();
-                                      return _FilterSelect<String>(
-                                        width: 140,
-                                        value: c.city.value,
-                                        searchable: true,
-                                        options: [
-                                          for (final o in opts)
-                                            HyperSelectOption(
-                                              value: o,
-                                              label: o,
-                                            ),
-                                        ],
-                                        onChanged: (v) => c.city.value = v,
-                                      );
-                                    }),
-                                  ),
+                                  // 人：关键词 → 企业类型 → 城市 → 就职企业 → 时间
                                   Obx(() {
-                                    final ent = c.isEnterpriseTab;
+                                    if (!c.isPersonTab) {
+                                      return const SizedBox.shrink();
+                                    }
                                     return _FilterField(
                                       width: 140,
-                                      label: ent ? '企业标签' : '品牌标签',
+                                      label: '企业类型',
+                                      child: Obx(() {
+                                        final opts =
+                                            c.enterpriseTypeOptions.toList();
+                                        return _FilterSelect<String>(
+                                          width: 140,
+                                          value: c.enterpriseType.value,
+                                          searchable: true,
+                                          placeholder: '全部类型',
+                                          options: [
+                                            for (final o in opts)
+                                              HyperSelectOption(
+                                                value: o,
+                                                label: o,
+                                              ),
+                                          ],
+                                          onChanged: (v) =>
+                                              c.enterpriseType.value = v,
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  // 企业：关键词 → 企业标签 → 城市 → 媒体类型 → …
+                                  Obx(() {
+                                    if (!c.isEnterpriseTab) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return _FilterField(
+                                      width: 140,
+                                      label: '企业标签',
+                                      child: Obx(() {
+                                        final opts = c.tagOptions.toList();
+                                        return _FilterSelect<String>(
+                                          width: 140,
+                                          value: c.tags.value,
+                                          searchable: true,
+                                          placeholder: '全部标签',
+                                          options: [
+                                            for (final o in opts)
+                                              HyperSelectOption(
+                                                value: o,
+                                                label: o,
+                                              ),
+                                          ],
+                                          onChanged: (v) => c.tags.value = v,
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  Obx(() {
+                                    if (c.isEnterpriseTab || c.isPersonTab) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    if (c.isAgencyTab) {
+                                      return _FilterField(
+                                        width: 140,
+                                        label: '服务标签',
+                                        child: Obx(() {
+                                          final opts = c.tagOptions.toList();
+                                          return _FilterSelect<String>(
+                                            width: 140,
+                                            value: c.tags.value,
+                                            searchable: true,
+                                            options: [
+                                              for (final o in opts)
+                                                HyperSelectOption(
+                                                  value: o,
+                                                  label: o,
+                                                ),
+                                            ],
+                                            onChanged: (v) => c.tags.value = v,
+                                          );
+                                        }),
+                                      );
+                                    }
+                                    return _FilterField(
+                                      width: 140,
+                                      label: '所属行业',
+                                      child: Obx(() {
+                                        final opts = c.industryOptions;
+                                        return _FilterSelect<String>(
+                                          width: 140,
+                                          value: c.industry.value,
+                                          options: [
+                                            for (final o in opts)
+                                              HyperSelectOption(
+                                                value: o.value,
+                                                label: o.label,
+                                              ),
+                                          ],
+                                          onChanged: (v) =>
+                                              c.industry.value = v,
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  Obx(() {
+                                    final allCity = c.isEnterpriseTab ||
+                                        c.isPersonTab;
+                                    return _FilterField(
+                                      width: 140,
+                                      label: '所在城市',
+                                      child: Obx(() {
+                                        final opts = c.cityOptions.toList();
+                                        return _FilterSelect<String>(
+                                          width: 140,
+                                          value: c.city.value,
+                                          searchable: true,
+                                          placeholder:
+                                              allCity ? '全部城市' : '全部',
+                                          options: [
+                                            for (final o in opts)
+                                              HyperSelectOption(
+                                                value: o,
+                                                label: o,
+                                              ),
+                                          ],
+                                          onChanged: (v) => c.city.value = v,
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  Obx(() {
+                                    if (!c.isPersonTab) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return _FilterField(
+                                      width: 160,
+                                      label: '就职企业',
+                                      child: Obx(() {
+                                        final opts =
+                                            c.employerOptions.toList();
+                                        return _FilterSelect<String>(
+                                          width: 160,
+                                          value: c.latestEmployer.value,
+                                          searchable: true,
+                                          placeholder: '全部企业',
+                                          options: [
+                                            for (final o in opts)
+                                              HyperSelectOption(
+                                                value: o,
+                                                label: o,
+                                              ),
+                                          ],
+                                          onChanged: (v) =>
+                                              c.latestEmployer.value = v,
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  Obx(() {
+                                    if (!c.isEnterpriseTab) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return _FilterField(
+                                      width: 140,
+                                      label: '媒体类型',
+                                      child: Obx(() {
+                                        return _FilterSelect<String>(
+                                          width: 140,
+                                          value: c.mediaType.value,
+                                          placeholder: '全部媒体类型',
+                                          options: [
+                                            for (final o
+                                                in HomeController
+                                                    .mediaTypeOptions)
+                                              HyperSelectOption(
+                                                value: o,
+                                                label: o,
+                                              ),
+                                          ],
+                                          onChanged: (v) =>
+                                              c.mediaType.value = v,
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  Obx(() {
+                                    if (c.isEnterpriseTab || c.isPersonTab) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    if (c.isAgencyTab) {
+                                      return _FilterField(
+                                        width: 140,
+                                        label: '关联关系',
+                                        child: Obx(() {
+                                          final opts = c.relationTypeOptions;
+                                          return _FilterSelect<String>(
+                                            width: 140,
+                                            value: c.relationType.value,
+                                            options: [
+                                              for (final o in opts)
+                                                HyperSelectOption(
+                                                  value: o.value,
+                                                  label: o.label,
+                                                ),
+                                            ],
+                                            onChanged: (v) =>
+                                                c.relationType.value = v,
+                                          );
+                                        }),
+                                      );
+                                    }
+                                    return _FilterField(
+                                      width: 140,
+                                      label: '品牌标签',
                                       child: Obx(() {
                                         final opts = c.tagOptions.toList();
                                         return _FilterSelect<String>(
@@ -525,40 +935,96 @@ class _OrderBrandPage extends StatelessWidget {
                                       }),
                                     );
                                   }),
-                                  _FilterField(
-                                    width: 140,
-                                    label: '销售员',
-                                    child: Obx(() {
-                                      final opts = c.ownerOptions.toList();
-                                      return _FilterSelect<String>(
-                                        width: 140,
-                                        value: c.ownerNames.value,
-                                        searchable: true,
-                                        options: [
-                                          for (final o in opts)
-                                            HyperSelectOption(
-                                              value: o,
-                                              label: o,
+                                  Obx(() {
+                                    if (c.isPersonTab) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    final ent = c.isEnterpriseTab;
+                                    return _FilterField(
+                                      width: 140,
+                                      label: '销售员',
+                                      child: Obx(() {
+                                        final opts = c.ownerOptions.toList();
+                                        return _FilterSelect<String>(
+                                          width: 140,
+                                          value: c.ownerNames.value,
+                                          searchable: true,
+                                          placeholder:
+                                              ent ? '全部销售员' : '全部',
+                                          options: [
+                                            for (final o in opts)
+                                              HyperSelectOption(
+                                                value: o,
+                                                label: o,
+                                              ),
+                                          ],
+                                          onChanged: (v) =>
+                                              c.ownerNames.value = v,
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  Obx(() {
+                                    final person = c.isPersonTab;
+                                    return _FilterField(
+                                      width: 280,
+                                      label: person
+                                          ? '最新订单时间范围'
+                                          : '订单时间范围',
+                                      child: Obx(() {
+                                        return Row(
+                                          children: [
+                                            Expanded(
+                                              child: HyperDateTimePicker(
+                                                mode: HyperDateTimePickerMode
+                                                    .date,
+                                                placeholder: '开始日期',
+                                                value: c.orderTimeBegin.value,
+                                                onChanged: (v) => c
+                                                    .orderTimeBegin.value = v,
+                                              ),
                                             ),
-                                        ],
-                                        onChanged: (v) =>
-                                            c.ownerNames.value = v,
-                                      );
-                                    }),
-                                  ),
-                                  _FilterField(
-                                    width: 280,
-                                    label: '订单时间范围',
-                                    child: Obx(() {
-                                      return Row(
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 4,
+                                              ),
+                                              child: Text(
+                                                '—',
+                                                style:
+                                                    TextStyle(color: _kMuted),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: HyperDateTimePicker(
+                                                mode: HyperDateTimePickerMode
+                                                    .date,
+                                                placeholder: '结束日期',
+                                                value: c.orderTimeEnd.value,
+                                                onChanged: (v) =>
+                                                    c.orderTimeEnd.value = v,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      }),
+                                    );
+                                  }),
+                                  Obx(() {
+                                    if (c.isAgencyTab ||
+                                        c.isEnterpriseTab ||
+                                        c.isPersonTab) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return _FilterField(
+                                      width: 180,
+                                      label: '订单金额区间(万)',
+                                      child: Row(
                                         children: [
                                           Expanded(
-                                            child: HyperDateTimePicker(
-                                              mode: HyperDateTimePickerMode.date,
-                                              placeholder: '开始日期',
-                                              value: c.orderTimeBegin.value,
-                                              onChanged: (v) =>
-                                                  c.orderTimeBegin.value = v,
+                                            child: TextField(
+                                              controller: c.amountMinCtrl,
+                                              decoration:
+                                                  _filterDecoration('最低'),
                                             ),
                                           ),
                                           const Padding(
@@ -571,49 +1037,16 @@ class _OrderBrandPage extends StatelessWidget {
                                             ),
                                           ),
                                           Expanded(
-                                            child: HyperDateTimePicker(
-                                              mode: HyperDateTimePickerMode.date,
-                                              placeholder: '结束日期',
-                                              value: c.orderTimeEnd.value,
-                                              onChanged: (v) =>
-                                                  c.orderTimeEnd.value = v,
+                                            child: TextField(
+                                              controller: c.amountMaxCtrl,
+                                              decoration:
+                                                  _filterDecoration('最高'),
                                             ),
                                           ),
                                         ],
-                                      );
-                                    }),
-                                  ),
-                                  _FilterField(
-                                    width: 180,
-                                    label: '订单金额区间(万)',
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: TextField(
-                                            controller: c.amountMinCtrl,
-                                            decoration:
-                                                _filterDecoration('最低'),
-                                          ),
-                                        ),
-                                        const Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 4,
-                                          ),
-                                          child: Text(
-                                            '—',
-                                            style: TextStyle(color: _kMuted),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: TextField(
-                                            controller: c.amountMaxCtrl,
-                                            decoration:
-                                                _filterDecoration('最高'),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                      ),
+                                    );
+                                  }),
                                 ],
                               ),
                             ),
@@ -649,7 +1082,7 @@ class _OrderBrandPage extends StatelessWidget {
                             final title = switch (tab) {
                               1 => '企业主体汇总',
                               2 => '4A 公司主体汇总',
-                              3 => '人员主体汇总',
+                              3 => '联系人汇总',
                               _ => '品牌主体汇总',
                             };
                             return Row(
@@ -713,7 +1146,7 @@ class _OrderBrandPage extends StatelessWidget {
                                 tooltip: '刷新',
                                 icon: Icons.refresh,
                                 onPressed: c.listLoading.value ||
-                                        c.entityTab.value >= 2
+                                        c.entityTab.value > 3
                                     ? null
                                     : () => c.loadList(resetPage: false),
                               ),
@@ -725,9 +1158,12 @@ class _OrderBrandPage extends StatelessWidget {
                           if (!c.tableSearchVisible.value) {
                             return const SizedBox(height: 8);
                           }
-                          final hint = c.isEnterpriseTab
-                              ? '搜索企业名 / 标签 / 城市'
-                              : '搜索品牌名 / 标签 / 代言人';
+                          final hint = switch (c.entityTab.value) {
+                            1 => '搜索企业名 / 标签 / 城市',
+                            2 => '搜索4A名称 / 服务标签 / 城市',
+                            3 => '搜索姓名 / 职位 / 就职企业',
+                            _ => '搜索品牌名 / 标签 / 代言人',
+                          };
                           return Padding(
                             padding: const EdgeInsets.fromLTRB(0, 10, 0, 10),
                             child: TextField(
@@ -757,16 +1193,11 @@ class _OrderBrandPage extends StatelessWidget {
                         }),
                         Obx(() {
                           final tab = c.entityTab.value;
-                          if (tab >= 2) {
-                            return const SizedBox(
-                              height: 280,
-                              child: Center(
-                                child: Text(
-                                  '该视角敬请期待',
-                                  style: TextStyle(color: _kMuted),
-                                ),
-                              ),
-                            );
+                          if (tab == 3) {
+                            return _PersonDataGrid(controller: c);
+                          }
+                          if (tab == 2) {
+                            return _AgencyDataGrid(controller: c);
                           }
                           if (tab == 1) {
                             return _EnterpriseDataGrid(controller: c);
@@ -1046,7 +1477,6 @@ class _OrderBrandPage extends StatelessWidget {
                                 id: 'orders',
                                 title: '订单数量',
                                 width: 96,
-                                sortable: false,
                                 value: (row) => row.orderCount ?? 0,
                                 type: AppDataGridColumnType.number,
                               ),
@@ -1054,7 +1484,6 @@ class _OrderBrandPage extends StatelessWidget {
                                 id: 'amount',
                                 title: '订单金额',
                                 width: 112,
-                                sortable: false,
                                 value: (row) =>
                                     num.tryParse(
                                       row.orderAmount?.trim() ?? '',
@@ -1077,7 +1506,6 @@ class _OrderBrandPage extends StatelessWidget {
                                 id: 'latestOrder',
                                 title: '最新订单时间',
                                 width: 160,
-                                sortable: false,
                                 value: (row) =>
                                     row.latestOrderTime?.trim() ?? '',
                                 cellBuilder: (context, row, _) => Text(
@@ -1223,7 +1651,7 @@ class _OrderBrandPage extends StatelessWidget {
                             rows: rows,
                             rowKey: (row) =>
                                 row.id ?? row.brandCode ?? row.name ?? '',
-                            sortable: false,
+                            sortable: true,
                             selectionMode: AppDataGridSelectionMode.multiple,
                             showInternalDividers: true,
                             headerBackgroundColor: const Color(0xFFFAFAFA),
@@ -1444,42 +1872,24 @@ class _EnterpriseDataGrid extends StatelessWidget {
       AppDataGridColumn(
         id: 'name',
         title: '企业名称',
-        width: 180,
+        width: 200,
         sortable: false,
         alignment: Alignment.centerLeft,
         titleAlignment: Alignment.centerLeft,
         value: (row) => row.name ?? '',
         cellBuilder: (context, row, _) {
           final name = row.name?.trim();
-          final short = row.shortName?.trim();
-          final client = row.clientTag?.trim();
-          final sub = [
-            if (short != null && short.isNotEmpty) short,
-            if (client != null && client.isNotEmpty) client,
-          ].join(' · ');
           return FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  name?.isNotEmpty == true ? name! : '-',
-                  style: const TextStyle(
-                    color: _kPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                  softWrap: false,
-                ),
-                if (sub.isNotEmpty)
-                  Text(
-                    sub,
-                    style: const TextStyle(fontSize: 10, color: _kMuted),
-                    softWrap: false,
-                  ),
-              ],
+            child: Text(
+              name?.isNotEmpty == true ? name! : '-',
+              style: const TextStyle(
+                color: _kPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+              softWrap: false,
             ),
           );
         },
@@ -1487,7 +1897,7 @@ class _EnterpriseDataGrid extends StatelessWidget {
       AppDataGridColumn(
         id: 'tags',
         title: '标签',
-        width: 168,
+        width: 120,
         sortable: false,
         alignment: Alignment.centerLeft,
         titleAlignment: Alignment.centerLeft,
@@ -1533,17 +1943,46 @@ class _EnterpriseDataGrid extends StatelessWidget {
       ),
       AppDataGridColumn(
         id: 'city',
-        title: '城市',
-        width: 88,
+        title: '所在城市',
+        width: 100,
         sortable: false,
         value: (row) => row.city?.trim().isNotEmpty == true
             ? row.city!.trim()
             : '-',
       ),
       AppDataGridColumn(
+        id: 'brandCount',
+        title: '关联品牌数量',
+        width: 108,
+        sortable: false,
+        value: (row) => row.brandCount ?? 0,
+        type: AppDataGridColumnType.number,
+        cellBuilder: (context, row, _) {
+          final n = row.brandCount ?? 0;
+          return Text(
+            '$n',
+            style: TextStyle(
+              fontSize: 12,
+              color: n > 0 ? _kPrimary : _kTitle,
+              fontWeight: FontWeight.w500,
+            ),
+            softWrap: false,
+          );
+        },
+      ),
+      AppDataGridColumn(
+        id: 'brandNames',
+        title: '关联品牌',
+        width: 100,
+        sortable: false,
+        alignment: Alignment.centerLeft,
+        titleAlignment: Alignment.centerLeft,
+        value: (row) => _enterpriseBrandNames(row),
+      ),
+      AppDataGridColumn(
         id: 'agency',
-        title: '关联 4A',
-        width: 80,
+        title: '关联4A数量',
+        width: 100,
         sortable: false,
         value: (row) => row.agencyCount ?? 0,
         type: AppDataGridColumnType.number,
@@ -1561,26 +2000,28 @@ class _EnterpriseDataGrid extends StatelessWidget {
         },
       ),
       AppDataGridColumn(
-        id: 'brand',
-        title: '关联品牌',
-        width: 80,
-        sortable: false,
-        value: (row) => row.brandCount ?? 0,
-        type: AppDataGridColumnType.number,
-      ),
-      AppDataGridColumn(
         id: 'orders',
         title: '订单数量',
         width: 96,
-        sortable: false,
         value: (row) => row.orderCount ?? 0,
         type: AppDataGridColumnType.number,
+        cellBuilder: (context, row, _) {
+          final n = row.orderCount ?? 0;
+          return Text(
+            '$n',
+            style: TextStyle(
+              fontSize: 12,
+              color: n > 0 ? _kPrimary : _kTitle,
+              fontWeight: FontWeight.w500,
+            ),
+            softWrap: false,
+          );
+        },
       ),
       AppDataGridColumn(
         id: 'amount',
         title: '订单金额',
         width: 112,
-        sortable: false,
         value: (row) =>
             num.tryParse(row.orderAmount?.trim() ?? '') ?? 0,
         type: AppDataGridColumnType.number,
@@ -1600,7 +2041,6 @@ class _EnterpriseDataGrid extends StatelessWidget {
         id: 'latestOrder',
         title: '最新订单时间',
         width: 160,
-        sortable: false,
         value: (row) => row.latestOrderTime?.trim() ?? '',
         cellBuilder: (context, row, _) => Text(
           _fmtDateTime(row.latestOrderTime),
@@ -1610,8 +2050,8 @@ class _EnterpriseDataGrid extends StatelessWidget {
       ),
       AppDataGridColumn(
         id: 'contact',
-        title: '联系人',
-        width: 64,
+        title: '联系人数量',
+        width: 96,
         sortable: false,
         value: (row) =>
             row.contactCount == null ? '-' : '${row.contactCount}人',
@@ -1619,8 +2059,8 @@ class _EnterpriseDataGrid extends StatelessWidget {
       AppDataGridColumn(
         id: 'sales',
         title: '销售员',
-        width: 120,
-        minWidth: 100,
+        width: 100,
+        minWidth: 88,
         widthMode: AppDataGridColumnWidthMode.fill,
         sortable: false,
         alignment: Alignment.centerLeft,
@@ -1632,7 +2072,7 @@ class _EnterpriseDataGrid extends StatelessWidget {
       AppDataGridColumn(
         id: 'dynamic',
         title: '最新动态',
-        width: 180,
+        width: 140,
         sortable: false,
         alignment: Alignment.centerLeft,
         titleAlignment: Alignment.centerLeft,
@@ -1669,47 +2109,10 @@ class _EnterpriseDataGrid extends StatelessWidget {
           );
         },
       ),
-      AppDataGridColumn(
-        id: 'actions',
-        title: '操作',
-        width: 80,
-        sortable: false,
-        resizable: false,
-        pin: AppDataGridColumnPin.end,
-        value: (_) => '',
-        cellBuilder: (context, row, _) => Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _GridActionIcon(
-                  tooltip: '编辑',
-                  icon: Icons.edit_outlined,
-                  onPressed: () async {
-                    final ok = await showAddOrderDialog(context);
-                    if (ok && context.mounted) {
-                      context.lx.find<HomeController>().refreshAll();
-                    }
-                  },
-                ),
-                _GridActionIcon(
-                  tooltip: '删除',
-                  icon: Icons.delete_outline,
-                  onPressed: () {},
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     ];
     final visibleColumns = [
       for (final col in allColumns)
-        if (col.id == 'no' ||
-            col.id == 'actions' ||
-            !hidden.contains(col.id))
-          col,
+        if (col.id == 'no' || !hidden.contains(col.id)) col,
     ];
     return AppDataGrid<OacEnterprise>.local(
       key: ValueKey(
@@ -1718,7 +2121,7 @@ class _EnterpriseDataGrid extends StatelessWidget {
       height: 440,
       rows: rows,
       rowKey: (row) => row.id ?? row.name ?? '',
-      sortable: false,
+      sortable: true,
       selectionMode: AppDataGridSelectionMode.multiple,
       showInternalDividers: true,
       headerBackgroundColor: const Color(0xFFFAFAFA),
@@ -1733,6 +2136,708 @@ class _EnterpriseDataGrid extends StatelessWidget {
       columns: visibleColumns,
     );
     });
+  }
+}
+
+/// 4A 公司视角表格。
+class _AgencyDataGrid extends StatelessWidget {
+  const _AgencyDataGrid({required this.controller});
+
+  final HomeController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final c = controller;
+      final rows = c.agencies.toList();
+      final loading = c.listLoading.value;
+      final hidden = c.hiddenColumnIds.toSet();
+      final _ = c.sortKey.value;
+      final tagDictReady = c.tagOptions.isNotEmpty;
+      if (loading && rows.isEmpty) {
+        return const SizedBox(
+          height: 280,
+          child: Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      }
+      final page = c.pageNum.value;
+      final size = c.pageSize.value;
+      final allColumns = <AppDataGridColumn<OacAgency>>[
+        AppDataGridColumn(
+          id: 'no',
+          title: '序号',
+          width: 52,
+          sortable: false,
+          value: (row) {
+            final i = rows.indexOf(row);
+            return (page - 1) * size + i + 1;
+          },
+          type: AppDataGridColumnType.number,
+        ),
+        AppDataGridColumn(
+          id: 'weight',
+          title: '权重',
+          width: 96,
+          sortable: false,
+          value: (row) => row.weight ?? 0,
+          cellBuilder: (context, row, _) {
+            final score = (row.weight ?? 0).clamp(0, 5);
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (i) {
+                  return Icon(
+                    i < score
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    size: 14,
+                    color: i < score
+                        ? const Color(0xFFFAAD14)
+                        : const Color(0xFFD9D9D9),
+                  );
+                }),
+              ),
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'icon',
+          title: '图标',
+          width: 52,
+          sortable: false,
+          value: (row) => row.iconUrl ?? '',
+          cellBuilder: (context, row, _) {
+            final name = row.name?.trim() ?? '';
+            final icon = row.iconUrl?.trim();
+            final letter = name.isNotEmpty ? name.characters.first : '?';
+            final color = _logoColor(name);
+            if (icon != null && icon.isNotEmpty) {
+              return Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    icon,
+                    width: 28,
+                    height: 28,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _LetterAvatar(
+                      letter: letter,
+                      color: color,
+                    ),
+                  ),
+                ),
+              );
+            }
+            return Center(
+              child: _LetterAvatar(letter: letter, color: color),
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'name',
+          title: '4A名称',
+          width: 200,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => row.name ?? '',
+          cellBuilder: (context, row, _) {
+            final name = row.name?.trim();
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                name?.isNotEmpty == true ? name! : '-',
+                style: const TextStyle(
+                  color: _kPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+                softWrap: false,
+              ),
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'tags',
+          title: '标签',
+          width: 120,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => _agencyTagLabels(row)
+              .map(c.tagLabel)
+              .where(_isDisplayableTag)
+              .join(','),
+          cellBuilder: (context, row, _) {
+            final tags = [
+              for (final raw in _agencyTagLabels(row))
+                if (_isDisplayableTag(
+                  tagDictReady ? c.tagLabel(raw) : raw,
+                ))
+                  tagDictReady ? c.tagLabel(raw) : raw,
+            ];
+            if (tags.isEmpty) {
+              return const Text('-', style: TextStyle(fontSize: 12));
+            }
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < tags.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 4),
+                    HyperTag(
+                      label: tags[i],
+                      style: const HyperTagStyle(
+                        colorVariant: HyperTagColorVariant.soft,
+                        baseColor: Color(0xFF722ED1),
+                        radius: 3,
+                        height: 20,
+                        horizontalPadding: 6,
+                        textStyle: TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'city',
+          title: '所在城市',
+          width: 100,
+          sortable: false,
+          value: (row) => row.city?.trim().isNotEmpty == true
+              ? row.city!.trim()
+              : '-',
+        ),
+        AppDataGridColumn(
+          id: 'brandCount',
+          title: '关联品牌数量',
+          width: 108,
+          sortable: false,
+          value: (row) => row.brandCount ?? 0,
+          type: AppDataGridColumnType.number,
+          cellBuilder: (context, row, _) {
+            final n = row.brandCount ?? 0;
+            return Text(
+              '$n',
+              style: TextStyle(
+                fontSize: 12,
+                color: n > 0 ? _kPrimary : _kTitle,
+                fontWeight: FontWeight.w500,
+              ),
+              softWrap: false,
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'brandNames',
+          title: '关联品牌',
+          width: 100,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => _agencyBrandNames(row),
+          cellBuilder: (context, row, _) {
+            final text = _agencyBrandNames(row);
+            if (text == '-') {
+              return const Text('-', style: TextStyle(fontSize: 12));
+            }
+            return Text(
+              text,
+              style: const TextStyle(
+                fontSize: 12,
+                color: _kPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'enterpriseCount',
+          title: '关联企业数量',
+          width: 108,
+          sortable: false,
+          value: (row) => row.enterpriseCount ?? 0,
+          type: AppDataGridColumnType.number,
+        ),
+        AppDataGridColumn(
+          id: 'orders',
+          title: '订单数量',
+          width: 96,
+          value: (row) => row.orderCount ?? 0,
+          type: AppDataGridColumnType.number,
+        ),
+        AppDataGridColumn(
+          id: 'amount',
+          title: '订单金额',
+          width: 112,
+          value: (row) =>
+              num.tryParse(row.orderAmount?.trim() ?? '') ?? 0,
+          type: AppDataGridColumnType.number,
+          alignment: Alignment.centerRight,
+          titleAlignment: Alignment.centerRight,
+          cellBuilder: (context, row, _) => Text(
+            _fmtMoney(row.orderAmount),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _kAmount,
+            ),
+            softWrap: false,
+          ),
+        ),
+        AppDataGridColumn(
+          id: 'latestOrder',
+          title: '最新订单时间',
+          width: 160,
+          value: (row) => row.latestOrderTime?.trim() ?? '',
+          cellBuilder: (context, row, _) => Text(
+            _fmtDateTime(row.latestOrderTime),
+            style: const TextStyle(fontSize: 12),
+            softWrap: false,
+          ),
+        ),
+        AppDataGridColumn(
+          id: 'contact',
+          title: '联系人数量',
+          width: 96,
+          sortable: false,
+          value: (row) =>
+              row.contactCount == null ? '-' : '${row.contactCount}人',
+        ),
+        AppDataGridColumn(
+          id: 'sales',
+          title: '销售员',
+          width: 100,
+          minWidth: 88,
+          widthMode: AppDataGridColumnWidthMode.fill,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => row.ownerNames?.trim().isNotEmpty == true
+              ? row.ownerNames!
+              : '-',
+        ),
+        AppDataGridColumn(
+          id: 'dynamic',
+          title: '最新动态',
+          width: 140,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => row.latestDynamic ?? '',
+          cellBuilder: (context, row, _) {
+            final text = row.latestDynamic?.trim();
+            if (text == null || text.isEmpty) {
+              return const Text('-');
+            }
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _kPrimary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _kPrimary.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(
+                    text,
+                    softWrap: false,
+                    style: const TextStyle(fontSize: 11, color: _kPrimary),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ];
+      final visibleColumns = [
+        for (final col in allColumns)
+          if (col.id == 'no' || !hidden.contains(col.id)) col,
+      ];
+      return AppDataGrid<OacAgency>.local(
+        key: ValueKey(
+          'agency-grid-${hidden.join(',')}-${c.sortKey.value}',
+        ),
+        height: 440,
+        rows: rows,
+        rowKey: (row) => row.id ?? row.name ?? '',
+        sortable: true,
+        selectionMode: AppDataGridSelectionMode.multiple,
+        showInternalDividers: true,
+        headerBackgroundColor: const Color(0xFFFAFAFA),
+        textStyle: const TextStyle(fontSize: 12),
+        cellTextStyle: const TextStyle(fontSize: 12),
+        empty: const Center(
+          child: Text(
+            '暂无4A公司数据',
+            style: TextStyle(color: _kMuted),
+          ),
+        ),
+        columns: visibleColumns,
+      );
+    });
+  }
+}
+
+/// 人视角表格（同页私有）。
+class _PersonDataGrid extends StatelessWidget {
+  const _PersonDataGrid({required this.controller});
+
+  final HomeController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final c = controller;
+      final rows = c.persons.toList();
+      final loading = c.listLoading.value;
+      final hidden = c.hiddenColumnIds.toSet();
+      final _ = c.sortKey.value;
+      if (loading && rows.isEmpty) {
+        return const SizedBox(
+          height: 280,
+          child: Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      }
+      final page = c.pageNum.value;
+      final size = c.pageSize.value;
+      final allColumns = <AppDataGridColumn<OacPerson>>[
+        AppDataGridColumn(
+          id: 'no',
+          title: '序号',
+          width: 52,
+          sortable: false,
+          value: (row) {
+            final i = rows.indexOf(row);
+            return (page - 1) * size + i + 1;
+          },
+          type: AppDataGridColumnType.number,
+        ),
+        AppDataGridColumn(
+          id: 'icon',
+          title: '图标',
+          width: 52,
+          sortable: false,
+          value: (row) => row.avatarUrl ?? '',
+          cellBuilder: (context, row, _) {
+            final name = row.name?.trim() ?? '';
+            final icon = row.avatarUrl?.trim();
+            final letter = name.isNotEmpty ? name.characters.first : '?';
+            final color = _logoColor(name);
+            if (icon != null && icon.isNotEmpty) {
+              return Center(
+                child: ClipOval(
+                  child: Image.network(
+                    icon,
+                    width: 28,
+                    height: 28,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _CircleLetterAvatar(
+                      letter: letter,
+                      color: color,
+                    ),
+                  ),
+                ),
+              );
+            }
+            return Center(
+              child: _CircleLetterAvatar(letter: letter, color: color),
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'name',
+          title: '联系人',
+          width: 140,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => row.name ?? '',
+          cellBuilder: (context, row, _) {
+            final name = row.name?.trim();
+            final title = row.title?.trim();
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name?.isNotEmpty == true ? name! : '-',
+                  style: const TextStyle(
+                    color: _kPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (title != null && title.isNotEmpty)
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _kMuted,
+                      fontSize: 11,
+                    ),
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'employer',
+          title: '就职企业(最新)',
+          width: 160,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => row.latestEmployer?.trim().isNotEmpty == true
+              ? row.latestEmployer!.trim()
+              : '-',
+        ),
+        AppDataGridColumn(
+          id: 'enterpriseType',
+          title: '企业类型',
+          width: 100,
+          sortable: false,
+          value: (row) => row.enterpriseType ?? '',
+          cellBuilder: (context, row, _) {
+            final text = row.enterpriseType?.trim();
+            if (text == null || text.isEmpty) {
+              return const Text('-', style: TextStyle(fontSize: 12));
+            }
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: HyperTag(
+                label: text,
+                style: const HyperTagStyle(
+                  colorVariant: HyperTagColorVariant.soft,
+                  baseColor: Color(0xFF1677FF),
+                  radius: 3,
+                  height: 20,
+                  horizontalPadding: 6,
+                  textStyle: TextStyle(fontSize: 10),
+                ),
+              ),
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'city',
+          title: '所在城市',
+          width: 140,
+          sortable: false,
+          value: (row) => row.city?.trim().isNotEmpty == true
+              ? row.city!.trim()
+              : '-',
+        ),
+        AppDataGridColumn(
+          id: 'address',
+          title: '办公地址',
+          width: 140,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => row.address?.trim().isNotEmpty == true
+              ? row.address!.trim()
+              : '-',
+        ),
+        AppDataGridColumn(
+          id: 'sameContact',
+          title: '同企业联系人',
+          width: 108,
+          sortable: false,
+          value: (row) => row.sameEnterpriseContactCount == null
+              ? '-'
+              : '${row.sameEnterpriseContactCount}人',
+        ),
+        AppDataGridColumn(
+          id: 'brandCount',
+          title: '关联品牌数量',
+          width: 108,
+          value: (row) => row.brandCount ?? 0,
+          type: AppDataGridColumnType.number,
+          cellBuilder: (context, row, _) {
+            final n = row.brandCount ?? 0;
+            return Text(
+              '$n',
+              style: TextStyle(
+                fontSize: 12,
+                color: n > 0 ? _kPrimary : _kTitle,
+                fontWeight: FontWeight.w500,
+              ),
+              softWrap: false,
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'brandNames',
+          title: '关联品牌',
+          width: 100,
+          sortable: false,
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => _personBrandNames(row),
+          cellBuilder: (context, row, _) {
+            final text = _personBrandNames(row);
+            if (text == '-') {
+              return const Text('-', style: TextStyle(fontSize: 12));
+            }
+            return Text(
+              text,
+              style: const TextStyle(
+                fontSize: 12,
+                color: _kPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            );
+          },
+        ),
+        AppDataGridColumn(
+          id: 'enterpriseCount',
+          title: '关联企业数量',
+          width: 108,
+          sortable: false,
+          value: (row) => row.enterpriseCount ?? 0,
+          type: AppDataGridColumnType.number,
+        ),
+        AppDataGridColumn(
+          id: 'agencyCount',
+          title: '关联4A数量',
+          width: 100,
+          sortable: false,
+          value: (row) => row.agencyCount ?? 0,
+          type: AppDataGridColumnType.number,
+        ),
+        AppDataGridColumn(
+          id: 'orders',
+          title: '订单数量',
+          width: 96,
+          value: (row) => row.orderCount ?? 0,
+          type: AppDataGridColumnType.number,
+        ),
+        AppDataGridColumn(
+          id: 'amount',
+          title: '订单金额',
+          width: 112,
+          value: (row) =>
+              num.tryParse(row.orderAmount?.trim() ?? '') ?? 0,
+          type: AppDataGridColumnType.number,
+          alignment: Alignment.centerRight,
+          titleAlignment: Alignment.centerRight,
+          cellBuilder: (context, row, _) => Text(
+            _fmtMoney(row.orderAmount),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _kAmount,
+            ),
+            softWrap: false,
+          ),
+        ),
+        AppDataGridColumn(
+          id: 'latestOrder',
+          title: '最新订单时间',
+          width: 160,
+          value: (row) => row.latestOrderTime?.trim() ?? '',
+          cellBuilder: (context, row, _) => Text(
+            _fmtDateTime(row.latestOrderTime),
+            style: const TextStyle(fontSize: 12),
+            softWrap: false,
+          ),
+        ),
+      ];
+      final visibleColumns = [
+        for (final col in allColumns)
+          if (col.id == 'no' || !hidden.contains(col.id)) col,
+      ];
+      return AppDataGrid<OacPerson>.local(
+        key: ValueKey(
+          'person-grid-${hidden.join(',')}-${c.sortKey.value}',
+        ),
+        height: 440,
+        rows: rows,
+        rowKey: (row) => row.id ?? row.name ?? '',
+        sortable: true,
+        selectionMode: AppDataGridSelectionMode.multiple,
+        showInternalDividers: true,
+        headerBackgroundColor: const Color(0xFFFAFAFA),
+        textStyle: const TextStyle(fontSize: 12),
+        cellTextStyle: const TextStyle(fontSize: 12),
+        empty: const Center(
+          child: Text(
+            '暂无联系人数据',
+            style: TextStyle(color: _kMuted),
+          ),
+        ),
+        columns: visibleColumns,
+      );
+    });
+  }
+}
+
+String _personBrandNames(OacPerson row) {
+  final list = row.brandNameList;
+  if (list != null && list.isNotEmpty) {
+    final names = [
+      for (final e in list)
+        if (e.trim().isNotEmpty) e.trim(),
+    ];
+    if (names.isNotEmpty) return names.join('、');
+  }
+  final raw = row.brandNames?.trim();
+  return (raw == null || raw.isEmpty) ? '-' : raw;
+}
+
+class _CircleLetterAvatar extends StatelessWidget {
+  const _CircleLetterAvatar({required this.letter, required this.color});
+
+  final String letter;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        letter,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
   }
 }
 
@@ -1761,15 +2866,50 @@ const _kEnterpriseToggleableColumns = <(String id, String title)>[
   ('icon', '图标'),
   ('name', '企业名称'),
   ('tags', '标签'),
-  ('city', '城市'),
-  ('agency', '关联 4A'),
-  ('brand', '关联品牌'),
+  ('city', '所在城市'),
+  ('brandCount', '关联品牌数量'),
+  ('brandNames', '关联品牌'),
+  ('agency', '关联4A数量'),
   ('orders', '订单数量'),
   ('amount', '订单金额'),
   ('latestOrder', '最新订单时间'),
-  ('contact', '联系人'),
+  ('contact', '联系人数量'),
   ('sales', '销售员'),
   ('dynamic', '最新动态'),
+];
+
+const _kAgencyToggleableColumns = <(String id, String title)>[
+  ('weight', '权重'),
+  ('icon', '图标'),
+  ('name', '4A名称'),
+  ('tags', '标签'),
+  ('city', '所在城市'),
+  ('brandCount', '关联品牌数量'),
+  ('brandNames', '关联品牌'),
+  ('enterpriseCount', '关联企业数量'),
+  ('orders', '订单数量'),
+  ('amount', '订单金额'),
+  ('latestOrder', '最新订单时间'),
+  ('contact', '联系人数量'),
+  ('sales', '销售员'),
+  ('dynamic', '最新动态'),
+];
+
+const _kPersonToggleableColumns = <(String id, String title)>[
+  ('icon', '图标'),
+  ('name', '联系人'),
+  ('employer', '就职企业(最新)'),
+  ('enterpriseType', '企业类型'),
+  ('city', '所在城市'),
+  ('address', '办公地址'),
+  ('sameContact', '同企业联系人'),
+  ('brandCount', '关联品牌数量'),
+  ('brandNames', '关联品牌'),
+  ('enterpriseCount', '关联企业数量'),
+  ('agencyCount', '关联4A数量'),
+  ('orders', '订单数量'),
+  ('amount', '订单金额'),
+  ('latestOrder', '最新订单时间'),
 ];
 
 const _kEntityTabs = ['品牌', '企业', '4A公司', '人'];
@@ -1880,6 +3020,54 @@ List<String> _enterpriseTagLabels(OacEnterprise row) {
   return out;
 }
 
+String _enterpriseBrandNames(OacEnterprise row) {
+  final list = row.brandNameList;
+  if (list != null && list.isNotEmpty) {
+    final names = [
+      for (final e in list)
+        if (e.trim().isNotEmpty) e.trim(),
+    ];
+    if (names.isNotEmpty) return names.join('、');
+  }
+  final raw = row.brandNames?.trim();
+  if (raw != null && raw.isNotEmpty) return raw;
+  return '-';
+}
+
+List<String> _agencyTagLabels(OacAgency row) {
+  final out = <String>[];
+  final list = row.tagList;
+  if (list != null && list.isNotEmpty) {
+    for (final t in list) {
+      final v = t.trim();
+      if (v.isNotEmpty && !out.contains(v)) out.add(v);
+    }
+  } else {
+    final tags = row.tags?.trim();
+    if (tags != null && tags.isNotEmpty) {
+      for (final part in tags.split(RegExp(r'[,，;；\s]+'))) {
+        final v = part.trim();
+        if (v.isNotEmpty && !out.contains(v)) out.add(v);
+      }
+    }
+  }
+  return out;
+}
+
+String _agencyBrandNames(OacAgency row) {
+  final list = row.brandNameList;
+  if (list != null && list.isNotEmpty) {
+    final names = [
+      for (final e in list)
+        if (e.trim().isNotEmpty) e.trim(),
+    ];
+    if (names.isNotEmpty) return names.join('、');
+  }
+  final raw = row.brandNames?.trim();
+  if (raw != null && raw.isNotEmpty) return raw;
+  return '-';
+}
+
 Future<void> _openAddBrandTags(
   BuildContext context,
   HomeController c,
@@ -1977,10 +3165,17 @@ class _SideNav extends StatefulWidget {
 }
 
 class _SideNavState extends State<_SideNav> {
+  /// [children] 非空时为二级分组（如 HRM·组织），叶子项 [children] 为 null。
   static const _groups = <({
     String id,
     String label,
-    List<({String id, String label, IconData icon})> children,
+    List<
+        ({
+          String id,
+          String label,
+          IconData icon,
+          List<({String id, String label, IconData icon})>? children,
+        })> children,
   })>[
     (
       id: 'crm',
@@ -1990,11 +3185,13 @@ class _SideNavState extends State<_SideNav> {
           id: 'orders',
           label: '订单管理',
           icon: Icons.receipt_long_outlined,
+          children: null,
         ),
         (
           id: 'customers',
           label: '客户档案管理',
           icon: Icons.folder_shared_outlined,
+          children: null,
         ),
       ],
     ),
@@ -2002,13 +3199,54 @@ class _SideNavState extends State<_SideNav> {
       id: 'hrm',
       label: 'HRM',
       children: [
-        (id: 'hrm_org', label: '组织架构', icon: Icons.account_tree_outlined),
-        (id: 'hrm_post', label: '岗位管理', icon: Icons.badge_outlined),
-        (id: 'hrm_post_seq', label: '岗位序列', icon: Icons.linear_scale_outlined),
-        (id: 'hrm_seat', label: '席位', icon: Icons.event_seat_outlined),
-        (id: 'hrm_archive', label: '人事档案', icon: Icons.contact_page_outlined),
-        (id: 'hrm_directory', label: '企业通讯录', icon: Icons.contacts_outlined),
-        (id: 'hrm_workplace', label: '工作地点', icon: Icons.place_outlined),
+        (
+          id: 'hrm_org_group',
+          label: '组织',
+          icon: Icons.apartment_outlined,
+          children: [
+            (id: 'hrm_org', label: '部门', icon: Icons.account_tree_outlined),
+            (id: 'hrm_post', label: '职务', icon: Icons.badge_outlined),
+            (
+              id: 'hrm_post_seq',
+              label: '序列',
+              icon: Icons.linear_scale_outlined,
+            ),
+            (id: 'hrm_seat', label: '编制', icon: Icons.event_seat_outlined),
+            (id: 'hrm_workplace', label: '工作地点', icon: Icons.place_outlined),
+          ],
+        ),
+        (
+          id: 'hrm_people_group',
+          label: '人员',
+          icon: Icons.groups_outlined,
+          children: [
+            (
+              id: 'hrm_archive',
+              label: '花名册',
+              icon: Icons.contact_page_outlined,
+            ),
+            (
+              id: 'hrm_onboarding',
+              label: '入职管理',
+              icon: Icons.person_add_alt_1_outlined,
+            ),
+            (
+              id: 'hrm_regularization',
+              label: '转正管理',
+              icon: Icons.verified_outlined,
+            ),
+            (
+              id: 'hrm_offboarding',
+              label: '离职管理',
+              icon: Icons.person_remove_outlined,
+            ),
+            (
+              id: 'hrm_directory',
+              label: '企业通讯录',
+              icon: Icons.contacts_outlined,
+            ),
+          ],
+        ),
       ],
     ),
     (
@@ -2019,11 +3257,13 @@ class _SideNavState extends State<_SideNav> {
           id: 'srm_supplier',
           label: '供应商列表',
           icon: Icons.storefront_outlined,
+          children: null,
         ),
         (
           id: 'srm_purchase_order',
           label: '采购订单列表',
           icon: Icons.shopping_cart_outlined,
+          children: null,
         ),
       ],
     ),
@@ -2036,6 +3276,9 @@ class _SideNavState extends State<_SideNav> {
     super.initState();
     _expanded = {
       for (final g in _groups) g.id,
+      for (final g in _groups)
+        for (final item in g.children)
+          if (item.children != null) item.id,
     };
   }
 
@@ -2047,6 +3290,44 @@ class _SideNavState extends State<_SideNav> {
         _expanded.add(id);
       }
     });
+  }
+
+  Widget _leafTile({
+    required String id,
+    required String label,
+    required IconData icon,
+    double indent = 0,
+  }) {
+    final selected = widget.selectedId == id;
+    return Padding(
+      padding: EdgeInsets.only(left: indent, bottom: 2),
+      child: _hInk(
+        onPressed: () => widget.onSelect(id),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? _kPrimary : _kMuted,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: selected ? _kPrimary : _kMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -2113,45 +3394,56 @@ class _SideNavState extends State<_SideNav> {
                     ),
                   ),
                   if (_expanded.contains(group.id))
-                    for (final item in group.children)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: _hInk(
-                          onPressed: () => widget.onSelect(item.id),
+                    for (final item in group.children) ...[
+                      if (item.children == null)
+                        _leafTile(
+                          id: item.id,
+                          label: item.label,
+                          icon: item.icon,
+                        )
+                      else ...[
+                        _hInk(
+                          onPressed: () => _toggleGroup(item.id),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
-                              vertical: 10,
+                              vertical: 8,
                             ),
                             child: Row(
                               children: [
-                                Icon(
-                                  item.icon,
-                                  size: 18,
-                                  color: widget.selectedId == item.id
-                                      ? _kPrimary
-                                      : _kMuted,
-                                ),
-                                const SizedBox(width: 10),
+                                Icon(item.icon, size: 16, color: _kTitle),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     item.label,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: widget.selectedId == item.id
-                                          ? FontWeight.w600
-                                          : FontWeight.w400,
-                                      color: widget.selectedId == item.id
-                                          ? _kPrimary
-                                          : _kMuted,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: _kTitle,
                                     ),
                                   ),
+                                ),
+                                Icon(
+                                  _expanded.contains(item.id)
+                                      ? Icons.expand_more
+                                      : Icons.chevron_right,
+                                  size: 16,
+                                  color: _kMuted,
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      ),
+                        if (_expanded.contains(item.id))
+                          for (final leaf in item.children!)
+                            _leafTile(
+                              id: leaf.id,
+                              label: leaf.label,
+                              icon: leaf.icon,
+                              indent: 12,
+                            ),
+                      ],
+                    ],
                   const SizedBox(height: 8),
                 ],
                 // 与「户外传媒CRM / HRM」平级：播控（进入独立播控壳）
@@ -2363,9 +3655,13 @@ class _ColumnSettingsPopover extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 360),
               child: Obx(() {
                 final hidden = controller.hiddenColumnIds.toSet();
-                final cols = controller.isEnterpriseTab
-                    ? _kEnterpriseToggleableColumns
-                    : _kToggleableColumns;
+                final cols = controller.isPersonTab
+                    ? _kPersonToggleableColumns
+                    : controller.isAgencyTab
+                        ? _kAgencyToggleableColumns
+                        : controller.isEnterpriseTab
+                            ? _kEnterpriseToggleableColumns
+                            : _kToggleableColumns;
                 return SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

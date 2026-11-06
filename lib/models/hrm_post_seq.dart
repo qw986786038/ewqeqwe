@@ -1,4 +1,4 @@
-/// HRM 岗位序列（对接 desktop/hrm/post-seq，HrmPostSeqVo）。
+/// HRM 职务序列（对接 desktop/hrm/post-seq，HrmPostSeqVo）。
 class HrmPostSeq {
   String? id;
   String? code;

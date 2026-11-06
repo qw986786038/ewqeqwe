@@ -10,7 +10,7 @@ class SeatController extends LxController {
 
   final loading = false.obs;
   final metaLoading = false.obs;
-  /// 元数据（部门 / 岗位 / 全量席位）刷新后递增，驱动筛选下拉重建。
+  /// 元数据（部门 / 职务 / 全量编制）刷新后递增，驱动筛选下拉重建。
   final metaVersion = 0.obs;
   final errorMessage = Rxn<String>();
 
@@ -30,6 +30,7 @@ class SeatController extends LxController {
   final Map<String, String> _deptNameById = {};
   final Map<String, String> _postNameById = {};
   final Map<String, HrmPosition> _positionById = {};
+  int _loadSeq = 0;
 
   static const typeOptions = <(String, String)>[
     ('REGULAR', '正式'),
@@ -101,42 +102,54 @@ class SeatController extends LxController {
 
   Future<void> loadPage({int? page}) async {
     if (page != null) pageNum.value = page;
+    final seq = ++_loadSeq;
+    final requestedPage = pageNum.value;
+    final size = pageSize.value <= 0 ? 10 : pageSize.value;
     loading.value = true;
     errorMessage.value = null;
     try {
-      final result = await _api.fetchPositionsPage(
+      // 分页接口页长不稳定（会出现第 2 页 8 条、第 3 页 10 条）。
+      // 拉全量后按页切开，满页始终是 pageSize，只有最后一页可能不足。
+      final all = await _api.fetchPositions(
         sysDeptId: filterDeptId.value,
         postId: filterPostId.value,
         type: filterType.value,
-        pageNum: pageNum.value,
-        pageSize: pageSize.value,
       );
-      for (final p in result.rows) {
+      if (seq != _loadSeq) return;
+      final seen = <String>{};
+      final unique = <HrmPosition>[];
+      for (final p in all) {
         final id = p.id?.trim();
-        if (id != null && id.isNotEmpty) {
-          _positionById[id] = p;
+        if (id == null || id.isEmpty) {
+          unique.add(p);
+          continue;
         }
+        if (!seen.add(id)) continue;
+        unique.add(p);
+        _positionById[id] = p;
       }
-      total.value = result.total;
-      final maxPage = totalPages;
-      if (pageNum.value > maxPage) {
-        pageNum.value = maxPage;
-        if (result.total > 0 && page != null) {
-          await loadPage(page: maxPage);
-          return;
-        }
-      }
+      total.value = unique.length;
+      final pages = ((unique.length + size - 1) / size).ceil().clamp(1, 999999);
+      final current = requestedPage.clamp(1, pages);
+      pageNum.value = current;
+      final start = (current - 1) * size;
+      final end = (start + size).clamp(0, unique.length);
       rows
         ..clear()
-        ..addAll(result.rows);
+        ..addAll(
+          start >= unique.length
+              ? <HrmPosition>[]
+              : unique.sublist(start, end),
+        );
       rows.refresh();
     } catch (e) {
+      if (seq != _loadSeq) return;
       errorMessage.value = e.toString();
       if (rows.isEmpty) {
         total.value = 0;
       }
     } finally {
-      loading.value = false;
+      if (seq == _loadSeq) loading.value = false;
     }
   }
 
@@ -201,7 +214,7 @@ class SeatController extends LxController {
     return id;
   }
 
-  /// 汇报席位展示：`部门 / 岗位 / 编制类型`。
+  /// 汇报编制展示：`部门 / 职务 / 编制类型`。
   String positionRefDisplay(String? positionId) {
     final id = positionId?.trim();
     if (id == null || id.isEmpty) return '';

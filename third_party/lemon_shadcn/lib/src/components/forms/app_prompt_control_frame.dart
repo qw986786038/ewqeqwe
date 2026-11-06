@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart' as shad;
 
 import '../../foundation/app_overlay_style.dart';
+import '../../foundation/app_shadcn_scope.dart';
 import '../overlay/app_popup_switch_coordinator.dart';
 import 'app_inline_edit_overlay_scope.dart';
 
@@ -123,7 +124,7 @@ class _AppPromptControlFrameState extends State<AppPromptControlFrame> {
         _handlePopupDisposed();
         inlineOverlay?.closed();
       },
-      child: child,
+      child: AppTheme.capture(context, child),
     );
     final child = widget.builder?.call(context, popup) ?? widget.child!;
     return KeyedSubtree(

@@ -5,6 +5,7 @@ import '../actions/app_button.dart';
 import '../../foundation/app_control_box.dart';
 import '../../foundation/app_outline_style.dart';
 import '../../foundation/app_overlay_style.dart';
+import '../../foundation/app_shadcn_scope.dart';
 import '../overlay/app_popup_switch_coordinator.dart';
 import 'app_inline_edit_overlay_scope.dart';
 
@@ -111,12 +112,15 @@ class _AppSelectControlShellState extends State<AppSelectControlShell> {
         _handlePopupDisposed();
         inlineOverlay?.closed();
       },
-      child: shad.ComponentTheme(
-        data: AppOverlayStyle.cardTheme(
-          context,
-          borderRadius: theme.borderRadiusMd,
+      child: AppTheme.capture(
+        context,
+        shad.ComponentTheme(
+          data: AppOverlayStyle.cardTheme(
+            context,
+            borderRadius: theme.borderRadiusMd,
+          ),
+          child: child,
         ),
-        child: child,
       ),
     );
 

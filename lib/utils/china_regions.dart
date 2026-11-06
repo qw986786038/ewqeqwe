@@ -23,6 +23,28 @@ class ChinaRegions {
     return _cache!;
   }
 
+  /// 截到「省 → 市」：去掉区县。
+  /// 直辖市下的「市辖区/县」保留展示，取值仍用省名（与勾选省级等价）。
+  static List<AppCascadeOption<String>> toProvinceCity(
+    List<AppCascadeOption<String>> provinces,
+  ) {
+    const municipal = {'市辖区', '县'};
+    return [
+      for (final p in provinces)
+        AppCascadeOption<String>(
+          value: p.value,
+          label: p.label,
+          children: [
+            for (final c in p.children)
+              if (municipal.contains(c.label))
+                AppCascadeOption<String>(value: p.value, label: c.label)
+              else
+                AppCascadeOption<String>(value: c.value, label: c.label),
+          ],
+        ),
+    ];
+  }
+
   static List<AppCascadeOption<String>> _parseList(List<dynamic> list) {
     final out = <AppCascadeOption<String>>[];
     for (final item in list) {

@@ -118,7 +118,7 @@ class PostManageController extends LxController {
     }
   }
 
-  /// 岗位序列列：`序列名 (通道类型)`。
+  /// 职务序列列：`序列名 (通道类型)`。
   String seqDisplay(HrmPost post) {
     final levelId = post.postSeqLevelIdMin ?? post.postSeqLevelIdMax;
     if (levelId == null || levelId.isEmpty) return '-';
@@ -171,7 +171,7 @@ class PostManageController extends LxController {
     ];
   }
 
-  /// 由职级 id 反查所属岗位序列 id。
+  /// 由职级 id 反查所属职务序列 id。
   String? seqIdOfLevel(String? levelId) {
     final id = levelId?.trim();
     if (id == null || id.isEmpty) return null;
@@ -196,17 +196,18 @@ class PostManageController extends LxController {
   Future<void> updatePost({
     required String id,
     required String name,
-    required String postSeqLevelIdMin,
-    required String postSeqLevelIdMax,
-    required int orderNum,
+    int? orderNum,
   }) async {
     await _api.updatePost(
       id: id,
       name: name,
-      postSeqLevelIdMin: postSeqLevelIdMin,
-      postSeqLevelIdMax: postSeqLevelIdMax,
       orderNum: orderNum,
     );
+    await refreshAll();
+  }
+
+  Future<void> deletePost(String id) async {
+    await _api.deletePost(id);
     await refreshAll();
   }
 }

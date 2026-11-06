@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_x/lemon_x.dart';
 
+import '../dialogs/employee_leave_dialog.dart';
 import '../edit/employee_edit_controller.dart';
 import '../edit/employee_edit_page.dart';
 import 'employee_detail_controller.dart';
@@ -30,11 +31,12 @@ const _kDanger = Color(0xFFFF4D4F);
 class EmployeeDetailPage extends StatelessWidget {
   const EmployeeDetailPage({
     super.key,
-    required this.userId,
+    required this.employeeId,
     this.onBack,
   });
 
-  final int userId;
+  /// 员工主键，对应 `GET /desktop/hrm/employee/{id}`。
+  final String employeeId;
 
   /// 非空时走壳内返回；为空则 `Navigator.pop`（组织架构 push 场景）。
   final VoidCallback? onBack;
@@ -44,7 +46,7 @@ class EmployeeDetailPage extends StatelessWidget {
     final body = LxScope(
       bindings: (container) {
         container.put<EmployeeDetailController>(
-          () => EmployeeDetailController(userId),
+          () => EmployeeDetailController(employeeId),
         );
       },
       child: _Body(onBack: onBack),
@@ -151,7 +153,10 @@ class _Header extends StatelessWidget {
         builder: (ctx) => LxScope(
           bindings: (container) {
             container.put<EmployeeEditController>(
-              () => EmployeeEditController(userId: detail.userId),
+              () => EmployeeEditController(
+                employeeId: detail.profile.value?.id ?? detail.employeeId,
+                userId: detail.profile.value?.userId,
+              ),
             );
           },
           // push 路由不在 HomePage Scope 下，需自带主题与全屏约束。
@@ -237,7 +242,9 @@ class _Header extends StatelessWidget {
                 const SizedBox(width: 8),
                 AppButton.outline(
                   onPressed: () {
-                    AppToast.show(context: context, title: '办理离职待接入');
+                    final profile = c.profile.value;
+                    if (profile == null) return;
+                    showEmployeeLeaveDialog(context, profile);
                   },
                   child: const Text(
                     '办理离职',

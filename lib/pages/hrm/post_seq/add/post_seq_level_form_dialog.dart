@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../../models/hrm_post_seq_level.dart';
@@ -28,7 +29,7 @@ Future<void> _showPostSeqLevelFormDialog(
   final c = context.lx.find<PostSeqController>();
   final seqId = c.selectedSeqId.value?.trim();
   if (seqId == null || seqId.isEmpty) {
-    AppToast.show(context: context, title: '请先选择岗位序列');
+    AppToast.show(context: context, title: '请先选择序列');
     return Future.value();
   }
 
@@ -47,7 +48,7 @@ Future<void> _showPostSeqLevelFormDialog(
     return n;
   }
 
-  return AppDialog.show<void>(
+  return showHyperDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => _PostSeqLevelFormDialog(
@@ -56,7 +57,7 @@ Future<void> _showPostSeqLevelFormDialog(
       initialSalaryMin: salaryOf(editing?.salaryMin),
       initialSalaryMax: salaryOf(editing?.salaryMax),
       initialOrderNum: editing?.orderNum ?? c.nextLevelOrderNum,
-      onClose: () => AppOverlay.close<void>(dialogContext),
+      onClose: () => Navigator.of(dialogContext).pop(),
       onSubmit: (payload) async {
         if (isEdit) {
           await c.updateLevel(
@@ -82,7 +83,7 @@ Future<void> _showPostSeqLevelFormDialog(
         }
       },
     ),
-  ).future;
+  );
 }
 
 class _PostSeqLevelFormPayload {
@@ -177,9 +178,11 @@ class _PostSeqLevelFormDialogState extends State<_PostSeqLevelFormDialog> {
   Widget build(BuildContext context) {
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: Text(widget.title),
-        constraints: const BoxConstraints(minWidth: 440, maxWidth: 480),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 480),
+        onClose: _saving ? null : widget.onClose,
         content: AppFieldScope.horizontal(
           labelWidth: 88,
           child: Column(
@@ -241,19 +244,18 @@ class _PostSeqLevelFormDialogState extends State<_PostSeqLevelFormDialog> {
           ),
         ),
         actions: [
-          AppButton.primary(
+          HyperButton.filled(
             loading: _saving,
-            loadingLabel: '提交中…',
             onPressed: _saving
                 ? null
                 : () async {
                     await _submit();
                   },
-            child: const Text('确定'),
+            label: Text(_saving ? '提交中…' : '确定'),
           ),
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: _saving ? null : widget.onClose,
-            child: const Text('取消'),
+            label: const Text('取消'),
           ),
         ],
       ),

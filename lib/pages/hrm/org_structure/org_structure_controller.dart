@@ -1,8 +1,13 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/hrm_dept.dart';
 import '../../../models/hrm_dept_summary.dart';
+import '../../../models/hrm_employee.dart';
 import '../../../models/hrm_employee_assign.dart';
 import '../../../models/hrm_employee_profile.dart';
 import '../../../models/hrm_position.dart';
@@ -56,23 +61,14 @@ class OrgDeptNode {
   /// 本部门或下级有在岗人数。
   bool get hasPeople => subtreeOnDuty > 0;
 
-  /// 自身有人或下级有人则展示；无人部门不显示。
-  bool get shouldShow {
-    if (hasPeople) return true;
-    for (final c in children) {
-      if (c.shouldShow) return true;
-    }
-    return false;
-  }
+  /// 是否展示（含无人部门）。
+  bool get shouldShow => true;
 
-  /// 组织图 / 左树用的可见子节点。
-  List<OrgDeptNode> get visibleChildren => [
-        for (final c in children)
-          if (c.shouldShow) c,
-      ];
+  /// 组织图 / 左树用的可见子节点（含无人部门）。
+  List<OrgDeptNode> get visibleChildren => List<OrgDeptNode>.of(children);
 }
 
-/// 汇报链人员节点（席位 ↔ 在任员工）。
+/// 汇报链人员节点（编制编制 ↔ 员工 titleList）。
 class OrgPersonNode {
   OrgPersonNode({
     required this.positionId,
@@ -81,6 +77,9 @@ class OrgPersonNode {
     required this.deptName,
     this.deptId,
     this.userId,
+    this.levelName,
+    this.statusLabel,
+    this.coverCount,
   });
 
   final String positionId;
@@ -89,12 +88,28 @@ class OrgPersonNode {
   final String deptName;
   final String? deptId;
   final int? userId;
+  /// 职级展示名，如 P11。
+  final String? levelName;
+  /// 状态角标，如「调动中」。
+  final String? statusLabel;
+  /// 根节点覆盖人数（可选）。
+  final int? coverCount;
   final List<OrgPersonNode> children = [];
 
   String get avatarChar {
     final t = name.trim();
     if (t.isEmpty) return '?';
     return t.substring(0, 1);
+  }
+
+  String get subtitle {
+    final parts = <String>[
+      if (postName.trim().isNotEmpty) postName.trim(),
+      if (levelName != null && levelName!.trim().isNotEmpty) levelName!.trim(),
+      if (statusLabel != null && statusLabel!.trim().isNotEmpty)
+        statusLabel!.trim(),
+    ];
+    return parts.join(' · ');
   }
 }
 
@@ -103,6 +118,10 @@ class OrgStructureController extends LxController {
 
   final searchCtrl = TextEditingController();
   final transformCtrl = TransformationController();
+
+  /// 组织图导出截图层（包在 InteractiveViewer 子树外层）。
+  final chartExportKey = GlobalKey();
+  final exporting = false.obs;
 
   final loading = false.obs;
   final errorMessage = Rxn<String>();
@@ -118,10 +137,10 @@ class OrgStructureController extends LxController {
   /// 选中链路（从根到当前选中，含自身），用于组织图蓝框。
   final selectionPathIds = <String>{}.obs;
 
-  /// 汇报链：选中席位 id。
+  /// 汇报链：选中编制 id。
   final selectedPositionId = Rxn<String>();
 
-  /// 汇报链：从根到选中席位的路径。
+  /// 汇报链：从根到选中编制的路径。
   final reportPathIds = <String>{}.obs;
 
   /// 汇报链森林根节点。
@@ -134,10 +153,10 @@ class OrgStructureController extends LxController {
   final highlightReport = true.obs;
   final searchQuery = ''.obs;
 
-  /// deptId → 岗位名称 → 在岗人数。
+  /// deptId → 职务名称 → 在岗人数。
   final postTagsByDept = <String, Map<String, int>>{}.obs;
 
-  /// deptId → 空缺席位数（席位无在任）。
+  /// deptId → 空缺编制数（编制无在任）。
   final vacancyByDept = <String, int>{}.obs;
 
   final chartLoading = false.obs;
@@ -156,8 +175,14 @@ class OrgStructureController extends LxController {
   /// deptId → 该部门下员工姓名（用于搜索）。
   final Map<String, List<String>> _namesByDept = {};
 
-  /// 席位 → 汇报上级席位（仅填充在任节点间）。
+  /// deptId → 负责人姓名（主岗优先）。
+  final Map<String, String> _leaderByDept = {};
+
+  /// 编制 → 汇报上级编制（仅填充在任节点间）。
   final Map<String, String> _reportParentOf = {};
+
+  /// title 侧汇报上级（优先于编制表 reportPositionId）。
+  final Map<String, String> _titleReportParentOf = {};
 
   /// 全量在任人员（扁平，无 children）；展示树由 [_applyReportDeptFilter] 生成。
   final Map<String, OrgPersonNode> _allPersonByPos = {};
@@ -167,6 +192,9 @@ class OrgStructureController extends LxController {
 
   /// 公司整体配置（`/desktop/hrm/dept/summary`）。
   final deptSummary = Rxn<HrmDeptSummary>();
+
+  /// 顶部「部门筛选」多选 id；空 = 全部部门。
+  final filterDeptIds = <String>{}.obs;
 
   int get orgCount => flatDepts.length;
 
@@ -292,24 +320,25 @@ class OrgStructureController extends LxController {
     loading.value = true;
     errorMessage.value = null;
     try {
-      // 部门 + 岗位 + 在任 + 员工 + 公司汇总并行；席位依赖部门 id，随后拉取。
+      // 部门 / 职务 / 员工（含 titleList）/ 公司汇总并行；编制列表随后按部门拉取。
       final summaryFuture = _api.fetchDeptSummary();
       final results = await Future.wait([
         _api.fetchDepts(),
         _api.fetchPosts(),
-        _api.fetchOnDutyAssigns(),
-        _api.fetchEmployeeProfiles(pageNum: 1, pageSize: 10000),
+        _api.fetchEmployeesPage(pageNum: 1, pageSize: 10000),
       ]);
       final list = results[0] as List<HrmDept>;
       posts
         ..clear()
         ..addAll(results[1] as List<HrmPost>);
-      assigns
-        ..clear()
-        ..addAll(results[2] as List<HrmEmployeeAssign>);
+      final empPage = results[2] as HrmEmployeesPage;
       employees
         ..clear()
-        ..addAll(results[3] as List<HrmEmployeeProfile>);
+        ..addAll(empPage.rows);
+      // 在任关系改由员工 titleList 推导，不再依赖 on-duty 接口。
+      assigns
+        ..clear()
+        ..addAll(_assignsFromTitles(employees));
 
       try {
         deptSummary.value = await summaryFuture;
@@ -327,24 +356,20 @@ class OrgStructureController extends LxController {
       flatDepts.refresh();
       roots.refresh();
 
-      final expand = <String>{};
-      for (final r in tree) {
-        final id = r.id;
-        if (id != null) expand.add(id);
-        for (final c in r.children) {
-          final cid = c.id;
-          if (cid != null) expand.add(cid);
-        }
-      }
-      expandedIds
-        ..clear()
-        ..addAll(expand);
-      expandedIds.refresh();
+      expandAllDepts();
 
-      String? selectId;
-      if (tree.isNotEmpty) {
-        selectId = tree.first.id;
+      // 刷新后去掉已不存在的筛选 id。
+      if (filterDeptIds.isNotEmpty) {
+        final valid = {
+          for (final d in list)
+            if (d.deptId != null && d.deptId!.trim().isNotEmpty)
+              d.deptId!.trim(),
+        };
+        filterDeptIds.removeWhere((id) => !valid.contains(id));
+        filterDeptIds.refresh();
       }
+
+      String? selectId = tree.isNotEmpty ? tree.first.id : null;
       selectedDeptId.value = selectId;
       _rebuildChartRoot();
       _updateSelectionPath(selectId);
@@ -352,7 +377,7 @@ class OrgStructureController extends LxController {
 
       chartLoading.value = true;
       try {
-        // 先尝试无参拉全量席位；失败或为空则按部门（必要时再带岗位）补拉。
+        // 先尝试无参拉全量编制；失败或为空则按部门（必要时再带职务）补拉。
         var allPositions = <HrmPosition>[];
         try {
           allPositions = await _api.fetchPositions();
@@ -385,6 +410,32 @@ class OrgStructureController extends LxController {
       loading.value = false;
       chartLoading.value = false;
     }
+  }
+
+  /// 从员工 `titleList` 生成在任映射（编制 → 员工）。
+  List<HrmEmployeeAssign> _assignsFromTitles(List<HrmEmployeeProfile> list) {
+    final out = <HrmEmployeeAssign>[];
+    _titleReportParentOf.clear();
+    for (final emp in list) {
+      final uid = emp.userId;
+      for (final t in emp.titleList) {
+        final posId = t.positionId?.trim();
+        if (posId == null || posId.isEmpty) continue;
+        out.add(
+          HrmEmployeeAssign()
+            ..id = t.id
+            ..employeeUserId = uid
+            ..positionId = posId
+            ..postSeqLevelId = t.postSeqLevelId
+            ..isPrimary = t.isPrimary,
+        );
+        final reportId = t.reportPositionId?.trim();
+        if (reportId != null && reportId.isNotEmpty && reportId != posId) {
+          _titleReportParentOf[posId] = reportId;
+        }
+      }
+    }
+    return out;
   }
 
   void _rebuildIndexes() {
@@ -423,6 +474,29 @@ class OrgStructureController extends LxController {
       ]);
 
     _namesByDept.clear();
+    _leaderByDept.clear();
+    final leaderScore = <String, int>{};
+
+    for (final emp in employees) {
+      final name = emp.name?.trim();
+      if (name == null || name.isEmpty) continue;
+      for (final t in emp.titleList) {
+        final deptId = t.sysDeptId?.trim() ??
+            _positionById[t.positionId?.trim() ?? '']?.sysDeptId?.trim();
+        if (deptId == null || deptId.isEmpty) continue;
+        _namesByDept.putIfAbsent(deptId, () => <String>[]).add(name);
+        final score = (t.isPrimary == 1 ? 100000 : 0) +
+            (t.postOrderNum ?? 0) * 100 +
+            (t.postSeqLeveOrderNum ?? 0);
+        final prev = leaderScore[deptId] ?? -1;
+        if (score >= prev) {
+          leaderScore[deptId] = score;
+          _leaderByDept[deptId] = name;
+        }
+      }
+    }
+
+    // title 未带部门时，退回编制表 + 在任映射。
     for (final a in assigns) {
       final posId = a.positionId?.trim();
       final uid = a.employeeUserId;
@@ -433,54 +507,138 @@ class OrgStructureController extends LxController {
       if (deptId == null || deptId.isEmpty || name == null || name.isEmpty) {
         continue;
       }
-      _namesByDept.putIfAbsent(deptId, () => <String>[]).add(name);
+      final names = _namesByDept.putIfAbsent(deptId, () => <String>[]);
+      if (!names.contains(name)) names.add(name);
+      if (!_leaderByDept.containsKey(deptId)) {
+        _leaderByDept[deptId] = name;
+      }
     }
   }
 
-  /// 按席位 `reportPositionId` 构建全量在任人员索引，再按左侧部门筛选展示树。
+  /// 部门负责人展示名。
+  String? leaderNameOf(String? deptId) {
+    if (deptId == null || deptId.isEmpty) return null;
+    return _leaderByDept[deptId];
+  }
+
+  /// 按编制 + 员工 titleList 构建全量在任人员索引，再按左侧部门筛选展示树。
   void _rebuildReportTree() {
     _allPersonByPos.clear();
     _reportParentOf.clear();
 
+    // 先按 titleList 建人（可补全职级 / 状态）；再扫编制表补漏。
+    final titleByPos = <String, HrmEmployeeTitle>{};
+    final empByPos = <String, HrmEmployeeProfile>{};
+    for (final emp in employees) {
+      for (final t in emp.titleList) {
+        final posId = t.positionId?.trim();
+        if (posId == null || posId.isEmpty) continue;
+        titleByPos[posId] = t;
+        empByPos[posId] = emp;
+      }
+    }
+
+    void putPerson({
+      required String posId,
+      required String name,
+      required int? uid,
+      String? postName,
+      String? deptId,
+      String? deptName,
+      String? levelName,
+      String? statusLabel,
+    }) {
+      final resolvedDeptId =
+          deptId ?? _positionById[posId]?.sysDeptId?.trim();
+      final resolvedPostId = _positionById[posId]?.postId?.trim();
+      final resolvedPostName = (postName != null && postName.isNotEmpty)
+          ? postName
+          : (resolvedPostId != null
+              ? (_postById[resolvedPostId]?.name?.trim() ?? '')
+              : '');
+      final resolvedDeptName = (deptName != null && deptName.isNotEmpty)
+          ? deptName
+          : (resolvedDeptId != null
+              ? (_deptNameById[resolvedDeptId] ?? '')
+              : '');
+      _allPersonByPos[posId] = OrgPersonNode(
+        positionId: posId,
+        name: name,
+        postName: resolvedPostName,
+        deptName: resolvedDeptName,
+        deptId: resolvedDeptId,
+        userId: uid,
+        levelName: levelName,
+        statusLabel: statusLabel,
+      );
+    }
+
+    for (final e in titleByPos.entries) {
+      final posId = e.key;
+      final t = e.value;
+      final emp = empByPos[posId];
+      final name = emp?.name?.trim();
+      if (name == null || name.isEmpty) continue;
+      putPerson(
+        posId: posId,
+        name: name,
+        uid: emp?.userId,
+        postName: t.postName?.trim(),
+        deptId: t.sysDeptId?.trim(),
+        deptName: t.deptName?.trim(),
+        levelName: t.postSeqLeveName?.trim(),
+        statusLabel: _statusLabelOf(emp?.empStatus),
+      );
+    }
+
     for (final pos in positions) {
       final posId = pos.id?.trim();
       if (posId == null || posId.isEmpty) continue;
+      if (_allPersonByPos.containsKey(posId)) continue;
       final assign = _assignByPositionId[posId];
       if (assign == null) continue;
       final uid = assign.employeeUserId;
       final emp = uid != null ? _employeeByUserId[uid] : null;
       final name = emp?.name?.trim();
       if (name == null || name.isEmpty) continue;
-      final postId = pos.postId?.trim();
-      final postName =
-          postId != null ? (_postById[postId]?.name?.trim() ?? '') : '';
-      final deptId = pos.sysDeptId?.trim();
-      final deptName =
-          deptId != null ? (_deptNameById[deptId] ?? '') : '';
-      _allPersonByPos[posId] = OrgPersonNode(
-        positionId: posId,
+      putPerson(
+        posId: posId,
         name: name,
-        postName: postName,
-        deptName: deptName,
-        deptId: deptId,
-        userId: uid,
+        uid: uid,
+        deptId: pos.sysDeptId?.trim(),
+        statusLabel: _statusLabelOf(emp?.empStatus),
       );
     }
 
-    for (final pos in positions) {
-      final posId = pos.id?.trim();
-      if (posId == null || !_allPersonByPos.containsKey(posId)) continue;
-      final reportId = pos.reportPositionId?.trim();
+    for (final posId in _allPersonByPos.keys) {
+      final fromTitle = _titleReportParentOf[posId];
+      final fromPos = _positionById[posId]?.reportPositionId?.trim();
+      final reportId = (fromTitle != null && fromTitle.isNotEmpty)
+          ? fromTitle
+          : fromPos;
       if (reportId == null ||
           reportId.isEmpty ||
-          !_allPersonByPos.containsKey(reportId) ||
-          reportId == posId) {
+          reportId == posId ||
+          !_allPersonByPos.containsKey(reportId)) {
         continue;
       }
       _reportParentOf[posId] = reportId;
     }
 
     _applyReportDeptFilter();
+  }
+
+  static String? _statusLabelOf(String? status) {
+    switch (status?.trim().toUpperCase()) {
+      case 'PENDING_LEAVE':
+        return '调动中';
+      case 'PENDING_ACTIVE':
+        return '待入职';
+      case 'LEAVE':
+        return '已离职';
+      default:
+        return null;
+    }
   }
 
   /// 选中部门及其全部下级部门 id。
@@ -507,14 +665,27 @@ class OrgStructureController extends LxController {
     return roots.first.id == deptId;
   }
 
-  /// 按左侧部门筛选汇报链：保留该部门及下级的人，并带上其汇报上级链路。
-  void _applyReportDeptFilter() {
+  /// 顶部多选 ∪ 左侧选中 → 允许的部门 id（含下级）；空表示全公司。
+  Set<String>? _reportAllowedDeptIds() {
+    if (filterDeptIds.isNotEmpty) {
+      final out = <String>{};
+      for (final id in filterDeptIds) {
+        out.addAll(_deptSubtreeIds(id));
+      }
+      return out;
+    }
     final filterDept = selectedDeptId.value;
+    if (_isCompanyWideReportFilter(filterDept)) return null;
+    return _deptSubtreeIds(filterDept!);
+  }
+
+  /// 按顶部部门筛选 / 左侧部门筛选汇报链。
+  void _applyReportDeptFilter() {
+    final allowed = _reportAllowedDeptIds();
     final Set<String> include;
-    if (_isCompanyWideReportFilter(filterDept)) {
+    if (allowed == null) {
       include = _allPersonByPos.keys.toSet();
     } else {
-      final allowed = _deptSubtreeIds(filterDept!);
       include = <String>{};
       for (final e in _allPersonByPos.entries) {
         final d = e.value.deptId;
@@ -540,6 +711,9 @@ class OrgStructureController extends LxController {
         deptName: src.deptName,
         deptId: src.deptId,
         userId: src.userId,
+        levelName: src.levelName,
+        statusLabel: src.statusLabel,
+        coverCount: src.coverCount,
       );
     }
 
@@ -595,7 +769,7 @@ class OrgStructureController extends LxController {
     }
   }
 
-  /// 按截图：岗位标签为「该岗位席位总数」；空缺为未在任席位数。
+  /// 按截图：职务标签为「该职务编制总数」；空缺为未在任编制数。
   void _rebuildPostTags() {
     final seats = <String, Map<String, int>>{};
     final vacant = <String, int>{};
@@ -716,6 +890,118 @@ class OrgStructureController extends LxController {
     expandedIds.refresh();
   }
 
+  /// 展开左侧部门树全部节点。
+  void expandAllDepts() {
+    final expand = <String>{};
+    void walk(OrgDeptNode n) {
+      final id = n.id;
+      if (id != null && id.isNotEmpty) expand.add(id);
+      for (final c in n.children) {
+        walk(c);
+      }
+    }
+
+    for (final r in roots) {
+      walk(r);
+    }
+    expandedIds
+      ..clear()
+      ..addAll(expand);
+    expandedIds.refresh();
+  }
+
+  bool get hasDeptFilter => filterDeptIds.isNotEmpty;
+
+  /// 组织图子节点（应用顶部多选筛选；空筛选则全部）。
+  List<OrgDeptNode> chartChildrenOf(OrgDeptNode node) {
+    if (!hasDeptFilter) return node.visibleChildren;
+    final allowed = _chartAllowedDeptIds();
+    return [
+      for (final c in node.visibleChildren)
+        if (c.id != null && allowed.contains(c.id)) c,
+    ];
+  }
+
+  /// 选中部门及其下级 + 到根的祖先（保证树形连线不断）。
+  Set<String> _chartAllowedDeptIds() {
+    final out = <String>{};
+    for (final id in filterDeptIds) {
+      out.addAll(_deptSubtreeIds(id));
+      out.addAll(_ancestorIds(id));
+    }
+    return out;
+  }
+
+  List<String> _ancestorIds(String deptId) {
+    final path = _pathIdsTo(deptId);
+    if (path.isEmpty) return const [];
+    return [for (final id in path) if (id != deptId) id];
+  }
+
+  void toggleFilterDept(String deptId) {
+    final id = deptId.trim();
+    if (id.isEmpty) return;
+    if (filterDeptIds.contains(id)) {
+      filterDeptIds.remove(id);
+    } else {
+      filterDeptIds.add(id);
+    }
+    filterDeptIds.refresh();
+    _onDeptFilterChanged();
+  }
+
+  /// 「全部部门」：清空多选，恢复全量展示。
+  void clearDeptFilter() {
+    if (filterDeptIds.isEmpty) return;
+    filterDeptIds.clear();
+    filterDeptIds.refresh();
+    _onDeptFilterChanged();
+  }
+
+  void _onDeptFilterChanged() {
+    roots.refresh();
+    if (viewMode.value == OrgChartViewMode.reportChain) {
+      _applyReportDeptFilter();
+    }
+  }
+
+  Future<void> createDept({
+    required String parentId,
+    required String deptName,
+    int? orderNum,
+    String? status,
+  }) async {
+    await _api.createDept(
+      parentId: parentId,
+      deptName: deptName,
+      orderNum: orderNum,
+      status: status,
+    );
+    await refreshAll();
+  }
+
+  Future<void> updateDept({
+    required String deptId,
+    required String parentId,
+    required String deptName,
+    int? orderNum,
+    String? status,
+  }) async {
+    await _api.updateDept(
+      deptId: deptId,
+      parentId: parentId,
+      deptName: deptName,
+      orderNum: orderNum,
+      status: status,
+    );
+    await refreshAll();
+  }
+
+  Future<void> deleteDept(String deptId) async {
+    await _api.deleteDept(deptId);
+    await refreshAll();
+  }
+
   Future<void> selectDept(String id) async {
     if (id.isEmpty) return;
     if (selectedDeptId.value == id) {
@@ -791,7 +1077,7 @@ class OrgStructureController extends LxController {
     ];
   }
 
-  /// 叶子卡片岗位标签（有子部门的中心节点改展示编制行，不走此方法）。
+  /// 叶子卡片职务标签（有子部门的中心节点改展示编制行，不走此方法）。
   List<({String label, int count, bool vacancy})> tagsFor(OrgDeptNode node) {
     final id = node.id;
     final out = <({String label, int count, bool vacancy})>[];
@@ -811,7 +1097,7 @@ class OrgStructureController extends LxController {
     return out;
   }
 
-  /// 中心节点「编制 / 空缺」：含下级汇总；空缺也可用本部门席位空缺兜底。
+  /// 中心节点「编制 / 空缺」：含下级汇总；空缺也可用本部门编制空缺兜底。
   (int headcount, int vacancy) staffingLine(OrgDeptNode node) {
     final hc = node.subtreeHeadcount;
     var vac = node.subtreeVacancy;
@@ -892,6 +1178,26 @@ class OrgStructureController extends LxController {
 
   void setSearch(String value) => searchQuery.value = value.trim();
 
+  /// 将当前组织图（部门视图 / 汇报链）渲染为 PNG 字节。
+  Future<Uint8List> captureChartPng({double pixelRatio = 2}) async {
+    final ctx = chartExportKey.currentContext;
+    if (ctx == null) {
+      throw StateError('暂无可导出的架构图');
+    }
+    final boundary = ctx.findRenderObject();
+    if (boundary is! RenderRepaintBoundary) {
+      throw StateError('架构图尚未就绪');
+    }
+    // 等本帧布局完成后再截图，避免空白或尺寸不准。
+    await Future<void>.delayed(Duration.zero);
+    final image = await boundary.toImage(pixelRatio: pixelRatio);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (bytes == null) {
+      throw StateError('生成 PNG 失败');
+    }
+    return bytes.buffer.asUint8List();
+  }
+
   /// 开启蓝框高亮（汇报链 / 选中路径）。
   void enableHighlightReport() => highlightReport.value = true;
 
@@ -909,7 +1215,7 @@ class OrgStructureController extends LxController {
     for (final n in names) {
       if (n.contains(q)) return true;
     }
-    // 岗位名命中
+    // 职务名命中
     final tags = postTagsByDept[id];
     if (tags != null) {
       for (final postName in tags.keys) {

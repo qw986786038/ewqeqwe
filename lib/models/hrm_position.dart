@@ -1,4 +1,4 @@
-/// HRM 席位（对接 desktop/hrm/position 与 position/list）。
+/// HRM 编制（对接 desktop/hrm/position 与 position/list）。
 class HrmPosition {
   String? id;
   String? sysDeptId;
@@ -13,7 +13,7 @@ class HrmPosition {
   String? postName;
 }
 
-/// 席位分页结果：`GET /desktop/hrm/position`。
+/// 编制分页结果：`GET /desktop/hrm/position`。
 class HrmPositionsPage {
   const HrmPositionsPage({required this.total, required this.rows});
 

@@ -25,21 +25,8 @@ class PurchaseOrderListController extends LxController {
   /// 列头已应用的多选筛选：columnId → 选中值。
   final columnFilters = <String, Set<String>>{}.obs;
 
-  static const columnBrandOptions = [
-    '雪碧',
-    '可口可乐',
-    '百事',
-    '其它',
-  ];
-
-  static const columnContractTypeOptions = [
-    '设备采购',
-    '媒介采购',
-    '物业租赁',
-    '维保运维',
-    '技术服务',
-    '其它',
-  ];
+  /// 列头可选项：从列表数据里出现过的值收集，不写死。
+  final columnOptions = <String, List<String>>{}.obs;
 
   @override
   void onInit() {
@@ -102,6 +89,16 @@ class PurchaseOrderListController extends LxController {
   Set<String> columnFilterOf(String id) =>
       columnFilters[id] ?? const <String>{};
 
+  /// 当前列已有值，并保留仍勾选、但本页没出现的项。
+  List<String> columnOptionsOf(String id) {
+    final values = <String>{
+      ...?columnOptions[id],
+      ...columnFilterOf(id),
+    };
+    final list = values.toList()..sort();
+    return list;
+  }
+
   Future<void> applyColumnFilter(String id, Set<String> selected) async {
     if (selected.isEmpty) {
       columnFilters.remove(id);
@@ -138,18 +135,55 @@ class PurchaseOrderListController extends LxController {
       final query = _listQuery();
       final listFuture = _api.fetchList(query);
       final kpiFuture = _api.fetchKpi(query);
+      final optionsFuture = _loadColumnOptions();
       final page = await listFuture;
       total.value = page.total;
       rows
         ..clear()
         ..addAll(page.rows);
       kpi.value = await kpiFuture;
+      await optionsFuture;
     } catch (e) {
       errorMessage.value = e.toString();
       rows.clear();
       total.value = 0;
     } finally {
       loading.value = false;
+    }
+  }
+
+  /// 用同一列表接口、去掉列筛选，收集关联品牌和合同类型里已经出现的值。
+  Future<void> _loadColumnOptions() async {
+    try {
+      final keyword = topSearchCtrl.text.trim();
+      final query = SrmPurchaseOrderQuery(
+        keyword: keyword.isEmpty ? null : keyword,
+        pageNum: 1,
+        pageSize: 200,
+      );
+      var page = await _api.fetchList(query);
+      if (page.total > page.rows.length) {
+        page = await _api.fetchList(
+          SrmPurchaseOrderQuery(
+            keyword: query.keyword,
+            pageNum: 1,
+            pageSize: page.total.clamp(1, 5000),
+          ),
+        );
+      }
+      final brands = <String>{};
+      final types = <String>{};
+      for (final row in page.rows) {
+        final brand = row.brandName?.trim();
+        if (brand != null && brand.isNotEmpty) brands.add(brand);
+        final type = row.contractType?.trim();
+        if (type != null && type.isNotEmpty) types.add(type);
+      }
+      columnOptions['brand'] = (brands.toList()..sort());
+      columnOptions['contractType'] = (types.toList()..sort());
+      columnOptions.refresh();
+    } catch (_) {
+      // 可选项加载失败时保留上一次的结果，列表本身仍可用。
     }
   }
 

@@ -50,73 +50,6 @@ class SupplierListController extends LxController {
     ('其它', '其它'),
   ];
 
-  /// 列头筛选可选项（无「全部」）。
-  static const columnSupplierTypeOptions = [
-    '设备采购',
-    '媒介采购',
-    '物业租赁',
-    '维保运维',
-    '灵活用工',
-    '技术服务',
-    '物料制作',
-    '工程施工',
-    '其它',
-  ];
-
-  static const columnCategoryOptions = [
-    '设备采购',
-    '媒介采购',
-    '物业租赁',
-    '维保运维',
-    '灵活用工',
-    '技术服务',
-    '物料制作',
-    '工程施工',
-    '其它',
-  ];
-
-  static const columnNatureOptions = [
-    '有限责任公司',
-    '股份有限公司',
-    '个体工商户',
-    '合伙企业',
-    '国企',
-    '民营',
-    '外资',
-    '其它',
-  ];
-
-  static const columnTeamSizeOptions = [
-    '1-10',
-    '11-50',
-    '51-100',
-    '100+',
-  ];
-
-  static const columnCoopOptions = [
-    '框架协议',
-    '单次采购',
-  ];
-
-  static const columnSettleOptions = [
-    '30天',
-    '60天',
-    '预付',
-  ];
-
-  static const columnCityOptions = [
-    '北京',
-    '上海',
-    '广州',
-    '深圳',
-    '杭州',
-    '成都',
-    '武汉',
-    '南京',
-    '重庆',
-    '其它',
-  ];
-
   static const cooperationModeOptions = <(String? value, String label)>[
     (null, '全部'),
     ('框架协议', '框架协议'),
@@ -124,14 +57,17 @@ class SupplierListController extends LxController {
   ];
 
   static const settlementMethodOptions = <(String? value, String label)>[
-    (null, '全部'),
     ('30天', '30天'),
     ('60天', '60天'),
-    ('预付', '预付'),
+    ('90天', '90天'),
+    ('按次结算', '按次结算'),
   ];
 
   /// 列头已应用的多选筛选：columnId → 选中值。
   final columnFilters = <String, Set<String>>{}.obs;
+
+  /// 列头可选项：同一列表接口里该列已经出现的值。
+  final columnOptions = <String, List<String>>{}.obs;
 
   static const statusOptions = <(String? value, String label)>[
     (null, '全部'),
@@ -218,6 +154,26 @@ class SupplierListController extends LxController {
   Set<String> columnFilterOf(String id) =>
       columnFilters[id] ?? const <String>{};
 
+  /// 当前列已有值，并保留仍勾选、但本次结果里没出现的项。
+  List<String> columnOptionsOf(String id) {
+    final values = <String>{
+      ...?columnOptions[id],
+      ...columnFilterOf(id),
+    };
+    final list = values.toList();
+    if (id == 'teamSize') {
+      list.sort((a, b) {
+        final na = int.tryParse(a);
+        final nb = int.tryParse(b);
+        if (na != null && nb != null) return na.compareTo(nb);
+        return a.compareTo(b);
+      });
+    } else {
+      list.sort();
+    }
+    return list;
+  }
+
   bool hasColumnFilter(String id) => columnFilterOf(id).isNotEmpty;
 
   Future<void> applyColumnFilter(String id, Set<String> selected) async {
@@ -247,29 +203,21 @@ class SupplierListController extends LxController {
     await refreshAll(clearSelected: true);
   }
 
+  /// 勾选的是列里已有人数；查询仍走最小/最大人数。
   (int?, int?) _teamSizeRange(Set<String> selected) {
     if (selected.isEmpty) return (null, null);
     var minV = 1 << 30;
     var maxV = 0;
-    var openMax = false;
+    var any = false;
     for (final s in selected) {
-      switch (s) {
-        case '1-10':
-          minV = math.min(minV, 1);
-          maxV = math.max(maxV, 10);
-        case '11-50':
-          minV = math.min(minV, 11);
-          maxV = math.max(maxV, 50);
-        case '51-100':
-          minV = math.min(minV, 51);
-          maxV = math.max(maxV, 100);
-        case '100+':
-          minV = math.min(minV, 100);
-          openMax = true;
-      }
+      final n = int.tryParse(s.trim());
+      if (n == null) continue;
+      any = true;
+      minV = math.min(minV, n);
+      maxV = math.max(maxV, n);
     }
-    if (minV == (1 << 30)) return (null, null);
-    return (minV, openMax ? null : maxV);
+    if (!any) return (null, null);
+    return (minV, maxV);
   }
 
   String? _joinedColumnFilter(String id) {
@@ -320,12 +268,14 @@ class SupplierListController extends LxController {
     try {
       final listFuture = _api.fetchList(_listQuery());
       final statsFuture = _api.fetchStats();
+      final optionsFuture = _loadColumnOptions();
       final page = await listFuture;
       total.value = page.total;
       rows
         ..clear()
         ..addAll(page.rows);
       kpi.value = await statsFuture;
+      await optionsFuture;
     } catch (e) {
       errorMessage.value = e.toString();
       rows.clear();
@@ -333,6 +283,85 @@ class SupplierListController extends LxController {
     } finally {
       loading.value = false;
     }
+  }
+
+  /// 去掉列筛选后拉取列表，收集各列已经出现的值。
+  Future<void> _loadColumnOptions() async {
+    try {
+      final query = _listQuery(page: 1)
+        ..supplierType = null
+        ..supplyCategory = null
+        ..enterpriseNature = null
+        ..city = null
+        ..cooperationMode = null
+        ..settlementMethod = null
+        ..teamSizeMin = null
+        ..teamSizeMax = null
+        ..pageSize = 200;
+      var page = await _api.fetchList(query);
+      if (page.total > page.rows.length) {
+        query.pageSize = page.total.clamp(1, 5000);
+        page = await _api.fetchList(query);
+      }
+      final types = <String>{};
+      final categories = <String>{};
+      final natures = <String>{};
+      final teamSizes = <String>{};
+      final coops = <String>{};
+      final settles = <String>{};
+      final cities = <String>{};
+      for (final row in page.rows) {
+        _addSplit(types, row.supplierType);
+        _addSplit(categories, row.supplyCategoryText);
+        _addText(natures, row.enterpriseNature);
+        final size = row.teamSize;
+        if (size != null) teamSizes.add('$size');
+        _addText(coops, row.cooperationMode);
+        _addText(settles, row.settlementMethod);
+        final city = row.city?.trim();
+        if (city != null && city.isNotEmpty) {
+          cities.add(city);
+        } else {
+          _addText(cities, row.regionName);
+        }
+      }
+      columnOptions['supplierType'] = (types.toList()..sort());
+      columnOptions['category'] = (categories.toList()..sort());
+      columnOptions['nature'] = (natures.toList()..sort());
+      columnOptions['teamSize'] = (teamSizes.toList()
+        ..sort((a, b) => (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0)));
+      columnOptions['coop'] = (coops.toList()..sort());
+      columnOptions['settle'] = (settles.toList()..sort());
+      columnOptions['city'] = (cities.toList()..sort());
+      columnOptions.refresh();
+    } catch (_) {
+      // 可选项加载失败时保留上一次的结果，列表本身仍可用。
+    }
+  }
+
+  void _addText(Set<String> into, String? raw) {
+    final text = raw?.trim();
+    if (text != null && text.isNotEmpty) into.add(text);
+  }
+
+  void _addSplit(Set<String> into, String? raw) {
+    final text = raw?.trim();
+    if (text == null || text.isEmpty) return;
+    for (final part in text.split(RegExp(r'[,，、/|]'))) {
+      final item = part.trim();
+      if (item.isNotEmpty) into.add(item);
+    }
+  }
+
+  /// 顶部结算方式：只接受固定项；自定义天数由列头筛选回写。
+  void setSettlementFromTop(String? value) {
+    settlementMethod.value = value;
+    if (value == null || value.trim().isEmpty) {
+      columnFilters.remove('settle');
+    } else {
+      columnFilters['settle'] = {value.trim()};
+    }
+    columnFilters.refresh();
   }
 
   Future<void> search() async {

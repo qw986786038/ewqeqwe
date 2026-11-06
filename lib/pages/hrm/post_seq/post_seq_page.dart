@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/hrm_post_seq.dart';
 import '../../../models/hrm_post_seq_level.dart';
 import 'add/post_seq_form_dialog.dart';
 import 'add/post_seq_level_form_dialog.dart';
+import '../../location_breadcrumb.dart';
 import 'post_seq_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -14,7 +16,7 @@ const _kTitle = Color(0xFF1D2129);
 const _kMuted = Color(0xFF8C8C8C);
 const _kBorder = Color(0xFFE5E6EB);
 
-/// HRM · 岗位序列（左序列表 + 右职级表）。
+/// HRM · 序列（左序列表 + 右职级表）。
 class PostSeqPage extends StatelessWidget {
   const PostSeqPage({super.key});
 
@@ -38,12 +40,20 @@ class _Body extends StatelessWidget {
       color: _kPageBg,
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: _SeqPanel()),
-            SizedBox(width: 12),
-            Expanded(child: _LevelPanel()),
+            LocationBreadcrumb(segments: ['HRM', '序列']),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _SeqPanel()),
+                  SizedBox(width: 12),
+                  Expanded(child: _LevelPanel()),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -71,7 +81,7 @@ class _SeqPanel extends StatelessWidget {
             child: Row(
               children: [
                 const Text(
-                  '岗位序列',
+                  '序列',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -135,14 +145,14 @@ class _SeqPanel extends StatelessWidget {
                     cellTextStyle: const TextStyle(fontSize: 12),
                     selectionMode: AppDataGridSelectionMode.single,
                     selectedKeys: <Object>{?selected},
-                    onSelectionChanged: (keys) {
-                      if (keys.isEmpty) return;
-                      final id = keys.first.toString();
-                      if (id.isNotEmpty) c.selectSeq(id);
+                    onSelectionChanged: (rows) {
+                      if (rows.isEmpty) return;
+                      final id = rows.first.id?.trim();
+                      if (id != null && id.isNotEmpty) c.selectSeq(id);
                     },
                     empty: const Center(
                       child: Text(
-                        '暂无岗位序列',
+                        '暂无序列',
                         style: TextStyle(color: _kMuted),
                       ),
                     ),
@@ -150,7 +160,10 @@ class _SeqPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'code',
                         title: '编号',
-                        width: 72,
+                        width: 96,
+                        minWidth: 80,
+                        widthMode: AppDataGridColumnWidthMode.fill,
+                        flex: 1,
                         value: (row) =>
                             row.code?.trim().isNotEmpty == true
                                 ? row.code!.trim()
@@ -160,6 +173,9 @@ class _SeqPanel extends StatelessWidget {
                         id: 'name',
                         title: '名称',
                         width: 160,
+                        minWidth: 100,
+                        widthMode: AppDataGridColumnWidthMode.fill,
+                        flex: 2,
                         value: (row) =>
                             row.name?.trim().isNotEmpty == true
                                 ? row.name!.trim()
@@ -168,7 +184,10 @@ class _SeqPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'channel',
                         title: '类型',
-                        width: 88,
+                        width: 112,
+                        minWidth: 88,
+                        widthMode: AppDataGridColumnWidthMode.fill,
+                        flex: 1,
                         value: (row) {
                           final label =
                               PostSeqController.channelLabel(row.channel);
@@ -178,7 +197,7 @@ class _SeqPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'order',
                         title: '排序',
-                        width: 64,
+                        width: 96,
                         type: AppDataGridColumnType.number,
                         value: (row) => row.orderNum ?? 0,
                         cellBuilder: (context, row, _) => Text(
@@ -189,7 +208,7 @@ class _SeqPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'actions',
                         title: '操作',
-                        width: 88,
+                        width: 100,
                         sortable: false,
                         resizable: false,
                         pin: AppDataGridColumnPin.end,
@@ -246,7 +265,7 @@ Future<void> _confirmDeletePostSeq(
 ) async {
   final id = seq.id?.trim();
   if (id == null || id.isEmpty) {
-    AppToast.show(context: context, title: '岗位序列 id 无效');
+    AppToast.show(context: context, title: '序列 id 无效');
     return;
   }
   final name = seq.name?.trim().isNotEmpty == true
@@ -254,28 +273,28 @@ Future<void> _confirmDeletePostSeq(
       : (seq.code?.trim().isNotEmpty == true ? seq.code!.trim() : id);
   final hostContext = context;
   final c = context.lx.find<PostSeqController>();
-  final ok = await AppDialog.show<bool>(
+  final ok = await showHyperDialog<bool>(
     context: context,
-    builder: (dialogContext) => AppAlertDialog(
+    builder: (dialogContext) => HyperDialog(
       title: const Text('确认删除'),
-      content: Text('确定删除岗位序列「$name」吗？'),
+      content: Text('确定删除序列「$name」吗？'),
       actions: [
-        AppButton.outline(
-          onPressed: () => AppOverlay.close(dialogContext, false),
-          child: const Text('取消'),
+        HyperButton.outlined(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          label: const Text('取消'),
         ),
-        AppButton.destructive(
-          onPressed: () => AppOverlay.close(dialogContext, true),
-          child: const Text('删除'),
+        HyperButton.filled(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          label: const Text('删除'),
         ),
       ],
     ),
-  ).future;
+  );
   if (ok != true) return;
   try {
     await c.deleteSeq(id);
     if (hostContext.mounted) {
-      AppToast.show(context: hostContext, title: '删除岗位序列成功');
+      AppToast.show(context: hostContext, title: '删除序列成功');
     }
   } catch (e) {
     if (hostContext.mounted) {
@@ -308,11 +327,10 @@ class _LevelPanel extends StatelessWidget {
                     c.selectedSeqId.value;
                     c.seqs.length;
                     final sub = c.selectedSeq?.name?.trim();
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    return Row(
                       children: [
                         const Text(
-                          '岗位序列职级',
+                          '序列职级',
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
@@ -320,12 +338,16 @@ class _LevelPanel extends StatelessWidget {
                           ),
                         ),
                         if (sub != null && sub.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            sub,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: _kMuted,
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              sub,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: _kMuted,
+                              ),
                             ),
                           ),
                         ],
@@ -350,7 +372,7 @@ class _LevelPanel extends StatelessWidget {
               if (c.selectedSeqId.value == null) {
                 return const Center(
                   child: Text(
-                    '请选择左侧岗位序列',
+                    '请选择左侧序列',
                     style: TextStyle(color: _kMuted, fontSize: 13),
                   ),
                 );
@@ -407,7 +429,10 @@ class _LevelPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'code',
                         title: '编码',
-                        width: 80,
+                        width: 96,
+                        minWidth: 80,
+                        widthMode: AppDataGridColumnWidthMode.fill,
+                        flex: 1,
                         value: (row) =>
                             row.code?.trim().isNotEmpty == true
                                 ? row.code!.trim()
@@ -416,7 +441,10 @@ class _LevelPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'salaryMin',
                         title: '薪资下限',
-                        width: 120,
+                        width: 140,
+                        minWidth: 100,
+                        widthMode: AppDataGridColumnWidthMode.fill,
+                        flex: 1,
                         type: AppDataGridColumnType.number,
                         value: (row) => row.salaryMin ?? 0,
                         cellBuilder: (context, row, _) => Text(
@@ -427,7 +455,10 @@ class _LevelPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'salaryMax',
                         title: '薪资上限',
-                        width: 120,
+                        width: 140,
+                        minWidth: 100,
+                        widthMode: AppDataGridColumnWidthMode.fill,
+                        flex: 1,
                         type: AppDataGridColumnType.number,
                         value: (row) => row.salaryMax ?? 0,
                         cellBuilder: (context, row, _) => Text(
@@ -438,7 +469,7 @@ class _LevelPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'order',
                         title: '排序',
-                        width: 64,
+                        width: 96,
                         type: AppDataGridColumnType.number,
                         value: (row) => row.orderNum ?? 0,
                         cellBuilder: (context, row, _) => Text(
@@ -449,7 +480,7 @@ class _LevelPanel extends StatelessWidget {
                       AppDataGridColumn(
                         id: 'actions',
                         title: '操作',
-                        width: 88,
+                        width: 100,
                         sortable: false,
                         resizable: false,
                         pin: AppDataGridColumnPin.end,
@@ -514,23 +545,23 @@ Future<void> _confirmDeletePostSeqLevel(
       : id;
   final hostContext = context;
   final c = context.lx.find<PostSeqController>();
-  final ok = await AppDialog.show<bool>(
+  final ok = await showHyperDialog<bool>(
     context: context,
-    builder: (dialogContext) => AppAlertDialog(
+    builder: (dialogContext) => HyperDialog(
       title: const Text('确认删除'),
       content: Text('确定删除职级「$name」吗？'),
       actions: [
-        AppButton.outline(
-          onPressed: () => AppOverlay.close(dialogContext, false),
-          child: const Text('取消'),
+        HyperButton.outlined(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          label: const Text('取消'),
         ),
-        AppButton.destructive(
-          onPressed: () => AppOverlay.close(dialogContext, true),
-          child: const Text('删除'),
+        HyperButton.filled(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          label: const Text('删除'),
         ),
       ],
     ),
-  ).future;
+  );
   if (ok != true) return;
   try {
     await c.deleteLevel(id);

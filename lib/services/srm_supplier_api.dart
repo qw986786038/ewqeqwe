@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:http/http.dart' as http;
 
@@ -281,6 +282,9 @@ class SrmSupplierApi {
     if (bytes.isEmpty) {
       throw SrmSupplierApiException('请选择营业执照图片');
     }
+    // jpg 的标准类型是 image/jpeg，和扩展名 jpg 对不上时服务端会报「图片类型不匹配」。
+    // 先转成 png 再上传，类型与扩展名一致。
+    final upload = await _ocrImageFile(bytes, fileName);
     final uri = Uri.parse(
       '${ApiConfig.baseUrl}${ApiConfig.srmSupplierOcrBusinessLicense}',
     );
@@ -290,9 +294,9 @@ class SrmSupplierApi {
       request.files.add(
         http.MultipartFile.fromBytes(
           'file',
-          bytes,
-          filename:
-              fileName.trim().isEmpty ? 'business_license.jpg' : fileName.trim(),
+          upload.bytes,
+          filename: upload.fileName,
+          contentType: upload.contentType,
         ),
       );
       final response = await ApiHttp.send(
@@ -308,7 +312,7 @@ class SrmSupplierApi {
         );
       }
       final data = body['data'];
-      final map = data is Map
+      var map = data is Map
           ? Map<String, dynamic>.from(data)
           : <String, dynamic>{};
       final success = map['success'];
@@ -319,12 +323,98 @@ class SrmSupplierApi {
               '营业执照识别失败',
         );
       }
+      // 证照字段有时再包一层 data / result，或落在 kvData。
+      final nested = map['data'] ?? map['result'] ?? map['ocrResult'];
+      if (nested is Map &&
+          map['companyName'] == null &&
+          map['creditCode'] == null) {
+        map = {...map, ...Map<String, dynamic>.from(nested)};
+      }
+      final kv = map['kvData'];
+      if (kv is Map) {
+        map = {...Map<String, dynamic>.from(kv), ...map};
+      }
       return SrmBusinessLicenseOcrResult.fromJson(map);
     } on SrmSupplierApiException {
       rethrow;
     } catch (e) {
       if (e is SrmSupplierApiException) rethrow;
       throw SrmSupplierApiException('网络请求失败：$e');
+    }
+  }
+
+  /// jpg/jpeg 转成 png 再传，避免扩展名 jpg 与 image/jpeg 被判成类型不匹配。
+  static Future<
+      ({Uint8List bytes, String fileName, http.MediaType contentType})>
+      _ocrImageFile(Uint8List bytes, String fileName) async {
+    final name = fileName.trim().isEmpty ? 'business_license.jpg' : fileName.trim();
+    if (!_isJpeg(bytes, name)) {
+      return (
+        bytes: bytes,
+        fileName: name,
+        contentType: _imageContentType(name),
+      );
+    }
+    final png = await _jpegToPng(bytes);
+    final base = _fileBaseName(name);
+    if (png == null) {
+      return (
+        bytes: bytes,
+        fileName: '$base.jpeg',
+        contentType: http.MediaType('image', 'jpeg'),
+      );
+    }
+    return (
+      bytes: png,
+      fileName: '$base.png',
+      contentType: http.MediaType('image', 'png'),
+    );
+  }
+
+  static bool _isJpeg(Uint8List bytes, String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return true;
+    return bytes.length >= 3 &&
+        bytes[0] == 0xFF &&
+        bytes[1] == 0xD8 &&
+        bytes[2] == 0xFF;
+  }
+
+  static String _fileBaseName(String name) {
+    final slash = name.replaceAll('\\', '/');
+    final file = slash.split('/').last;
+    final dot = file.lastIndexOf('.');
+    if (dot <= 0) return file;
+    return file.substring(0, dot);
+  }
+
+  static http.MediaType _imageContentType(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return http.MediaType('image', 'png');
+    if (lower.endsWith('.webp')) return http.MediaType('image', 'webp');
+    if (lower.endsWith('.bmp')) return http.MediaType('image', 'bmp');
+    if (lower.endsWith('.gif')) return http.MediaType('image', 'gif');
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return http.MediaType('image', 'jpeg');
+    }
+    return http.MediaType('application', 'octet-stream');
+  }
+
+  static Future<Uint8List?> _jpegToPng(Uint8List bytes) async {
+    ui.Codec? codec;
+    ui.Image? image;
+    try {
+      codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      image = frame.image;
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return null;
+      return data.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    } finally {
+      image?.dispose();
+      codec?.dispose();
     }
   }
 

@@ -1,11 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:pinyin/pinyin.dart';
 import 'package:lemon_shadcn/shadcn.dart' as shad;
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../../models/hrm_employee.dart';
 import '../../../../models/srm_supplier.dart';
+import '../../../../services/file_center_api.dart';
 import '../../../../services/srm_supplier_api.dart';
 import '../../../../utils/china_regions.dart';
 import '../../../customer_archive/dialogs/select_sales_person_dialog.dart';
@@ -118,24 +122,54 @@ class CategoryDraft {
     String? supplyCategory,
     String? itemType,
     String? itemDesc,
+    String? remark,
   })  : id = _DraftId.next(),
         supplyCategory = supplyCategory ?? '',
         itemType = itemType ?? '',
-        itemDesc = itemDesc ?? '';
+        itemDesc = itemDesc ?? '',
+        remark = remark ?? '';
 
   final int id;
   final String? serverId;
   String supplyCategory;
   String itemType;
   String itemDesc;
+  String remark;
+}
+
+/// 详情页点哪张卡片，就只编辑哪一块。空表示新建或整单编辑。
+enum SupplierEditSection {
+  overview,
+  basic,
+  bank,
+  invoice,
+  contract,
+  capability,
 }
 
 /// 新建 / 编辑供应商。
 class SupplierEditController extends LxController {
-  SupplierEditController({this.supplierId});
+  SupplierEditController({this.supplierId, this.section});
 
   final String? supplierId;
+  final SupplierEditSection? section;
+
+  String get dialogTitle {
+    if (!isEdit) return '新建供应商';
+    return switch (section) {
+      SupplierEditSection.overview => '编辑供应商概览',
+      SupplierEditSection.basic => '编辑基本信息',
+      SupplierEditSection.bank => '编辑银行账户',
+      SupplierEditSection.invoice => '编辑开票信息',
+      SupplierEditSection.contract => '编辑合同与结算',
+      SupplierEditSection.capability => '编辑能力与品类',
+      null => '编辑供应商',
+    };
+  }
+
+  bool shows(SupplierEditSection target) => section == null || section == target;
   final _api = SrmSupplierApi();
+  final _fileCenterApi = FileCenterApi();
   final form = AppFormController();
 
   final bootLoading = true.obs;
@@ -158,10 +192,21 @@ class SupplierEditController extends LxController {
   final blacklist = false.obs;
   final logoPath = Rxn<String>();
   final logoLabel = Rxn<String>();
+  /// 刚上传的本地预览；与 [logoPreviewUrl] 二选一展示。
+  final logoBytes = Rxn<Uint8List>();
+  final logoPreviewUrl = Rxn<String>();
   final licensePath = Rxn<String>();
   final licenseLabel = Rxn<String>();
   final contractPaths = <String>[].obs;
   final contractLabels = <String>[].obs;
+  /// 与 [contractPaths] 对齐的本地缩略图（非图片则为 null）。
+  final contractPreviewBytes = <Uint8List?>[].obs;
+  final contractPreviewUrls = <String?>[].obs;
+
+  bool get hasLogo =>
+      (logoPath.value?.trim().isNotEmpty ?? false) ||
+      (logoBytes.value?.isNotEmpty ?? false) ||
+      (logoPreviewUrl.value?.trim().isNotEmpty ?? false);
 
   bool get isEdit =>
       supplierId != null && supplierId!.trim().isNotEmpty;
@@ -169,9 +214,15 @@ class SupplierEditController extends LxController {
   String? get editId => supplierId?.trim();
 
   static const supplierTypeOptions = [
-    AppOption(value: '物业租赁', label: '物业租赁'),
-    AppOption(value: '媒介采购', label: '媒介采购'),
     AppOption(value: '设备采购', label: '设备采购'),
+    AppOption(value: '媒介采购', label: '媒介采购'),
+    AppOption(value: '物业租赁', label: '物业租赁'),
+    AppOption(value: '维保运维', label: '维保运维'),
+    AppOption(value: '灵活用工', label: '灵活用工'),
+    AppOption(value: '技术服务', label: '技术服务'),
+    AppOption(value: '物料制作', label: '物料制作'),
+    AppOption(value: '工程施工', label: '工程施工'),
+    AppOption(value: '其它', label: '其它'),
   ];
 
   static const cooperationModeOptions = [
@@ -182,7 +233,9 @@ class SupplierEditController extends LxController {
   static const settlementMethodOptions = [
     AppOption(value: '30天', label: '30天'),
     AppOption(value: '60天', label: '60天'),
-    AppOption(value: '预付', label: '预付'),
+    AppOption(value: '90天', label: '90天'),
+    AppOption(value: '按次结算', label: '按次结算'),
+    AppOption(value: 'X天', label: 'X天'),
   ];
 
   static const enterpriseNatureOptions = [
@@ -205,9 +258,39 @@ class SupplierEditController extends LxController {
     AppOption(value: '其他', label: '其他'),
   ];
 
+  /// 媒介采购 → 媒体类型（字典；可多选）。
+  static const mediaTypeOptions = [
+    AppOption(value: '户外LED屏', label: '户外LED屏'),
+    AppOption(value: '户外大牌', label: '户外大牌'),
+    AppOption(value: '灯光秀', label: '灯光秀'),
+    AppOption(value: '公交车体', label: '公交车体'),
+    AppOption(value: '公交候车亭', label: '公交候车亭'),
+    AppOption(value: '地铁类', label: '地铁类'),
+    AppOption(value: '高铁类', label: '高铁类'),
+    AppOption(value: '机场类', label: '机场类'),
+    AppOption(value: '影院灯箱', label: '影院灯箱'),
+    AppOption(value: '电梯框架', label: '电梯框架'),
+    AppOption(value: '电梯LCD屏', label: '电梯LCD屏'),
+  ];
+
+  /// 物业租赁 → 物业类型。
+  static const propertyTypeOptions = [
+    AppOption(value: '广告位租赁', label: '广告位租赁'),
+    AppOption(value: '场地租赁', label: '场地租赁'),
+    AppOption(value: '物业管理', label: '物业管理'),
+  ];
+
+  /// 设备采购 → 设备类型。
+  static const equipmentTypeOptions = [
+    AppOption(value: 'LCD屏', label: 'LCD屏'),
+    AppOption(value: 'LED屏', label: 'LED屏'),
+    AppOption(value: '广告灯箱', label: '广告灯箱'),
+  ];
+
   static const genderOptions = [
     AppOption(value: '1', label: '男'),
     AppOption(value: '2', label: '女'),
+    AppOption(value: '0', label: '未知'),
   ];
 
   static const ageGroupOptions = [
@@ -305,28 +388,38 @@ class SupplierEditController extends LxController {
         .toList();
     putInitial('serviceArea', areas);
     putInitial('teamSize', d.teamSize);
-    putInitial('invoiceType', d.invoiceType);
-    putInitial('taxRate', d.taxRate);
+    final invoiceTypes = (d.invoiceType ?? '')
+        .split(RegExp(r'[,，、]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    putInitial('invoiceType', invoiceTypes);
+    final taxRate = (d.taxRate ?? '').trim();
+    if (taxRate.isNotEmpty) {
+      const presets = {'6%', '9%', '13%'};
+      if (presets.contains(taxRate)) {
+        putInitial('taxRate', taxRate);
+      } else {
+        putInitial('taxRate', '其他');
+        if (taxRate != '其他') {
+          putInitial(
+            'taxRateCustom',
+            taxRate.endsWith('%')
+                ? taxRate.substring(0, taxRate.length - 1)
+                : taxRate,
+          );
+        }
+      }
+    }
     putInitial('deliveryCapacity', d.deliveryCapacity);
     putInitial('coreAdvantage', d.coreAdvantage);
     putInitial('remark', d.remark);
 
     blacklist.value = d.blacklistStatus == '1';
-    logoPath.value = d.logoFile;
-    logoLabel.value = _fileNameOf(d.logoFile);
+    _hydrateLogo(d.logoFile);
     licensePath.value = d.licenseFile;
     licenseLabel.value = _fileNameOf(d.licenseFile);
-    final contracts = (d.contractTemplate ?? '')
-        .split(RegExp(r'[,;；]'))
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    contractPaths
-      ..clear()
-      ..addAll(contracts);
-    contractLabels
-      ..clear()
-      ..addAll(contracts.map(_fileNameOf).whereType<String>());
+    _hydrateContracts(d.contractTemplate);
 
     banks
       ..clear()
@@ -391,15 +484,64 @@ class SupplierEditController extends LxController {
             supplyCategory: c.supplyCategory,
             itemType: c.itemType,
             itemDesc: c.itemDesc,
+            remark: c.remark,
           ),
       ]);
   }
 
+  void removeCategory(int id) =>
+      categories.removeWhere((e) => e.id == id);
+
+  String _normalizeOcrDigits(String raw) {
+    const wide = '０１２３４５６７８９';
+    final buffer = StringBuffer();
+    for (final rune in raw.runes) {
+      final ch = String.fromCharCode(rune);
+      final index = wide.indexOf(ch);
+      if (index >= 0) {
+        buffer.write(index);
+      } else if (ch == '．') {
+        buffer.write('.');
+      } else if (ch == '，') {
+        buffer.write(',');
+      } else {
+        buffer.write(ch);
+      }
+    }
+    return buffer.toString();
+  }
+
   DateTime? _parseDate(String? raw) {
-    final s = raw?.trim();
-    if (s == null || s.isEmpty) return null;
-    final normalized = s.length >= 10 ? s.substring(0, 10) : s;
-    return DateTime.tryParse(normalized);
+    final source = raw?.trim();
+    if (source == null || source.isEmpty) return null;
+    final s = _normalizeOcrDigits(source);
+    final head = s.length >= 10 ? s.substring(0, 10) : s;
+    final direct = DateTime.tryParse(
+      head.replaceAll('/', '-').replaceAll('.', '-'),
+    );
+    if (direct != null) return direct;
+    final compact = RegExp(r'(\d{4})(\d{2})(\d{2})').firstMatch(s);
+    if (compact != null) {
+      final parsed = DateTime.tryParse(
+        '${compact.group(1)}-${compact.group(2)}-${compact.group(3)}',
+      );
+      if (parsed != null) return parsed;
+    }
+    final text = RegExp(
+      r'(\d{4})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})',
+    ).firstMatch(s);
+    if (text != null) {
+      final month = text.group(2)!.padLeft(2, '0');
+      final day = text.group(3)!.padLeft(2, '0');
+      final parsed = DateTime.tryParse('${text.group(1)}-$month-$day');
+      if (parsed != null) return parsed;
+    }
+    final yearMonth = RegExp(
+      r'(\d{4})\s*[年./-]\s*(\d{1,2})',
+    ).firstMatch(s);
+    if (yearMonth == null) return null;
+    final month = yearMonth.group(2)!.padLeft(2, '0');
+    return DateTime.tryParse('${yearMonth.group(1)}-$month-01');
   }
 
   String? _fileNameOf(String? path) {
@@ -426,13 +568,15 @@ class SupplierEditController extends LxController {
     for (final t in selected) {
       next.add(
         existing[t] ??
-            CategoryDraft(supplyCategory: t, itemType: t, itemDesc: ''),
+            CategoryDraft(supplyCategory: t, itemType: '', itemDesc: ''),
       );
     }
     for (final c in categories) {
       final name = c.supplyCategory.trim();
       if (name.isEmpty || selected.contains(name)) continue;
-      if (c.itemDesc.trim().isNotEmpty || c.itemType.trim().isNotEmpty) {
+      if (c.itemDesc.trim().isNotEmpty ||
+          c.itemType.trim().isNotEmpty ||
+          c.remark.trim().isNotEmpty) {
         next.add(c);
       }
     }
@@ -459,6 +603,9 @@ class SupplierEditController extends LxController {
         bytes: bytes,
         fileName: file.name,
       );
+      // Form 使用固定 GlobalKey，仅改 initialValue / formEpoch 不会刷新字段状态；
+      // 先把当前表单值并入 initials，再叠 OCR，重建后 reset 才能回填。
+      _snapshotFormToInitials();
       _applyOcr(result);
       // OCR 接口本身已上传图片；若未回传路径则再走通用 OSS，便于提交 licenseFile。
       if ((result.licenseFile ?? '').trim().isEmpty) {
@@ -477,6 +624,9 @@ class SupplierEditController extends LxController {
         licenseLabel.value = file.name;
       }
       formEpoch.value++;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        form.reset();
+      });
       if (context.mounted) {
         _toast(context, result.message?.trim().isNotEmpty == true
             ? result.message!
@@ -486,6 +636,12 @@ class SupplierEditController extends LxController {
       if (context.mounted) _toast(context, e.toString(), error: true);
     } finally {
       ocrLoading.value = false;
+    }
+  }
+
+  void _snapshotFormToInitials() {
+    for (final entry in form.values.entries) {
+      putInitial(entry.key, entry.value);
     }
   }
 
@@ -499,7 +655,7 @@ class SupplierEditController extends LxController {
     putInitial('businessScope', r.businessScope);
     putInitial('enterpriseNature', r.companyType ?? r.companyForm);
     final capital = _parseCapitalWan(r.registeredCapital);
-    if (capital != null) putInitial('registeredCapital', capital);
+    if (capital != null) putInitial('registeredCapital', capital.round());
     final establish = _parseDate(r.registrationDate) ?? _parseDate(r.issueDate);
     if (establish != null) putInitial('establishDate', establish);
     final start = _parseDate(r.validFromDate);
@@ -515,15 +671,69 @@ class SupplierEditController extends LxController {
     }
   }
 
+  /// 营业执照注册资本统一成「万元」。`1000万元` 取 1000，`5000000元` 折成 500。
   double? _parseCapitalWan(String? raw) {
-    final s = raw?.trim();
-    if (s == null || s.isEmpty) return null;
-    final m = RegExp(r'([\d.]+)').firstMatch(s);
+    final source = raw?.trim();
+    if (source == null || source.isEmpty) return null;
+    final cleaned = _normalizeOcrDigits(source).replaceAll(',', '');
+    final m = RegExp(r'([\d.]+)').firstMatch(cleaned);
     if (m == null) return null;
     var n = double.tryParse(m.group(1)!);
     if (n == null) return null;
-    if (s.contains('亿')) n *= 10000;
+    final hasYi = cleaned.contains('亿');
+    final hasWan = cleaned.contains('万');
+    final hasYuan = cleaned.contains('元') || cleaned.contains('圆');
+    if (hasYi) {
+      n *= 10000;
+    } else if (hasYuan && !hasWan) {
+      n /= 10000;
+    } else if (!hasWan && !hasYi && n >= 100000) {
+      // 未标单位的大数按「元」折成万元。
+      n /= 10000;
+    }
     return n;
+  }
+
+  void _hydrateLogo(String? raw) {
+    logoBytes.value = null;
+    logoPreviewUrl.value = null;
+    final v = raw?.trim();
+    if (v == null || v.isEmpty) {
+      logoPath.value = null;
+      logoLabel.value = null;
+      return;
+    }
+    logoPath.value = v;
+    logoLabel.value = _fileNameOf(v) ?? 'logo';
+    if (v.startsWith('http://') || v.startsWith('https://')) {
+      logoPreviewUrl.value = v;
+      return;
+    }
+    // fileId：异步拉展示地址，失败不影响编辑。
+    if (RegExp(r'^\d+$').hasMatch(v)) {
+      _fileCenterApi.fetchInfo(v).then((detail) {
+        final url = detail.displayUrl?.trim().isNotEmpty == true
+            ? detail.displayUrl
+            : (detail.previewUrl?.trim().isNotEmpty == true
+                ? detail.previewUrl
+                : detail.objectUrl ?? detail.url);
+        if ((url ?? '').trim().isEmpty) return;
+        if (logoPath.value == v) {
+          logoPreviewUrl.value = url!.trim();
+          final name = detail.originalName ?? detail.fileName;
+          if ((name ?? '').trim().isNotEmpty) {
+            logoLabel.value = name!.trim();
+          }
+        }
+      }).catchError((_) {});
+    }
+  }
+
+  void clearLogo() {
+    logoPath.value = null;
+    logoLabel.value = null;
+    logoBytes.value = null;
+    logoPreviewUrl.value = null;
   }
 
   Future<void> pickLogo(BuildContext context) async {
@@ -543,9 +753,16 @@ class SupplierEditController extends LxController {
       return;
     }
     try {
-      final path = await _api.uploadOssFile(bytes: bytes, fileName: file.name);
-      logoPath.value = path;
+      // 业务字段存 fileId：presign → PUT → directComplete。
+      final upload = await _fileCenterApi.uploadBytes(
+        bytes: bytes,
+        fileName: file.name,
+        fetchDetail: false,
+      );
+      logoPath.value = upload.fileId;
       logoLabel.value = file.name;
+      logoBytes.value = bytes;
+      logoPreviewUrl.value = upload.displayUrl ?? upload.publicUrl;
     } catch (e) {
       if (context.mounted) _toast(context, e.toString(), error: true);
     }
@@ -575,10 +792,20 @@ class SupplierEditController extends LxController {
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) continue;
       try {
-        final path =
-            await _api.uploadOssFile(bytes: bytes, fileName: file.name);
-        contractPaths.add(path);
-        contractLabels.add(file.name);
+        final upload = await _fileCenterApi.uploadBytes(
+          bytes: bytes,
+          fileName: file.name,
+          fetchDetail: false,
+        );
+        final name = file.name;
+        contractPaths.add(upload.fileId);
+        contractLabels.add(name);
+        contractPreviewBytes.add(_isImageFileName(name) ? bytes : null);
+        contractPreviewUrls.add(
+          _isImageFileName(name)
+              ? (upload.displayUrl ?? upload.publicUrl)
+              : null,
+        );
       } catch (e) {
         if (context.mounted) _toast(context, e.toString(), error: true);
         break;
@@ -590,6 +817,73 @@ class SupplierEditController extends LxController {
     if (index < 0 || index >= contractPaths.length) return;
     contractPaths.removeAt(index);
     if (index < contractLabels.length) contractLabels.removeAt(index);
+    if (index < contractPreviewBytes.length) {
+      contractPreviewBytes.removeAt(index);
+    }
+    if (index < contractPreviewUrls.length) {
+      contractPreviewUrls.removeAt(index);
+    }
+  }
+
+  void _hydrateContracts(String? raw) {
+    final contracts = (raw ?? '')
+        .split(RegExp(r'[,;；]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    contractPaths
+      ..clear()
+      ..addAll(contracts);
+    contractLabels
+      ..clear()
+      ..addAll([
+        for (final c in contracts) _fileNameOf(c) ?? c,
+      ]);
+    contractPreviewBytes
+      ..clear()
+      ..addAll(List<Uint8List?>.filled(contracts.length, null));
+    contractPreviewUrls
+      ..clear()
+      ..addAll(List<String?>.filled(contracts.length, null));
+    for (var i = 0; i < contracts.length; i++) {
+      final v = contracts[i];
+      if (v.startsWith('http://') || v.startsWith('https://')) {
+        if (_isImageFileName(v)) contractPreviewUrls[i] = v;
+        continue;
+      }
+      if (!RegExp(r'^\d+$').hasMatch(v)) continue;
+      final index = i;
+      final fileId = v;
+      _fileCenterApi.fetchInfo(fileId).then((detail) {
+        if (index >= contractPaths.length ||
+            contractPaths[index] != fileId) {
+          return;
+        }
+        final name = detail.originalName ?? detail.fileName;
+        if ((name ?? '').trim().isNotEmpty) {
+          contractLabels[index] = name!.trim();
+        }
+        final url = detail.displayUrl?.trim().isNotEmpty == true
+            ? detail.displayUrl
+            : (detail.previewUrl?.trim().isNotEmpty == true
+                ? detail.previewUrl
+                : detail.objectUrl ?? detail.url);
+        final label = contractLabels[index];
+        if ((url ?? '').trim().isNotEmpty && _isImageFileName(label)) {
+          contractPreviewUrls[index] = url!.trim();
+        }
+      }).catchError((_) {});
+    }
+  }
+
+  static bool _isImageFileName(String? name) {
+    final n = name?.trim().toLowerCase() ?? '';
+    return n.endsWith('.png') ||
+        n.endsWith('.jpg') ||
+        n.endsWith('.jpeg') ||
+        n.endsWith('.webp') ||
+        n.endsWith('.bmp') ||
+        n.endsWith('.gif');
   }
 
   void addBank() => banks.add(BankDraft());
@@ -622,45 +916,121 @@ class SupplierEditController extends LxController {
   void addContact() => contacts.add(ContactDraft());
   void removeContact(int id) => contacts.removeWhere((e) => e.id == id);
 
-  void addStaffFromEmployees(List<HrmEmployee> list) {
-    final exist = staffs.map((e) => e.userId).whereType<int>().toSet();
-    for (final e in list) {
-      final uid = e.userId;
-      if (uid == null || exist.contains(uid)) continue;
-      exist.add(uid);
-      staffs.add(
-        StaffDraft(
-          userId: uid,
-          name: e.name ?? e.aliasName ?? '',
-          nameEn: e.englishName ?? '',
-          gender: e.gender,
-          deptPost: hrmEmployeeDeptPost(e),
-        ),
-      );
+  void addStaff() => staffs.add(StaffDraft());
+
+  /// 将通讯录员工写入某一行我方对接人；[userId] 已被其它行占用时返回 `false`。
+  bool applyEmployeeToStaff(StaffDraft item, HrmEmployee e) {
+    final uid = e.userId;
+    if (uid != null) {
+      for (final s in staffs) {
+        if (s.id != item.id && s.userId == uid) return false;
+      }
     }
+    item.userId = uid;
+    item.name = e.name ?? e.aliasName ?? '';
+    final converted = _chineseToEnglishName(item.name);
+    item.nameEn = converted.isNotEmpty
+        ? converted
+        : (e.englishName?.trim() ?? '');
+    item.gender = _mapHrmGenderToSupplier(e.gender);
+    item.deptPost = hrmEmployeeDeptPost(e);
+    if (item.deptPost == '-') item.deptPost = '';
+    staffs.refresh();
+    return true;
+  }
+
+  /// 中文姓名转写入 Name 的英文拼写（姓、名首字母大写）。
+  static String _chineseToEnglishName(String zh) {
+    final raw = PinyinHelper.getPinyinE(
+      zh.trim(),
+      separator: ' ',
+      format: PinyinFormat.WITHOUT_TONE,
+    ).trim();
+    if (raw.isEmpty) return '';
+    return raw
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) {
+          final lower = w.toLowerCase();
+          return '${lower[0].toUpperCase()}${lower.substring(1)}';
+        })
+        .join(' ');
+  }
+
+  /// HRM 通讯录 `0/1`（男/女）→ 本表单 `1/2/0`（男/女/未知）。
+  static String? _mapHrmGenderToSupplier(String? gender) {
+    final g = gender?.trim() ?? '';
+    return switch (g) {
+      '0' || '男' => '1',
+      '1' || '女' => '2',
+      '2' => '2',
+      '' => null,
+      _ => g,
+    };
   }
 
   void removeStaff(int id) => staffs.removeWhere((e) => e.id == id);
 
+  static final _mobilePattern = RegExp(r'^\d{1,11}$');
+  static final _emailPattern = RegExp(
+    r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$',
+  );
+
+  /// 手机号：只能是数字，且不能超过 11 位。空值在必填时提示。
+  static String? contactMobileError(
+    String raw, {
+    bool required = true,
+    String label = '手机号',
+  }) {
+    final text = raw.trim();
+    if (text.isEmpty) return required ? '请填写$label' : null;
+    if (!_mobilePattern.hasMatch(text)) {
+      return '$label只能输入数字，且不能超过11位';
+    }
+    return null;
+  }
+
+  /// 邮箱须符合邮箱格式。空值在必填时提示。
+  static String? contactEmailError(String raw, {bool required = true}) {
+    final text = raw.trim();
+    if (text.isEmpty) return required ? '请填写邮箱' : null;
+    if (!_emailPattern.hasMatch(text)) return '请输入正确的邮箱';
+    return null;
+  }
+
   String? _validateChildTables() {
-    for (final b in banks) {
-      if (b.bankName.trim().isEmpty || b.bankAccount.trim().isEmpty) {
-        return '请完善银行账户信息（开户行、银行账号）';
+    if (shows(SupplierEditSection.bank)) {
+      for (final b in banks) {
+        if (b.bankName.trim().isEmpty || b.bankAccount.trim().isEmpty) {
+          return '请完善银行账户信息（开户行、银行账号）';
+        }
       }
     }
-    for (final i in invoices) {
-      if (i.invoiceName.trim().isEmpty ||
-          i.taxNo.trim().isEmpty ||
-          i.bankName.trim().isEmpty ||
-          i.bankAccount.trim().isEmpty) {
-        return '请完善开票信息（名称、税号、开户行、开户银行账号）';
+    if (shows(SupplierEditSection.invoice)) {
+      for (final i in invoices) {
+        if (i.invoiceName.trim().isEmpty ||
+            i.taxNo.trim().isEmpty ||
+            i.bankName.trim().isEmpty ||
+            i.bankAccount.trim().isEmpty) {
+          return '请完善开票信息（名称、税号、开户行、开户银行账号）';
+        }
+        final phoneErr = contactMobileError(
+          i.registerPhone,
+          required: false,
+          label: '注册电话',
+        );
+        if (phoneErr != null) return phoneErr;
       }
     }
-    for (final c in contacts) {
-      if (c.name.trim().isEmpty ||
-          c.mobile.trim().isEmpty ||
-          c.email.trim().isEmpty) {
-        return '请完善联系人信息（姓名、手机号、邮箱）';
+    if (shows(SupplierEditSection.overview)) {
+      for (final c in contacts) {
+        if (c.name.trim().isEmpty) {
+          return '请完善联系人信息（姓名、手机号、邮箱）';
+        }
+        final mobileErr = contactMobileError(c.mobile);
+        if (mobileErr != null) return mobileErr;
+        final emailErr = contactEmailError(c.email);
+        if (emailErr != null) return emailErr;
       }
     }
     return null;
@@ -711,14 +1081,43 @@ class SupplierEditController extends LxController {
     staffs.clear();
     categories.clear();
     blacklist.value = false;
-    logoPath.value = null;
-    logoLabel.value = null;
+    clearLogo();
     licensePath.value = null;
     licenseLabel.value = null;
     contractPaths.clear();
     contractLabels.clear();
+    contractPreviewBytes.clear();
+    contractPreviewUrls.clear();
     form.reset();
     formEpoch.value++;
+  }
+
+  /// 「其他」时用手填税率（补 %）；预设项原样提交。
+  String? _resolveTaxRate(String? Function(String key) str) {
+    final selected = str('taxRate');
+    if (selected == null) return null;
+    if (selected != '其他') return selected;
+    final custom = str('taxRateCustom');
+    if (custom == null) return '其他';
+    final raw = custom.endsWith('%')
+        ? custom.substring(0, custom.length - 1)
+        : custom;
+    final n = num.tryParse(raw);
+    if (n == null || n < 0) {
+      throw SrmSupplierApiException('请输入税率');
+    }
+    if (n > 100) return '100%';
+    return '$raw%';
+  }
+
+  /// 「X天」保存为实际天数，如 `45天`；其它选项原样提交。
+  String? _resolveSettlement(String? Function(String key) str) {
+    final selected = str('settlementMethod');
+    if (selected == null || selected != 'X天') return selected;
+    final custom = str('settlementCustomDays');
+    final n = int.tryParse(custom ?? '');
+    if (custom == null || n == null || n < 0 || n > 3650) return null;
+    return '$n天';
   }
 
   Map<String, dynamic> _buildBody(Map<String, Object?> values) {
@@ -772,6 +1171,18 @@ class SupplierEditController extends LxController {
       }
     }
 
+    final invoiceTypes = <String>[];
+    final rawInvoiceTypes = values['invoiceType'] ?? initials['invoiceType'];
+    if (rawInvoiceTypes is List) {
+      for (final e in rawInvoiceTypes) {
+        final s = e?.toString().trim();
+        if (s != null && s.isNotEmpty) invoiceTypes.add(s);
+      }
+    } else {
+      final one = rawInvoiceTypes?.toString().trim();
+      if (one != null && one.isNotEmpty) invoiceTypes.add(one);
+    }
+
     DateTime? establish;
     final ed = values['establishDate'] ?? initials['establishDate'];
     if (ed is DateTime) establish = ed;
@@ -790,7 +1201,7 @@ class SupplierEditController extends LxController {
     final shortName = str('shortName');
     final fullName = str('fullName');
     final cooperationMode = str('cooperationMode');
-    final settlementMethod = str('settlementMethod');
+    final settlementMethod = _resolveSettlement(str);
     if (shortName == null ||
         fullName == null ||
         types.isEmpty ||
@@ -842,8 +1253,8 @@ class SupplierEditController extends LxController {
         'contractTemplate': contractPaths.join(','),
       if (areas.isNotEmpty) 'serviceArea': areas.join(','),
       if (intOf('teamSize') != null) 'teamSize': intOf('teamSize'),
-      if (str('invoiceType') != null) 'invoiceType': str('invoiceType'),
-      if (str('taxRate') != null) 'taxRate': str('taxRate'),
+      if (invoiceTypes.isNotEmpty) 'invoiceType': invoiceTypes.join(','),
+      if (_resolveTaxRate(str) != null) 'taxRate': _resolveTaxRate(str),
       if (str('deliveryCapacity') != null)
         'deliveryCapacity': str('deliveryCapacity'),
       if (str('coreAdvantage') != null) 'coreAdvantage': str('coreAdvantage'),
@@ -913,6 +1324,7 @@ class SupplierEditController extends LxController {
             'supplyCategory': categories[i].supplyCategory.trim(),
             'itemType': categories[i].itemType.trim(),
             'itemDesc': categories[i].itemDesc.trim(),
+            'remark': categories[i].remark.trim(),
             'sort': i + 1,
           },
       ],

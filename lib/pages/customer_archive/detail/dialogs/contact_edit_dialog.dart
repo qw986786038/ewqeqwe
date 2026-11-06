@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:pinyin/pinyin.dart';
 
 import '../../../../models/ad_code.dart';
@@ -7,6 +8,7 @@ import '../../../../models/dict_data.dart';
 import '../../../../services/ad_code_api.dart';
 import '../../../../services/customer_api.dart';
 import '../../../../services/dict_api.dart';
+import '../../dialogs/contact_image_ocr_dialog.dart';
 import '../../dialogs/contact_vcf_import_dialog.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -19,6 +21,7 @@ const _kEmptyBg = Color(0xFFF5F6F8);
 const _kGenderOptions = [
   AppOption(value: '1', label: '男'),
   AppOption(value: '2', label: '女'),
+  AppOption(value: '0', label: '未知'),
 ];
 
 /// 联系人详情「编辑」→ 编辑该联系人弹窗。
@@ -29,21 +32,20 @@ Future<bool> showContactEditDialog(
   int? contactOrdinal,
 }) async {
   final hostContext = context;
-  final result = await AppDialog.show<bool>(
+  final result = await showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
     builder: (dialogContext) => AppShadcnScope(
       config: AppThemeConfig.standard(primary: _kPrimary),
       child: _ContactEditDialog(
         contact: contact,
         isNew: isNew,
         contactOrdinal: contactOrdinal,
-        onClose: (saved) => AppOverlay.close<bool>(dialogContext, saved),
+        onClose: (saved) => Navigator.of(dialogContext).pop(saved),
         hostContext: hostContext,
       ),
     ),
-  ).future;
+  );
   return result == true;
 }
 
@@ -92,6 +94,7 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
 
   final _superiors = <_RelatedPersonDraft>[];
   final _subordinates = <_RelatedPersonDraft>[];
+  final _nameEnKeys = <String, GlobalKey<FormFieldState<String>>>{};
 
   @override
   void initState() {
@@ -284,6 +287,8 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
       _putInit('gender', '1');
     } else if (genderLabel == '女' || genderRaw == '2') {
       _putInit('gender', '2');
+    } else if (genderLabel == '未知' || genderRaw == '0') {
+      _putInit('gender', '0');
     } else {
       _putInit('gender', genderRaw);
     }
@@ -454,6 +459,133 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
     }
   }
 
+  Future<void> _importImageOcr() async {
+    final data = await showContactImageOcrDialog(context);
+    if (data == null || !mounted) return;
+    await _applyOcrFill(data);
+  }
+
+  Future<void> _applyOcrFill(ContactOcrFillData data) async {
+    void put(String key, String? v) {
+      final t = v?.trim();
+      if (t == null || t.isEmpty) return;
+      _initials[key] = t;
+    }
+
+    final nameZh = data.nameZh?.trim();
+    var nameEn = data.nameEn?.trim();
+    if ((nameEn == null || nameEn.isEmpty) &&
+        nameZh != null &&
+        nameZh.isNotEmpty) {
+      final py = _chineseToEnglishName(nameZh);
+      if (py.isNotEmpty) nameEn = py;
+    }
+    put('nameZh', nameZh);
+    put('nameEn', nameEn);
+    put('gender', data.gender);
+    put('age', data.ageDesc);
+    put('mobile', data.mobile);
+    put('phone', data.phone);
+    put('email', data.email);
+    put('address', data.address);
+    put('title', data.deptTitle);
+    put('role', data.jobDesc);
+    put('remark', data.remark);
+    final org = data.relatedEnterprise?.trim();
+    if (org != null && org.isNotEmpty) {
+      if (!_enterpriseOptions.any((o) => o.value == org || o.label == org)) {
+        _enterpriseOptions = [
+          ..._enterpriseOptions,
+          AppOption(value: org, label: org),
+        ];
+      }
+      _putInit('enterprise', org);
+    }
+
+    final cityText = data.city?.trim().isNotEmpty == true
+        ? data.city!.trim()
+        : data.address?.trim();
+    if (cityText != null && cityText.isNotEmpty) {
+      await _resolveCityFromText(cityText);
+    }
+
+    if (!mounted) return;
+    setState(() => _formEpoch++);
+    AppToast.show(context: context, title: '已根据识别结果回填');
+  }
+
+  /// 从「省+市」或地址文案匹配省/市下拉值（与详情回填逻辑一致）。
+  Future<void> _resolveCityFromText(String cityText) async {
+    String? matchedProvinceCode;
+    String? matchedProvinceLabel;
+    for (final o in _provinceOptions) {
+      if (cityText.startsWith(o.label) || cityText.contains(o.label)) {
+        matchedProvinceCode = o.value;
+        matchedProvinceLabel = o.label;
+        break;
+      }
+    }
+    if (matchedProvinceCode == null) return;
+    _putInit('province', matchedProvinceCode);
+
+    final parentCode = int.tryParse(matchedProvinceCode);
+    if (parentCode == null) return;
+    try {
+      final cities = await _adCodeApi.fetchChildren(parentCode: parentCode);
+      if (!mounted) return;
+      _cityOptions = [
+        for (final c in cities)
+          if (c.code != null && (c.chName ?? '').trim().isNotEmpty)
+            AppOption(
+              value: '${c.code}',
+              label: c.chName!.trim(),
+            ),
+      ];
+      final rest = matchedProvinceLabel == null
+          ? cityText
+          : cityText.replaceFirst(matchedProvinceLabel, '').trim();
+      for (final o in _cityOptions) {
+        if (rest == o.label ||
+            rest.contains(o.label) ||
+            cityText.contains(o.label)) {
+          _putInit('city', o.value);
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  Widget _basicInfoActions() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppInkWell(
+          onPressed: _importImageOcr,
+          child: const Text(
+            '上传照片（截图或拍照）识别文本',
+            style: TextStyle(
+              fontSize: 13,
+              color: _kPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        AppInkWell(
+          onPressed: _importVcf,
+          child: const Text(
+            '上传 VCF',
+            style: TextStyle(
+              fontSize: 13,
+              color: _kPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   String _chineseToEnglishName(String zh) {
     final raw = PinyinHelper.getPinyinE(
       zh.trim(),
@@ -469,6 +601,20 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
           return '${lower[0].toUpperCase()}${lower.substring(1)}';
         })
         .join(' ');
+  }
+
+  GlobalKey<FormFieldState<String>> _nameEnKeyOf(String prefix) {
+    return _nameEnKeys.putIfAbsent(
+      prefix,
+      GlobalKey<FormFieldState<String>>.new,
+    );
+  }
+
+  void _autofillNameEn(String prefix, String? nameZh) {
+    final enState = _nameEnKeyOf(prefix).currentState;
+    if (enState == null) return;
+    final zh = nameZh?.trim() ?? '';
+    enState.didChange(zh.isEmpty ? '' : _chineseToEnglishName(zh));
   }
 
   String? _labelOf(List<AppOption<String>> options, dynamic value) {
@@ -659,31 +805,22 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
     final ordinal = widget.contactOrdinal ?? 1;
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: Text(widget.isNew ? '联系人信息' : '编辑客户档案'),
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-        constraints: BoxConstraints(
-          minWidth: dialogW,
-          maxWidth: dialogW,
-          maxHeight: dialogMaxH,
-        ),
-        trailing: AppInkWell(
-          onPressed: () => widget.onClose(false),
-          child: const Icon(Icons.close, size: 18, color: _kMuted),
-        ),
+        scrollable: true,
+        style: HyperDialogStyle(maxWidth: dialogW),
+        onClose: () => widget.onClose(false),
         actions: [
-          AppButton.primary(
+          HyperButton.filled(
             onPressed: (_saving || _bootLoading) ? null : _submit,
-            loadingLabel: '保存中',
-            child: const Text('确定'),
+            label: Text(_saving ? '保存中…' : '确定'),
           ),
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: _saving ? null : () => widget.onClose(false),
-            child: const Text('取消'),
+            label: const Text('取消'),
           ),
         ],
-        // AppFormDialog 内容区偶发横向无界；钉死宽度，避免 Row+Expanded /
-        // AppSelect 默认 minWidth:160 在窄列里右侧溢出。
+        // 内容区钉死宽度，避免 Row+Expanded / AppSelect 默认 minWidth:160 溢出。
         content: SizedBox(
           height: contentH,
           child: LayoutBuilder(
@@ -732,21 +869,13 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
                                 ),
                               ),
                               const SizedBox(width: 16),
-                              AppInkWell(
-                                onPressed: _importVcf,
-                                child: const Text(
-                                  '上传 VCF',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: _kPrimary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
                             ],
                           ),
                           const SizedBox(height: 14),
-                          _sectionHeader(title: '基本信息'),
+                          _sectionHeader(
+                            title: '基本信息',
+                            trailing: _basicInfoActions(),
+                          ),
                         ] else ...[
                           const Row(
                             children: [
@@ -769,17 +898,7 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
                           const SizedBox(height: 14),
                           _sectionHeader(
                             title: '基本信息',
-                            trailing: AppInkWell(
-                              onPressed: _importVcf,
-                              child: const Text(
-                                '上传 VCF',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: _kPrimary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
+                            trailing: _basicInfoActions(),
                           ),
                         ],
                         const SizedBox(height: 10),
@@ -971,11 +1090,13 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
               validator: requiredName
                   ? AppValidators.required(message: '请输入姓名')
                   : null,
+              onChanged: (v) => _autofillNameEn(prefix, v),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: AppTextFormField(
+              key: _nameEnKeyOf(prefix),
               name: '${prefix}nameEn',
               label: 'Name',
               density: AppDensity.compact,

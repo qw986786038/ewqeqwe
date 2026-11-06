@@ -101,15 +101,19 @@ class CustomerEntityDetailController extends LxController {
     final list = data['enterprises'];
     if (list is! List) return null;
     final key = enterpriseName.trim();
-    if (key.isEmpty) return null;
+    Map<String, dynamic>? first;
     Map<String, dynamic>? fallback;
     for (final rawItem in list) {
       if (rawItem is! Map) continue;
       final e = Map<String, dynamic>.from(rawItem);
+      first ??= e;
+      if (key.isEmpty) continue;
       final name = _str(e['fullName']);
       if (name == key) return e;
       if (fallback == null && name.contains(key)) fallback = e;
     }
+    // 仅传档案 id（无主体名）时回退第一条，供 4A 详情弹窗等场景。
+    if (key.isEmpty) return first;
     return fallback;
   }
 
@@ -205,6 +209,9 @@ class CustomerEntityDetailController extends LxController {
   }
 
   String get address => _dash(_str(enterprise.value?['address']));
+
+  String get entityShortName =>
+      _entField('shortName', 'aliasName', 'enterpriseShort');
 
   String get wechatAccount => _mediaAccount(
         const {'wechat_mp', '微信公众号', 'wechat'},

@@ -264,27 +264,28 @@ class _FieldControl extends StatelessWidget {
     if (errorDisplay != AppFieldErrorDisplay.trailingIcon) {
       return child;
     }
-    if (errorText == null) return child;
+    // 错误图标显隐时保持同一棵 Stack，避免输入框被拆掉重建后失去焦点。
     final theme = shad.Theme.of(context);
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
         child,
-        PositionedDirectional(
-          end: 8,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(color: theme.colorScheme.input),
-              child: SizedBox(
-                width: 20,
-                child: Center(child: _FieldErrorIcon(errorText!)),
+        if (errorText != null)
+          PositionedDirectional(
+            end: 8,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: theme.colorScheme.input),
+                child: SizedBox(
+                  width: 20,
+                  child: Center(child: _FieldErrorIcon(errorText!)),
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

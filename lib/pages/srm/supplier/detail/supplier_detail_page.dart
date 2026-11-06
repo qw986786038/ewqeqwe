@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_shadcn/shadcn.dart' show CheckboxState;
 import 'package:lemon_x/lemon_x.dart';
 
+import '../../../../models/srm_purchase_order.dart';
 import '../../../../models/srm_supplier.dart';
+import '../edit/supplier_edit_controller.dart';
 import '../edit/supplier_edit_page.dart';
+import 'dialogs/select_purchase_order_dialog.dart';
 import 'supplier_detail_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -45,16 +49,19 @@ class _Body extends StatelessWidget {
   SupplierDetailController _c(BuildContext context) =>
       context.lx.find<SupplierDetailController>();
 
-  Future<void> _openEdit(BuildContext context) async {
+  Future<void> _openEdit(
+    BuildContext context,
+    SupplierEditSection section,
+  ) async {
     final c = _c(context);
     final id = c.supplierId.trim();
     if (id.isEmpty) return;
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => SupplierEditPage(supplierId: id),
-      ),
+    final ok = await showSupplierEditDialog(
+      context,
+      supplierId: id,
+      section: section,
     );
-    if (ok == true && context.mounted) {
+    if (ok && context.mounted) {
       await c.load();
     }
   }
@@ -116,7 +123,8 @@ class _Body extends StatelessWidget {
                   const SizedBox(height: 14),
                   _OverviewCard(
                     detail: d,
-                    onEdit: () => _openEdit(context),
+                    onEdit: () =>
+                        _openEdit(context, SupplierEditSection.overview),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -125,15 +133,18 @@ class _Body extends StatelessWidget {
                       Expanded(
                         child: _BasicInfoCard(
                           detail: d,
-                          onEdit: () => _openEdit(context),
+                          onEdit: () =>
+                              _openEdit(context, SupplierEditSection.basic),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _TaxInfoCard(
                           detail: d,
-                          onEditBank: () => _openEdit(context),
-                          onEditInvoice: () => _openEdit(context),
+                          onEditBank: () =>
+                              _openEdit(context, SupplierEditSection.bank),
+                          onEditInvoice: () =>
+                              _openEdit(context, SupplierEditSection.invoice),
                         ),
                       ),
                     ],
@@ -145,29 +156,60 @@ class _Body extends StatelessWidget {
                       Expanded(
                         child: _ContractCard(
                           detail: d,
-                          onEdit: () => _openEdit(context),
+                          onEdit: () =>
+                              _openEdit(context, SupplierEditSection.contract),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _CapabilityCard(
                           detail: d,
-                          onEdit: () => _openEdit(context),
+                          onEdit: () => _openEdit(
+                            context,
+                            SupplierEditSection.capability,
+                          ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  _PurchaseOrderCard(
-                    onRemove: () => AppToast.show(
-                      context: context,
-                      title: '移除待接入',
-                    ),
-                    onAdd: () => AppToast.show(
-                      context: context,
-                      title: '添加待接入',
-                    ),
-                  ),
+                  Obx(() {
+                    final orders = c.purchaseOrders.toList();
+                    final selected = c.selectedOrderIds.toSet();
+                    return _PurchaseOrderCard(
+                      rows: orders,
+                      selectedIds: selected,
+                      loading: c.purchaseOrdersLoading.value,
+                      onToggle: c.toggleOrderSelected,
+                      onToggleAll: c.toggleSelectAll,
+                      onRemove: () async {
+                        try {
+                          await c.unbindSelected();
+                          if (!context.mounted) return;
+                          AppToast.show(context: context, title: '已移除关联');
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          AppToast.show(context: context, title: e.toString());
+                        }
+                      },
+                      onAdd: () async {
+                        final sid = int.tryParse(c.supplierId.trim());
+                        final picked = await showSelectPurchaseOrderDialog(
+                          context,
+                          excludeSupplierId: sid,
+                        );
+                        if (picked == null || picked.isEmpty) return;
+                        try {
+                          await c.bindOrders(picked);
+                          if (!context.mounted) return;
+                          AppToast.show(context: context, title: '关联成功');
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          AppToast.show(context: context, title: e.toString());
+                        }
+                      },
+                    );
+                  }),
                 ],
               ),
             ),
@@ -362,6 +404,10 @@ class _OverviewCard extends StatelessWidget {
         : String.fromCharCodes(name.runes.take(1));
     final logo = detail.logoFile?.trim() ?? '';
     final contacts = detail.contactList;
+    final namedContacts = [
+      for (final c in contacts)
+        if ((c.name ?? '').trim().isNotEmpty) c,
+    ];
     final staffs = detail.staffList;
     final category = _dash(
       detail.supplyCategoryText ?? detail.categoryExportText,
@@ -439,7 +485,7 @@ class _OverviewCard extends StatelessWidget {
                       '联系人',
                       '',
                       _PersonTags(
-                        labels: contacts.isEmpty
+                        labels: namedContacts.isEmpty
                             ? [
                                 if ((detail.contactInfoText ?? '')
                                     .trim()
@@ -447,22 +493,11 @@ class _OverviewCard extends StatelessWidget {
                                   detail.contactInfoText!.trim(),
                               ]
                             : [
-                                for (final c in contacts)
-                                  if ((c.name ?? '').trim().isNotEmpty)
-                                    c.name!.trim(),
+                                for (final c in namedContacts) c.name!.trim(),
                               ],
-                        tipBuilder: (i) {
-                          if (i < 0 || i >= contacts.length) return null;
-                          final c = contacts[i];
-                          final parts = <String>[
-                            if ((c.mobile ?? '').trim().isNotEmpty)
-                              c.mobile!.trim(),
-                            if ((c.email ?? '').trim().isNotEmpty)
-                              c.email!.trim(),
-                            if ((c.deptPost ?? '').trim().isNotEmpty)
-                              c.deptPost!.trim(),
-                          ];
-                          return parts.isEmpty ? null : parts.join(' · ');
+                        hoverBuilder: (i) {
+                          if (i < 0 || i >= namedContacts.length) return null;
+                          return _ContactHoverCard(contact: namedContacts[i]);
                         },
                       ),
                     ),
@@ -527,10 +562,10 @@ class _Stars extends StatelessWidget {
 }
 
 class _PersonTags extends StatelessWidget {
-  const _PersonTags({required this.labels, this.tipBuilder});
+  const _PersonTags({required this.labels, this.hoverBuilder});
 
   final List<String> labels;
-  final String? Function(int index)? tipBuilder;
+  final Widget? Function(int index)? hoverBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -542,23 +577,158 @@ class _PersonTags extends StatelessWidget {
       runSpacing: 6,
       children: [
         for (var i = 0; i < labels.length; i++)
-          Tooltip(
-            message: tipBuilder?.call(i) ?? labels[i],
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: _kTagBg,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                labels[i],
-                style: const TextStyle(fontSize: 12, color: _kPrimary),
-              ),
-            ),
+          _PersonTag(
+            label: labels[i],
+            hover: hoverBuilder?.call(i),
           ),
       ],
     );
   }
+}
+
+class _PersonTag extends StatelessWidget {
+  const _PersonTag({required this.label, this.hover});
+
+  final String label;
+  final Widget? hover;
+
+  @override
+  Widget build(BuildContext context) {
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: _kTagBg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 12, color: _kPrimary),
+      ),
+    );
+    if (hover != null) {
+      return AppHoverCard(
+        wait: const Duration(milliseconds: 120),
+        popoverAlignment: Alignment.topLeft,
+        anchorAlignment: Alignment.bottomLeft,
+        popoverOffset: const Offset(0, 6),
+        hoverBuilder: (_) => hover!,
+        child: chip,
+      );
+    }
+    return chip;
+  }
+}
+
+/// 悬停联系人姓名时的详情卡。
+///
+/// 浮层插在根 Overlay，带不走页面里的 `AppShadcnScope`，所以这里不用 `AppCard`。
+class _ContactHoverCard extends StatelessWidget {
+  const _ContactHoverCard({required this.contact});
+
+  final SrmSupplierContact contact;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = _dash(contact.name);
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      shadowColor: const Color(0x33000000),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 268,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _kBorder),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              name,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: _kTitle,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _ContactHoverRow('姓名', name),
+            _ContactHoverRow('Name(EN)', _dash(contact.nameEn)),
+            _ContactHoverRow('性别', _genderLabel(contact.gender)),
+            _ContactHoverRow('年龄段', _ageLabel(contact.ageGroup)),
+            _ContactHoverRow('部门/职位', _dash(contact.deptPost)),
+            _ContactHoverRow('职能描述', _dash(contact.dutyDesc)),
+            _ContactHoverRow('手机号', _dash(contact.mobile)),
+            _ContactHoverRow('邮箱', _dash(contact.email)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactHoverRow extends StatelessWidget {
+  const _ContactHoverRow(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: _kMuted),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _genderLabel(String? raw) {
+  switch (raw?.trim()) {
+    case '1':
+    case '男':
+      return '男';
+    case '2':
+    case '女':
+      return '女';
+    case '0':
+    case '未知':
+      return '未知';
+    case null:
+    case '':
+      return '—';
+    default:
+      return raw!.trim();
+  }
+}
+
+/// 年龄存的是约数；展示成「约42岁，即1984年前后」。
+String _ageLabel(String? raw) {
+  final s = raw?.trim() ?? '';
+  if (s.isEmpty) return '—';
+  final n = int.tryParse(s);
+  if (n == null || n <= 0 || n > 120) return s;
+  final year = DateTime.now().year - n;
+  return '约$n岁，即$year年前后';
 }
 
 // ── 基本信息 ─────────────────────────────────────────────────────────────────
@@ -810,23 +980,69 @@ class _CapabilityCard extends StatelessWidget {
   }
 }
 
-// ── 采购订单明细（接口未提供，先占位复刻布局）────────────────────────────────
+// ── 采购订单明细 ─────────────────────────────────────────────────────────────
 
 class _PurchaseOrderCard extends StatelessWidget {
-  const _PurchaseOrderCard({required this.onRemove, required this.onAdd});
+  const _PurchaseOrderCard({
+    required this.rows,
+    required this.selectedIds,
+    required this.loading,
+    required this.onToggle,
+    required this.onToggleAll,
+    required this.onRemove,
+    required this.onAdd,
+  });
 
-  final VoidCallback onRemove;
-  final VoidCallback onAdd;
+  final List<SrmPurchaseOrder> rows;
+  final Set<String> selectedIds;
+  final bool loading;
+  final void Function(String? id, bool selected) onToggle;
+  final ValueChanged<bool> onToggleAll;
+  final Future<void> Function() onRemove;
+  final Future<void> Function() onAdd;
+
+  String _dash(String? v) {
+    final t = v?.trim();
+    return (t == null || t.isEmpty) ? '-' : t;
+  }
+
+  String _amount(SrmPurchaseOrder row) {
+    final v = row.orderAmount;
+    if (v == null) return '-';
+    return v.toStringAsFixed(2);
+  }
+
+  String _orderTitle(SrmPurchaseOrder row) {
+    final name = row.orderName?.trim();
+    final no = row.orderNo?.trim();
+    if (name != null && name.isNotEmpty && no != null && no.isNotEmpty) {
+      return '$name / $no';
+    }
+    return name ?? no ?? '-';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final allIds = [
+      for (final e in rows)
+        if ((e.id ?? '').trim().isNotEmpty) e.id!.trim(),
+    ];
+    final allChecked =
+        allIds.isNotEmpty && allIds.every(selectedIds.contains);
+    final someChecked = allIds.any(selectedIds.contains);
+    final headerState = allChecked
+        ? CheckboxState.checked
+        : someChecked
+            ? CheckboxState.indeterminate
+            : CheckboxState.unchecked;
+
     return _SectionCard(
       title: '采购订单明细',
       headerTrailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           AppButton.link(
-            onPressed: onRemove,
+            onPressed: selectedIds.isEmpty ? null : onRemove,
             child: const Text('移除', style: TextStyle(color: _kDanger)),
           ),
           AppButton.link(onPressed: onAdd, child: const Text('添加')),
@@ -835,29 +1051,169 @@ class _PurchaseOrderCard extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFFAFAFA),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: _kBorder),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                SizedBox(width: 28),
-                Expanded(flex: 3, child: Text('订单名称 / 订单号', style: _headStyle)),
-                Expanded(flex: 2, child: Text('订单标签', style: _headStyle)),
-                Expanded(flex: 2, child: Text('关联品牌', style: _headStyle)),
-                Expanded(flex: 2, child: Text('合同类型', style: _headStyle)),
-                Expanded(flex: 2, child: Text('订单金额(万元)', style: _headStyle)),
-                Expanded(flex: 2, child: Text('订单时间', style: _headStyle)),
+                SizedBox(
+                  width: 28,
+                  child: Center(
+                    child: AppCheckboxIndicator(
+                      state: headerState,
+                      onChanged: rows.isEmpty
+                          ? null
+                          : (state) =>
+                              onToggleAll(state == CheckboxState.checked),
+                    ),
+                  ),
+                ),
+                const Expanded(
+                  flex: 3,
+                  child: Text('订单名称 / 订单号', style: _headStyle),
+                ),
+                const Expanded(flex: 2, child: Text('订单标签', style: _headStyle)),
+                const Expanded(flex: 2, child: Text('关联品牌', style: _headStyle)),
+                const Expanded(flex: 2, child: Text('合同类型', style: _headStyle)),
+                const Expanded(
+                  flex: 2,
+                  child: Text('订单金额(万元)', style: _headStyle),
+                ),
+                const Expanded(flex: 2, child: Text('订单时间', style: _headStyle)),
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 28),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 28),
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (rows.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 28),
+              child: Text(
+                '暂无采购订单',
+                style: TextStyle(fontSize: 13, color: _kMuted),
+              ),
+            )
+          else
+            for (final row in rows)
+              _PurchaseOrderRow(
+                checked: selectedIds.contains(row.id?.trim() ?? ''),
+                title: _orderTitle(row),
+                tag: _dash(row.orderTag),
+                brand: _dash(row.brandName),
+                contract: _dash(row.contractType),
+                amount: _amount(row),
+                time: _dash(row.orderTime),
+                onChanged: (v) => onToggle(row.id, v),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PurchaseOrderRow extends StatelessWidget {
+  const _PurchaseOrderRow({
+    required this.checked,
+    required this.title,
+    required this.tag,
+    required this.brand,
+    required this.contract,
+    required this.amount,
+    required this.time,
+    required this.onChanged,
+  });
+
+  final bool checked;
+  final String title;
+  final String tag;
+  final String brand;
+  final String contract;
+  final String amount;
+  final String time;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _kBorder)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: Center(
+              child: AppCheckboxIndicator(
+                state:
+                    checked ? CheckboxState.checked : CheckboxState.unchecked,
+                onChanged: (state) =>
+                    onChanged(state == CheckboxState.checked),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
             child: Text(
-              '暂无采购订单',
-              style: TextStyle(fontSize: 13, color: _kMuted),
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              tag,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              brand,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              contract,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              amount,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              time,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: _kTitle),
             ),
           ),
         ],

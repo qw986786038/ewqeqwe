@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../../services/customer_api.dart';
 import '../customer_entity_detail_controller.dart';
 import 'entity_tax_edit_dialog.dart';
 
+const _kPrimary = Color(0xFF1677FF);
 const _kMuted = Color(0xFF8C8C8C);
 const _kTitle = Color(0xFF1D2129);
 
@@ -26,16 +28,19 @@ Future<void> showEntityModuleEditDialog(
     EntityEditModule.contacts => '编辑联系人信息',
   };
   final hostContext = context;
-  return AppDialog.show<void>(
+  return showHyperDialog<void>(
     context: context,
-    builder: (dialogContext) => _EntityModuleEditDialog(
-      controller: controller,
-      module: module,
-      title: title,
-      onClose: () => AppOverlay.close<void>(dialogContext),
-      hostContext: hostContext,
+    builder: (dialogContext) => AppShadcnScope(
+      config: AppThemeConfig.standard(primary: _kPrimary),
+      child: _EntityModuleEditDialog(
+        controller: controller,
+        module: module,
+        title: title,
+        onClose: () => Navigator.of(dialogContext).pop(),
+        hostContext: hostContext,
+      ),
     ),
-  ).future;
+  );
 }
 
 class _EntityModuleEditDialog extends StatefulWidget {
@@ -142,6 +147,7 @@ class _EntityModuleEditDialogState extends State<_EntityModuleEditDialog> {
               .toList();
     }
     putEnt('fullName', values['fullName']);
+    putEnt('shortName', values['shortName']);
     putEnt('relationType', values['relationType']);
     putEnt('entityNature', values['entityNature']);
     putEnt('city', values['city']);
@@ -233,24 +239,21 @@ class _EntityModuleEditDialogState extends State<_EntityModuleEditDialog> {
     final contentH = (viewH * 0.9 - 220).clamp(200.0, 520.0);
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: Text(widget.title),
-        constraints: BoxConstraints(maxWidth: 560, maxHeight: viewH * 0.9),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 560),
+        onClose: widget.onClose,
         actions: [
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: _saving ? null : widget.onClose,
-            child: const Text('取消'),
+            label: const Text('取消'),
           ),
-          AppButton.primary(
+          HyperButton.filled(
             onPressed: _saving ? null : _submit,
-            loadingLabel: '保存中',
-            child: const Text('保存'),
+            label: Text(_saving ? '保存中…' : '保存'),
           ),
         ],
-        trailing: AppInkWell(
-          onPressed: widget.onClose,
-          child: const Icon(Icons.close, size: 18, color: _kMuted),
-        ),
         content: SizedBox(
           height: contentH,
           child: SingleChildScrollView(
@@ -301,6 +304,12 @@ class _EntityModuleEditDialogState extends State<_EntityModuleEditDialog> {
             label: '企业全称',
             initialValue:
                 _c.entityFullName == '-' ? '' : _c.entityFullName,
+          ),
+          AppTextFormField(
+            name: 'shortName',
+            label: '企业简称',
+            initialValue:
+                _c.entityShortName == '-' ? '' : _c.entityShortName,
           ),
           AppTextFormField(
             name: 'industry',

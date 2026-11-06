@@ -282,6 +282,200 @@ class CustomerApi {
     throw CustomerApiException('品牌库详情数据为空');
   }
 
+  /// 下载「导入联系人」模板：`POST /desktop/oac/customer/importContactTemplate`。
+  Future<({Uint8List bytes, String fileName})> downloadContactImportTemplate() =>
+      _downloadImportTemplate(
+        path: ApiConfig.customerImportContactTemplate,
+        fallbackName: '导入联系人模板.xls',
+      );
+
+  /// 解析联系人导入文件：`POST /desktop/oac/customer/importContact/preview`。
+  Future<List<Map<String, dynamic>>> previewContactImport({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final data = await _postImportPreview(
+      path: ApiConfig.customerImportContactPreview,
+      bytes: bytes,
+      fileName: fileName,
+      emptyFileMessage: '请选择要导入的联系人 Excel 文件',
+      failLabel: '解析联系人导入文件',
+    );
+    return _asMapList(data['contacts']);
+  }
+
+  /// 确认导入联系人：`POST /desktop/oac/customer/importContact/confirm`。
+  Future<void> confirmContactImport(List<Map<String, dynamic>> contacts) =>
+      _postImportConfirm(
+        path: ApiConfig.customerImportContactConfirm,
+        body: {'contacts': contacts},
+        failLabel: '导入联系人',
+      );
+
+  /// 下载「导入经营主体」模板：`POST /desktop/oac/customer/importEnterpriseTemplate`。
+  Future<({Uint8List bytes, String fileName})>
+      downloadEnterpriseImportTemplate() => _downloadImportTemplate(
+        path: ApiConfig.customerImportEnterpriseTemplate,
+        fallbackName: '导入经营主体模板.xls',
+      );
+
+  /// 解析经营主体导入文件：`POST /desktop/oac/customer/importEnterprise/preview`。
+  Future<List<Map<String, dynamic>>> previewEnterpriseImport({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final data = await _postImportPreview(
+      path: ApiConfig.customerImportEnterprisePreview,
+      bytes: bytes,
+      fileName: fileName,
+      emptyFileMessage: '请选择要导入的经营主体 Excel 文件',
+      failLabel: '解析经营主体导入文件',
+    );
+    return _asMapList(data['enterprises']);
+  }
+
+  /// 确认导入经营主体：`POST /desktop/oac/customer/importEnterprise/confirm`。
+  Future<void> confirmEnterpriseImport(
+    List<Map<String, dynamic>> enterprises,
+  ) =>
+      _postImportConfirm(
+        path: ApiConfig.customerImportEnterpriseConfirm,
+        body: {'enterprises': enterprises},
+        failLabel: '导入经营主体',
+      );
+
+  Future<({Uint8List bytes, String fileName})> _downloadImportTemplate({
+    required String path,
+    required String fallbackName,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    try {
+      final response = await ApiHttp.post(
+        uri,
+        headers: AuthSession.headers(),
+        timeout: const Duration(seconds: 60),
+      );
+      return _parseExcelResponse(
+        response,
+        fallbackName: fallbackName,
+        failLabel: '下载模板',
+      );
+    } on CustomerApiException {
+      rethrow;
+    } catch (e) {
+      if (e is CustomerApiException) rethrow;
+      throw CustomerApiException('网络请求失败：$e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _postImportPreview({
+    required String path,
+    required Uint8List bytes,
+    required String fileName,
+    required String emptyFileMessage,
+    required String failLabel,
+  }) async {
+    if (bytes.isEmpty) {
+      throw CustomerApiException(emptyFileMessage);
+    }
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    try {
+      final request = http.MultipartRequest('POST', uri);
+      request.headers.addAll(AuthSession.headers());
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: fileName.trim().isEmpty ? 'import.xls' : fileName.trim(),
+        ),
+      );
+      final response = await ApiHttp.send(
+        request,
+        timeout: const Duration(seconds: 120),
+      );
+      final body = _decodeJsonBody(response);
+      final code = body['code'];
+      final ok = code == null || code == 200 || code == 0 || code == '200';
+      if (!ok) {
+        throw CustomerApiException(body['msg']?.toString() ?? '$failLabel失败');
+      }
+      final data = body['data'];
+      if (data is Map<String, dynamic>) return data;
+      if (data is Map) return Map<String, dynamic>.from(data);
+      return <String, dynamic>{};
+    } on CustomerApiException {
+      rethrow;
+    } on FormatException {
+      throw CustomerApiException('服务器返回数据格式错误');
+    } catch (e) {
+      if (e is CustomerApiException) rethrow;
+      throw CustomerApiException('网络请求失败：$e');
+    }
+  }
+
+  Future<void> _postImportConfirm({
+    required String path,
+    required Map<String, dynamic> body,
+    required String failLabel,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    try {
+      final response = await ApiHttp.post(
+        uri,
+        headers: {
+          ...AuthSession.headers(),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+        timeout: const Duration(seconds: 120),
+      );
+      final decoded = _decodeJsonBody(response);
+      final code = decoded['code'];
+      final ok = code == null || code == 200 || code == 0 || code == '200';
+      if (!ok) {
+        throw CustomerApiException(
+          decoded['msg']?.toString() ?? '$failLabel失败',
+        );
+      }
+    } on CustomerApiException {
+      rethrow;
+    } on FormatException {
+      throw CustomerApiException('服务器返回数据格式错误');
+    } catch (e) {
+      if (e is CustomerApiException) rethrow;
+      throw CustomerApiException('网络请求失败：$e');
+    }
+  }
+
+  Map<String, dynamic> _decodeJsonBody(http.Response response) {
+    if (response.body.isEmpty) {
+      throw CustomerApiException('服务器返回为空');
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw CustomerApiException('服务器返回数据格式错误');
+    }
+    if (response.statusCode == 401) {
+      throw CustomerApiException(
+        decoded['msg']?.toString() ?? '未登录或登录已过期',
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw CustomerApiException(
+        decoded['msg']?.toString() ?? '请求失败(${response.statusCode})',
+      );
+    }
+    return decoded;
+  }
+
+  static List<Map<String, dynamic>> _asMapList(dynamic raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final e in raw)
+        if (e is Map) Map<String, dynamic>.from(e),
+    ];
+  }
+
   /// 导出客户档案 Excel：`POST /desktop/oac/customer/export`。
   /// [exportColumns] 为当前可见数据列字段名（逗号分隔）；序号由服务端固定导出。
   Future<({Uint8List bytes, String fileName})> export({
@@ -385,6 +579,81 @@ class CustomerApi {
     return (name == null || name.isEmpty) ? null : name;
   }
 
+  /// 阿里云统一识别 RecognizeAllText：`POST /desktop/oac/ocr/allText/upload`。
+  /// [type] 默认 `Advanced`，也可 `IdCard`、`BankCard` 等。
+  Future<OacGeneralOcrResult> ocrAllTextUpload({
+    required Uint8List bytes,
+    required String fileName,
+    String type = 'Advanced',
+  }) async {
+    if (bytes.isEmpty) {
+      throw CustomerApiException('请选择要识别的图片');
+    }
+    final t = type.trim().isEmpty ? 'Advanced' : type.trim();
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.oacOcrAllTextUpload}',
+    ).replace(queryParameters: {'type': t});
+    try {
+      final request = http.MultipartRequest('POST', uri);
+      request.headers.addAll(AuthSession.headers());
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename:
+              fileName.trim().isEmpty ? 'contact_ocr.jpg' : fileName.trim(),
+        ),
+      );
+      final response = await ApiHttp.send(
+        request,
+        timeout: const Duration(seconds: 90),
+      );
+      if (response.body.isEmpty) {
+        throw CustomerApiException('服务器返回为空');
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw CustomerApiException('服务器返回数据格式错误');
+      }
+      if (response.statusCode == 401) {
+        throw CustomerApiException(
+          decoded['msg']?.toString() ?? '未登录或登录已过期',
+        );
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw CustomerApiException(
+          decoded['msg']?.toString() ?? '请求失败(${response.statusCode})',
+        );
+      }
+      final code = decoded['code'];
+      final ok = code == null || code == 200 || code == 0 || code == '200';
+      if (!ok) {
+        throw CustomerApiException(
+          decoded['msg']?.toString() ?? '图片文字识别失败',
+        );
+      }
+      final data = decoded['data'];
+      final map = data is Map
+          ? Map<String, dynamic>.from(data)
+          : <String, dynamic>{};
+      if (map['success'] == false) {
+        throw CustomerApiException(
+          map['message']?.toString() ??
+              decoded['msg']?.toString() ??
+              '图片文字识别失败',
+        );
+      }
+      return OacGeneralOcrResult.fromJson(map);
+    } on CustomerApiException {
+      rethrow;
+    } on FormatException {
+      throw CustomerApiException('服务器返回数据格式错误');
+    } catch (e) {
+      if (e is CustomerApiException) rethrow;
+      throw CustomerApiException('网络请求失败：$e');
+    }
+  }
+
   /// 开户许可证 / 基本存款账户 OCR：`POST /desktop/oac/ocr/bankAccountLicense/upload`。
   Future<OacBankAccountLicenseOcrResult> ocrBankAccountLicense({
     required Uint8List bytes,
@@ -476,7 +745,7 @@ class CustomerApi {
       throw CustomerApiException(body['msg']?.toString() ?? '营业执照识别失败');
     }
     final data = body['data'];
-    final map = data is Map
+    var map = data is Map
         ? Map<String, dynamic>.from(data)
         : <String, dynamic>{};
     if (map['success'] == false) {
@@ -485,6 +754,15 @@ class CustomerApi {
             body['msg']?.toString() ??
             '营业执照识别失败',
       );
+    }
+    // 部分实现把证照字段再包一层 data / result。
+    final nested = map['data'] ?? map['result'] ?? map['ocrResult'];
+    if (nested is Map &&
+        (map['companyName'] == null && map['creditCode'] == null)) {
+      map = {
+        ...map,
+        ...Map<String, dynamic>.from(nested),
+      };
     }
     return OacBusinessLicenseOcrResult.fromJson(map);
   }
@@ -829,29 +1107,69 @@ class OacBusinessLicenseOcrResult {
   String? message;
 
   static OacBusinessLicenseOcrResult fromJson(Map<String, dynamic> json) {
-    String? s(String key) {
-      final v = json[key];
-      if (v == null) return null;
-      final t = v.toString().trim();
-      return t.isEmpty ? null : t;
+    String? s(String key, [List<String> alts = const []]) {
+      for (final k in [key, ...alts]) {
+        final v = json[k];
+        if (v == null) continue;
+        final t = v.toString().trim();
+        if (t.isNotEmpty) return t;
+      }
+      return null;
     }
 
     return OacBusinessLicenseOcrResult()
       ..title = s('title')
-      ..creditCode = s('creditCode')
-      ..companyName = s('companyName')
-      ..companyType = s('companyType')
-      ..businessAddress = s('businessAddress')
-      ..legalPerson = s('legalPerson')
-      ..businessScope = s('businessScope')
-      ..registeredCapital = s('registeredCapital')
-      ..registrationDate = s('registrationDate')
-      ..validPeriod = s('validPeriod')
-      ..validFromDate = s('validFromDate')
-      ..validToDate = s('validToDate')
-      ..companyForm = s('companyForm')
-      ..issueDate = s('issueDate')
-      ..message = s('message');
+      ..creditCode = s('creditCode', const [
+        'unifiedSocialCreditCode',
+        'regNum',
+        'credit_code',
+      ])
+      ..companyName = s('companyName', const [
+        'name',
+        'entName',
+        'enterpriseName',
+        'company_name',
+      ])
+      ..companyType = s('companyType', const ['type', 'company_type'])
+      ..businessAddress = s('businessAddress', const [
+        'address',
+        'business_address',
+        'domicile',
+      ])
+      ..legalPerson = s('legalPerson', const [
+        'person',
+        'legal_person',
+        'legalRepresentative',
+      ])
+      ..businessScope = s('businessScope', const [
+        'bizScope',
+        'business_scope',
+        'scope',
+      ])
+      ..registeredCapital = s('registeredCapital', const [
+        'regCapital',
+        'capital',
+        'registered_capital',
+      ])
+      ..registrationDate = s('registrationDate', const [
+        'establishDate',
+        'foundDate',
+        'establishedDate',
+        'registration_date',
+      ])
+      ..validPeriod = s('validPeriod', const [
+        'licenseExpire',
+        'businessLicenseExpire',
+        'valid_period',
+      ])
+      ..validFromDate = s('validFromDate', const [
+        'validFrom',
+        'valid_from_date',
+      ])
+      ..validToDate = s('validToDate', const ['validTo', 'valid_to_date'])
+      ..companyForm = s('companyForm', const ['company_form'])
+      ..issueDate = s('issueDate', const ['issue_date'])
+      ..message = s('message', const ['msg']);
   }
 
   /// 营业期限展示文案。
@@ -864,6 +1182,67 @@ class OacBusinessLicenseOcrResult {
     if (from.isEmpty) return to;
     if (to.isEmpty) return from;
     return '$from 至 $to';
+  }
+}
+
+/// 阿里云 RecognizeAllText 通用 OCR 结果。
+class OacGeneralOcrResult {
+  bool? success;
+  String? message;
+  String? type;
+  String? content;
+  int? wordCount;
+  List<String> words = const [];
+  Map<String, dynamic>? kvData;
+  List<String> subTypes = const [];
+  String? rawData;
+
+  static OacGeneralOcrResult fromJson(Map<String, dynamic> json) {
+    String? s(String key) {
+      final v = json[key];
+      if (v == null) return null;
+      final t = v.toString().trim();
+      return t.isEmpty ? null : t;
+    }
+
+    final wordsRaw = json['words'];
+    final words = <String>[
+      if (wordsRaw is List)
+        for (final e in wordsRaw)
+          if (e != null && e.toString().trim().isNotEmpty) e.toString().trim(),
+    ];
+    final subRaw = json['subTypes'];
+    final subTypes = <String>[
+      if (subRaw is List)
+        for (final e in subRaw)
+          if (e != null && e.toString().trim().isNotEmpty) e.toString().trim(),
+    ];
+    Map<String, dynamic>? kv;
+    final kvRaw = json['kvData'];
+    if (kvRaw is Map) kv = Map<String, dynamic>.from(kvRaw);
+
+    final wordCountRaw = json['wordCount'];
+    int? wordCount;
+    if (wordCountRaw is int) {
+      wordCount = wordCountRaw;
+    } else if (wordCountRaw is num) {
+      wordCount = wordCountRaw.toInt();
+    } else {
+      wordCount = int.tryParse(wordCountRaw?.toString() ?? '');
+    }
+
+    return OacGeneralOcrResult()
+      ..success = json['success'] is bool
+          ? json['success'] as bool
+          : json['success']?.toString().toLowerCase() != 'false'
+      ..message = s('message')
+      ..type = s('type')
+      ..content = s('content')
+      ..wordCount = wordCount
+      ..words = words
+      ..kvData = kv
+      ..subTypes = subTypes
+      ..rawData = s('rawData');
   }
 }
 

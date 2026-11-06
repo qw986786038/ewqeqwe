@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -17,6 +18,7 @@ class ColumnHeaderFilter extends StatefulWidget {
     required this.onApply,
     this.width,
     this.alignment = Alignment.center,
+    this.customDayInput = false,
   });
 
   final String title;
@@ -25,6 +27,9 @@ class ColumnHeaderFilter extends StatefulWidget {
   final ValueChanged<Set<String>> onApply;
   final double? width;
   final Alignment alignment;
+
+  /// 结算方式：勾选固定项之外，可手填天数，筛选后并入选中值（如 `11天`）。
+  final bool customDayInput;
 
   @override
   State<ColumnHeaderFilter> createState() => _ColumnHeaderFilterState();
@@ -45,6 +50,7 @@ class _ColumnHeaderFilterState extends State<ColumnHeaderFilter> {
         return _FilterPanel(
           options: widget.options,
           initial: draft,
+          customDayInput: widget.customDayInput,
           onApply: (next) {
             widget.onApply(next);
             AppOverlay.close(ctx);
@@ -103,23 +109,77 @@ class _FilterPanel extends StatefulWidget {
     required this.initial,
     required this.onApply,
     required this.onReset,
+    this.customDayInput = false,
   });
 
   final List<String> options;
   final Set<String> initial;
   final ValueChanged<Set<String>> onApply;
   final VoidCallback onReset;
+  final bool customDayInput;
 
   @override
   State<_FilterPanel> createState() => _FilterPanelState();
 }
 
 class _FilterPanelState extends State<_FilterPanel> {
-  late final Set<String> _draft = Set<String>.from(widget.initial);
+  static final _customDay = RegExp(r'^(\d+)天$');
+  static const _presetDays = {'30天', '60天', '90天'};
+
+  late final Set<String> _draft;
+  late final TextEditingController _daysCtrl;
+  String? _daysError;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = {
+      for (final item in widget.initial)
+        if (!_isCustomDay(item)) item,
+    };
+    String? days;
+    for (final item in widget.initial) {
+      if (_isCustomDay(item)) {
+        days = item.substring(0, item.length - 1);
+        break;
+      }
+    }
+    _daysCtrl = TextEditingController(text: days ?? '');
+  }
+
+  @override
+  void dispose() {
+    _daysCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _isCustomDay(String item) =>
+      _customDay.hasMatch(item) && !_presetDays.contains(item);
+
+  bool get _hasDraft =>
+      _draft.isNotEmpty ||
+      (widget.customDayInput && _daysCtrl.text.trim().isNotEmpty);
+
+  void _apply() {
+    final next = Set<String>.from(_draft);
+    if (widget.customDayInput) {
+      final text = _daysCtrl.text.trim();
+      if (text.isNotEmpty) {
+        final n = int.tryParse(text);
+        if (n == null || n < 0 || n > 3650) {
+          setState(() => _daysError = '请输入 0-3650');
+          return;
+        }
+        next.add('$n天');
+      }
+    }
+    if (next.isEmpty) return;
+    widget.onApply(next);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final hasDraft = _draft.isNotEmpty;
+    final hasDraft = _hasDraft;
     return Material(
       color: Colors.white,
       elevation: 8,
@@ -194,19 +254,63 @@ class _FilterPanelState extends State<_FilterPanel> {
                 },
               ),
             ),
+            if (widget.customDayInput)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+                child: TextField(
+                  controller: _daysCtrl,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                  ],
+                  style: const TextStyle(fontSize: 13, color: _kTitle),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '自定义',
+                    hintStyle: const TextStyle(fontSize: 13, color: _kTitle),
+                    errorText: _daysError,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: Color(0xFF22C55E)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: Color(0xFF22C55E)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: Color(0xFF22C55E)),
+                    ),
+                  ),
+                  onChanged: (_) {
+                    if (_daysError != null) {
+                      setState(() => _daysError = null);
+                    } else {
+                      setState(() {});
+                    }
+                  },
+                ),
+              ),
             const Divider(height: 1, color: _kBorder),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: Row(
                 children: [
                   AppButton.link(
-                    onPressed: hasDraft
-                        ? () => widget.onApply(Set<String>.from(_draft))
-                        : null,
+                    onPressed: hasDraft ? _apply : null,
                     child: Text(
                       '筛选',
                       style: TextStyle(
-                        color: hasDraft ? _kPrimary : _kMuted,
+                        color: hasDraft
+                            ? (widget.customDayInput
+                                ? const Color(0xFF22C55E)
+                                : _kPrimary)
+                            : _kMuted,
                       ),
                     ),
                   ),

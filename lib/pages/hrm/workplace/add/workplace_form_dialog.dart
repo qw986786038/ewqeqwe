@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../../models/hrm_office_location.dart';
@@ -31,7 +32,7 @@ Future<void> _showWorkplaceFormDialog(
     return Future.value();
   }
 
-  return AppDialog.show<void>(
+  return showHyperDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => _WorkplaceFormDialog(
@@ -39,7 +40,7 @@ Future<void> _showWorkplaceFormDialog(
       initialName: editing?.name?.trim() ?? '',
       initialAddress: editing?.address?.trim() ?? '',
       initialOrderNum: editing?.orderNum ?? (isEdit ? 0 : c.nextOrderNum),
-      onClose: () => AppOverlay.close<void>(dialogContext),
+      onClose: () => Navigator.of(dialogContext).pop(),
       onSubmit: (payload) async {
         if (isEdit) {
           await c.updateLocation(
@@ -63,7 +64,7 @@ Future<void> _showWorkplaceFormDialog(
         }
       },
     ),
-  ).future;
+  );
 }
 
 class _WorkplaceFormPayload {
@@ -160,9 +161,11 @@ class _WorkplaceFormDialogState extends State<_WorkplaceFormDialog> {
   Widget build(BuildContext context) {
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: Text(widget.title),
-        constraints: const BoxConstraints(minWidth: 440, maxWidth: 480),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 480),
+        onClose: _saving ? null : widget.onClose,
         content: AppFieldScope.horizontal(
           labelWidth: 110,
           child: Column(
@@ -211,19 +214,18 @@ class _WorkplaceFormDialogState extends State<_WorkplaceFormDialog> {
           ),
         ),
         actions: [
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: _saving ? null : widget.onClose,
-            child: const Text('取消'),
+            label: const Text('取消'),
           ),
-          AppButton.primary(
+          HyperButton.filled(
             loading: _saving,
-            loadingLabel: '提交中…',
             onPressed: _saving
                 ? null
                 : () async {
                     await _submit();
                   },
-            child: const Text('确定'),
+            label: Text(_saving ? '提交中…' : '确定'),
           ),
         ],
       ),

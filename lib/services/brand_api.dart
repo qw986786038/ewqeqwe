@@ -229,6 +229,7 @@ OrderItem _parseOrder(Map<String, dynamic> json) => OrderItem()
   ..agencyId = _asString(json['agencyId']) ??
       _asString(json['agencyCustomerId'])
   ..agencyName = _asString(json['agencyName'])
+  ..brandName = _asString(json['brandName'])
   ..salesPerson = _asString(json['salesPerson']) ??
       _asString(json['salesperson']) ??
       _asString(json['sales']) ??

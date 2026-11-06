@@ -31,3 +31,32 @@ abstract final class OacDictTypes {
   /// 客户 / 品牌标签：`desktop/oac/dict/data/type/mm_crm_customer_tag`。
   static const customerTag = 'mm_crm_customer_tag';
 }
+
+/// HRM 字典类型。
+abstract final class HrmDictTypes {
+  static const empStatus = 'mm_hrm_emp_status';
+  static const empType = 'mm_hrm_emp_type';
+  static const conversionStatus = 'mm_hrm_conversion_status';
+  static const leaveType = 'mm_hrm_leave_type';
+  static const timeType = 'mm_hrm_time_type';
+  static const education = 'mm_hrm_education';
+  static const contractType = 'mm_hrm_contract_type';
+  static const contactRelation = 'mm_hrm_contact_relation';
+  static const fileType = 'mm_hrm_file_type';
+  static const changeType = 'mm_hrm_change_type';
+  static const postSeqChannel = 'mm_hrm_post_seq_channel';
+
+  static const all = <String>[
+    empStatus,
+    empType,
+    conversionStatus,
+    leaveType,
+    timeType,
+    education,
+    contractType,
+    contactRelation,
+    fileType,
+    changeType,
+    postSeqChannel,
+  ];
+}

@@ -1,14 +1,12 @@
 import 'package:flutter/widgets.dart';
 import 'package:lemon_x/lemon_x.dart';
 
-import '../../models/customer_archive.dart';
 import '../../models/dict_data.dart';
 import '../../models/oac_brand.dart';
 import '../../models/oac_brand_detail.dart';
 import '../../services/brand_api.dart';
 import '../../services/customer_api.dart';
 import '../../services/dict_api.dart';
-import '../../services/order_api.dart';
 
 class BrandDetailController extends LxController {
   BrandDetailController({required this.brandId});
@@ -16,7 +14,6 @@ class BrandDetailController extends LxController {
   final String brandId;
   final _api = BrandApi();
   final _customerApi = CustomerApi();
-  final _orderApi = OrderApi();
   final _dictApi = DictApi();
 
   final detail = Rxn<OacBrandDetail>();
@@ -25,11 +22,6 @@ class BrandDetailController extends LxController {
   final orderKeywordCtrl = TextEditingController();
   final orderKeyword = ''.obs;
   final dictVersion = 0.obs;
-
-  /// 关联 4A 下拉（`customerType=agency&status=0`）。
-  final agencyOptions = <CustomerArchive>[].obs;
-  final agencyOptionsLoading = false.obs;
-  final updatingAgencyOrderIds = <String>{}.obs;
 
   final _labelMaps = <String, Map<String, String>>{};
 
@@ -65,7 +57,6 @@ class BrandDetailController extends LxController {
       orderKeyword.value = orderKeywordCtrl.text.trim();
     });
     load();
-    loadAgencyOptions();
     _loadDicts();
   }
 
@@ -85,30 +76,6 @@ class BrandDetailController extends LxController {
       detail.value = null;
     } finally {
       loading.value = false;
-    }
-  }
-
-  Future<void> loadAgencyOptions() async {
-    agencyOptionsLoading.value = true;
-    try {
-      final page = await _customerApi.fetchList(
-        OacCustomerQuery(
-          customerType: 'agency',
-          status: '0',
-          pageNum: 1,
-          pageSize: 500,
-        ),
-      );
-      agencyOptions
-        ..clear()
-        ..addAll([
-          for (final row in page.rows)
-            if (row.id?.trim().isNotEmpty == true) row,
-        ]);
-    } catch (_) {
-      // 下拉失败不阻断详情；单元格仍可展示已有关联名。
-    } finally {
-      agencyOptionsLoading.value = false;
     }
   }
 
@@ -195,58 +162,6 @@ class BrandDetailController extends LxController {
       out.add(label);
     }
     return out;
-  }
-
-  /// 解析订单当前选中的 4A 客户 id（优先 agencyId，其次按名称匹配选项）。
-  String? resolveAgencyValue(OrderItem row) {
-    final id = row.agencyId?.trim();
-    if (id != null && id.isNotEmpty) return id;
-    final name = row.agencyName?.trim();
-    if (name == null || name.isEmpty) return null;
-    for (final a in agencyOptions) {
-      if (a.brandName?.trim() == name) return a.id;
-    }
-    return null;
-  }
-
-  String? agencyLabelOf(String? id) {
-    final key = id?.trim();
-    if (key == null || key.isEmpty) return null;
-    for (final a in agencyOptions) {
-      if (a.id == key) return a.brandName?.trim();
-    }
-    return null;
-  }
-
-  /// 更新订单关联 4A；`agencyCustomerId` 为空则清空。
-  Future<void> updateOrderAgency({
-    required OrderItem order,
-    String? agencyCustomerId,
-  }) async {
-    final orderId = order.id?.trim();
-    if (orderId == null || orderId.isEmpty) {
-      throw OrderApiException('订单缺少 id，无法更新关联 4A');
-    }
-    final nextId = agencyCustomerId?.trim() ?? '';
-    final current = resolveAgencyValue(order) ?? '';
-    if (nextId == current) return;
-
-    updatingAgencyOrderIds.add(orderId);
-    updatingAgencyOrderIds.refresh();
-    try {
-      await _orderApi.updateOrderAgency(
-        id: orderId,
-        agencyCustomerId: nextId.isEmpty ? null : nextId,
-      );
-      order
-        ..agencyId = nextId.isEmpty ? null : nextId
-        ..agencyName =
-            nextId.isEmpty ? null : (agencyLabelOf(nextId) ?? order.agencyName);
-      detail.refresh();
-    } finally {
-      updatingAgencyOrderIds.remove(orderId);
-      updatingAgencyOrderIds.refresh();
-    }
   }
 
   /// 客户档案详情：`GET /desktop/oac/customer/{id}`。

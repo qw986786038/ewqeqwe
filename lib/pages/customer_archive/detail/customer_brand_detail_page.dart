@@ -574,6 +574,14 @@ class _EnterprisesCard extends StatelessWidget {
                   },
                 ),
                 AppDataGridColumn(
+                  id: 'shortName',
+                  title: '企业简称',
+                  width: 120,
+                  value: (row) => _dash(
+                    _str(row['shortName'] ?? row['aliasName'] ?? row['enterpriseShort']),
+                  ),
+                ),
+                AppDataGridColumn(
                   id: 'relation',
                   title: '关联关系',
                   width: 120,

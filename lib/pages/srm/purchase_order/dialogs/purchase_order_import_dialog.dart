@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../../services/srm_purchase_order_api.dart';
 
@@ -15,19 +16,19 @@ const _kBarrier = Color(0x99000000);
 /// 打开「导入采购订单」弹窗。成功导入并关闭后返回 `true`。
 Future<bool> showPurchaseOrderImportDialog(BuildContext context) {
   final hostContext = context;
-  return AppDialog.show<bool>(
+  return showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
     useRootNavigator: true,
-    barrierColor: _kBarrier,
+    style: const HyperDialogStyle(barrierColor: _kBarrier),
     builder: (dialogContext) => AppShadcnScope(
       config: AppThemeConfig.standard(primary: _kPrimary),
       child: _PurchaseOrderImportDialog(
         hostContext: hostContext,
-        onClose: (ok) => AppOverlay.close<bool>(dialogContext, ok),
+        onClose: (ok) => Navigator.of(dialogContext).pop(ok),
       ),
     ),
-  ).future.then((v) => v == true);
+  ).then((v) => v == true);
 }
 
 class _PurchaseOrderImportDialog extends StatefulWidget {
@@ -120,9 +121,10 @@ class _PurchaseOrderImportDialogState
 
   @override
   Widget build(BuildContext context) {
-    return AppFormDialog(
+    return HyperDialog(
       title: const Text('导入采购订单'),
-      constraints: const BoxConstraints(minWidth: 520, maxWidth: 560),
+      scrollable: true,
+      style: const HyperDialogStyle(maxWidth: 560),
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -189,9 +191,9 @@ class _PurchaseOrderImportDialogState
         ],
       ),
       actions: [
-        AppButton.outline(
+        HyperButton.outlined(
           onPressed: _uploading ? null : () => widget.onClose(false),
-          child: const Text('关闭'),
+          label: const Text('关闭'),
         ),
       ],
     );

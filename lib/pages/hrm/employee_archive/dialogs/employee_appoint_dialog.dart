@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../../models/hrm_dept.dart';
 import '../../../../models/hrm_employee.dart';
@@ -15,7 +16,7 @@ const _kStartTypeOptions = <AppOption<String>>[
   AppOption(value: 'PROMOTION', label: '晋级'),
 ];
 
-/// 人事档案 · 任职弹窗。打开时拉通讯录 / 席位 / 职级；提交走 appoint。
+/// 人事档案 · 任职弹窗。打开时拉通讯录 / 编制 / 职级；提交走 appoint。
 Future<bool> showEmployeeAppointDialog(
   BuildContext context, {
   required HrmEmployeeProfile employee,
@@ -33,15 +34,15 @@ Future<bool> showEmployeeAppointDialog(
     return '用户 $userId';
   }();
 
-  return AppDialog.show<bool>(
+  return showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => _EmployeeAppointDialog(
       employeeUserId: userId,
       fallbackName: fallbackName,
-      onClose: (ok) => AppOverlay.close<bool>(dialogContext, ok),
+      onClose: (ok) => Navigator.of(dialogContext).pop(ok),
     ),
-  ).future.then((v) => v == true);
+  ).then((v) => v == true);
 }
 
 class _EmployeeAppointDialog extends StatefulWidget {
@@ -210,7 +211,7 @@ class _EmployeeAppointDialogState extends State<_EmployeeAppointDialog> {
       final positionIdInt = int.tryParse(positionId);
       final levelIdInt = int.tryParse(levelId);
       if (positionIdInt == null || levelIdInt == null) {
-        AppToast.show(context: context, title: '席位或职级无效');
+        AppToast.show(context: context, title: '编制或职级无效');
         return;
       }
 
@@ -241,9 +242,11 @@ class _EmployeeAppointDialogState extends State<_EmployeeAppointDialog> {
   Widget build(BuildContext context) {
     return AppForm(
       controller: _form,
-      child: AppFormDialog(
+      child: HyperDialog(
         title: const Text('任职'),
-        constraints: const BoxConstraints(minWidth: 440, maxWidth: 480),
+        scrollable: true,
+        style: const HyperDialogStyle(maxWidth: 480),
+        onClose: _saving ? null : () => widget.onClose(false),
         content: _loading
             ? const SizedBox(
                 height: 180,
@@ -271,9 +274,9 @@ class _EmployeeAppointDialogState extends State<_EmployeeAppointDialog> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          AppButton.outline(
+                          HyperButton.outlined(
                             onPressed: _loadOptions,
-                            child: const Text('重试'),
+                            label: const Text('重试'),
                           ),
                         ],
                       ),
@@ -294,12 +297,12 @@ class _EmployeeAppointDialogState extends State<_EmployeeAppointDialog> {
                         ),
                         AppSelectFormField<String>(
                           name: 'positionId',
-                          label: '席位',
+                          label: '编制',
                           required: true,
-                          hintText: '请选择席位',
+                          hintText: '请选择编制',
                           options: _positionOptions,
                           validator: (v) =>
-                              (v == null || v.isEmpty) ? '请选择席位' : null,
+                              (v == null || v.isEmpty) ? '请选择编制' : null,
                         ),
                         AppSelectFormField<String>(
                           name: 'postSeqLevelId',
@@ -329,19 +332,18 @@ class _EmployeeAppointDialogState extends State<_EmployeeAppointDialog> {
                     ),
                   ),
         actions: [
-          AppButton.outline(
+          HyperButton.outlined(
             onPressed: _saving ? null : () => widget.onClose(false),
-            child: const Text('取消'),
+            label: const Text('取消'),
           ),
-          AppButton.primary(
+          HyperButton.filled(
             loading: _saving,
-            loadingLabel: '提交中…',
             onPressed: (_saving || _loading || _loadError != null)
                 ? null
                 : () async {
                     await _submit();
                   },
-            child: const Text('确定'),
+            label: Text(_saving ? '提交中…' : '确定'),
           ),
         ],
       ),

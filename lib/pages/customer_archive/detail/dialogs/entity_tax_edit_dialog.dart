@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../../services/customer_api.dart';
 import '../customer_entity_detail_controller.dart';
@@ -17,15 +18,18 @@ Future<void> showEntityTaxEditDialog(
   bool appendEmpty = false,
 }) {
   final hostContext = context;
-  return AppDialog.show<void>(
+  return showHyperDialog<void>(
     context: context,
-    builder: (dialogContext) => _EntityTaxEditDialog(
-      controller: controller,
-      appendEmpty: appendEmpty,
-      onClose: () => AppOverlay.close<void>(dialogContext),
-      hostContext: hostContext,
+    builder: (dialogContext) => AppShadcnScope(
+      config: AppThemeConfig.standard(primary: _kPrimary),
+      child: _EntityTaxEditDialog(
+        controller: controller,
+        appendEmpty: appendEmpty,
+        onClose: () => Navigator.of(dialogContext).pop(),
+        hostContext: hostContext,
+      ),
     ),
-  ).future;
+  );
 }
 
 class _TaxDraft {
@@ -256,24 +260,21 @@ class _EntityTaxEditDialogState extends State<_EntityTaxEditDialog> {
   Widget build(BuildContext context) {
     final viewH = MediaQuery.sizeOf(context).height;
     final contentH = (viewH * 0.9 - 220).clamp(240.0, 640.0);
-    return AppFormDialog(
+    return HyperDialog(
       title: const Text('编辑银税信息'),
-      constraints: BoxConstraints(maxWidth: 720, maxHeight: viewH * 0.9),
+      scrollable: false,
+      style: const HyperDialogStyle(maxWidth: 720),
+      onClose: widget.onClose,
       actions: [
-        AppButton.primary(
+        HyperButton.filled(
           onPressed: _saving ? null : _submit,
-          loadingLabel: '保存中',
-          child: const Text('确定'),
+          label: Text(_saving ? '保存中…' : '确定'),
         ),
-        AppButton.outline(
+        HyperButton.outlined(
           onPressed: _saving ? null : widget.onClose,
-          child: const Text('取消'),
+          label: const Text('取消'),
         ),
       ],
-      trailing: AppInkWell(
-        onPressed: widget.onClose,
-        child: const Icon(Icons.close, size: 18, color: _kMuted),
-      ),
       content: SizedBox(
         height: contentH,
         child: Column(

@@ -1082,14 +1082,6 @@ class _OrderGridWithColumnFiltersState
 
   double _hScroll = 0;
 
-  List<String> _optionsFor(String id) {
-    return switch (id) {
-      'brand' => PurchaseOrderListController.columnBrandOptions,
-      'contractType' => PurchaseOrderListController.columnContractTypeOptions,
-      _ => const <String>[],
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
@@ -1187,7 +1179,7 @@ class _OrderGridWithColumnFiltersState
                                 return ColumnHeaderFilter(
                                   title: col.title,
                                   width: col.width,
-                                  options: _optionsFor(col.id),
+                                  options: c.columnOptionsOf(col.id),
                                   selected: selected,
                                   alignment:
                                       col.titleAlignment ?? col.alignment,

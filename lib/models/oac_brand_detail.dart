@@ -50,6 +50,7 @@ class OrderItem {
   String? contact;
   String? agencyId;
   String? agencyName;
+  String? brandName;
   String? salesPerson;
   String? remark;
 }

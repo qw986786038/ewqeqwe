@@ -64,6 +64,7 @@ class OacEnterpriseQuery {
   String? industry;
   String? city;
   String? tags;
+  String? mediaType;
   String? ownerNames;
   String? quickTag;
   String? amountMin;
@@ -80,6 +81,7 @@ class OacEnterpriseQuery {
     this.industry,
     this.city,
     this.tags,
+    this.mediaType,
     this.ownerNames,
     this.quickTag,
     this.amountMin,
@@ -103,6 +105,7 @@ class OacEnterpriseQuery {
     put('industry', industry);
     put('city', city);
     put('tags', tags);
+    put('mediaType', mediaType);
     put('ownerNames', ownerNames);
     put('quickTag', quickTag);
     put('amountMin', amountMin);

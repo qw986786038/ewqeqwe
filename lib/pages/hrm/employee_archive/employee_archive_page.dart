@@ -4,11 +4,11 @@ import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/hrm_employee_profile.dart';
 import 'detail/employee_detail_page.dart';
-import 'dialogs/employee_appoint_dialog.dart';
-import 'dialogs/employee_level_dialog.dart';
-import 'dialogs/employee_relieve_dialog.dart';
+import 'dialogs/employee_leave_dialog.dart';
+import 'dialogs/employee_transfer_dialog.dart';
 import 'edit/employee_edit_controller.dart';
 import 'edit/employee_edit_page.dart';
+import '../../location_breadcrumb.dart';
 import 'employee_archive_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -16,8 +16,14 @@ const _kPageBg = Color(0xFFF0F2F5);
 const _kMuted = Color(0xFF8C8C8C);
 const _kBorder = Color(0xFFE5E6EB);
 const _kLabel = Color(0xFF4E5969);
+const _kTitle = Color(0xFF1D2129);
+const _kCardDecoration = BoxDecoration(
+  color: Colors.white,
+  borderRadius: BorderRadius.all(Radius.circular(8)),
+  border: Border.fromBorderSide(BorderSide(color: _kBorder)),
+);
 
-/// HRM · 人事档案。
+/// HRM · 花名册。
 class EmployeeArchivePage extends StatelessWidget {
   const EmployeeArchivePage({super.key});
 
@@ -42,33 +48,45 @@ class _Body extends StatelessWidget {
     final c = context.lx.find<EmployeeArchiveController>();
     return Obx(() {
       if (c.showEdit.value) {
-        final editId = c.editingUserId.value;
+        final editEmployeeId = c.editingEmployeeId.value;
+        final editUserId = c.editingUserId.value;
         return LxScope(
           bindings: (container) {
             container.put<EmployeeEditController>(
-              () => EmployeeEditController(userId: editId),
+              () => EmployeeEditController(
+                employeeId: editEmployeeId,
+                userId: editUserId,
+              ),
             );
           },
           child: EmployeeEditPage(
             onBack: () async {
               c.closeEdit();
-              await c.loadPage();
+              await c.refreshAll();
             },
           ),
         );
       }
-      final detailId = c.viewingUserId.value;
+      final detailId = c.viewingEmployeeId.value;
       if (c.showDetail.value && detailId != null) {
         return EmployeeDetailPage(
-          userId: detailId,
+          employeeId: detailId,
           onBack: c.closeDetail,
         );
       }
-      return _listView(context, c);
+      return _ListView(controller: c);
     });
   }
+}
 
-  Widget _listView(BuildContext context, EmployeeArchiveController c) {
+class _ListView extends StatelessWidget {
+  const _ListView({required this.controller});
+
+  final EmployeeArchiveController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
     return ColoredBox(
       color: _kPageBg,
       child: Padding(
@@ -76,13 +94,130 @@ class _Body extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const LocationBreadcrumb(segments: ['HRM', '花名册']),
+            Obx(() {
+              final s = c.stats.value;
+              final total = s.totalCount;
+              final activePct = total <= 0
+                  ? '0%'
+                  : '${(s.activeCount * 1000 / total).round() / 10}%';
+              final hireDiff = s.monthHireCount - s.lastMonthHireCount;
+              final hireDiffText = hireDiff == 0
+                  ? '较上月持平'
+                  : (hireDiff > 0 ? '较上月 +$hireDiff' : '较上月 $hireDiff');
+              final nearest = s.nearestPendingHireDate?.trim();
+              final pendingSub = (nearest == null || nearest.isEmpty)
+                  ? '暂无预计入职'
+                  : '最近入职 ${EmployeeArchiveController.dateText(nearest)}';
+              final expireDays = s.contractExpiringDays <= 0
+                  ? 90
+                  : s.contractExpiringDays;
+              final leaveParts = <String>[
+                '主动离职 ${s.monthLeaveVoluntaryCount}',
+                '合同终止 ${s.monthLeaveInvoluntaryCount}',
+                if (s.monthLeaveOtherCount > 0)
+                  '其他 ${s.monthLeaveOtherCount}',
+              ];
+              const gap = 12.0;
+              const green = Color(0xFF52C41A);
+              const orange = Color(0xFFFA8C16);
+              const purple = Color(0xFF722ED1);
+              const red = Color(0xFFFF4D4F);
+              const iconMuted = Color(0xFFC9CDD4);
+              final cards = <Widget>[
+                _StatCard(
+                  label: '总人数',
+                  value: '${s.totalCount}',
+                  subtitle: '含外包与实习人员',
+                  icon: Icons.groups_outlined,
+                  iconColor: iconMuted,
+                ),
+                _StatCard(
+                  label: '在职',
+                  value: '${s.activeCount}',
+                  subtitle: '占 $activePct',
+                  icon: Icons.badge_outlined,
+                  valueColor: green,
+                  iconColor: green,
+                ),
+                _StatCard(
+                  label: '试用',
+                  value: '${s.probationCount}',
+                  subtitle: '待转正',
+                  icon: Icons.hourglass_empty_outlined,
+                  valueColor: orange,
+                  iconColor: orange,
+                ),
+                _StatCard(
+                  label: '待入职',
+                  value: '${s.pendingActiveCount}',
+                  subtitle: pendingSub,
+                  icon: Icons.event_available_outlined,
+                  valueColor: purple,
+                  iconColor: purple,
+                ),
+                _StatCard(
+                  label: '离职',
+                  value: '${s.leaveCount}',
+                  subtitle: '默认不进入通讯录',
+                  icon: Icons.person_off_outlined,
+                  iconColor: iconMuted,
+                ),
+                _StatCard(
+                  label: '本月入职',
+                  value: '${s.monthHireCount}',
+                  subtitle: hireDiffText,
+                  icon: Icons.trending_up,
+                  valueColor: green,
+                  iconColor: green,
+                  subtitleColor: hireDiff > 0 ? green : null,
+                ),
+                _StatCard(
+                  label: '本月离职',
+                  value: '${s.monthLeaveCount}',
+                  subtitle: leaveParts.join(' · '),
+                  icon: Icons.trending_down,
+                  valueColor: red,
+                  iconColor: red,
+                ),
+                _StatCard(
+                  label: '合同即将到期',
+                  value: '${s.contractExpiringCount}',
+                  subtitle: '$expireDays 天内到期，建议尽快续签',
+                  icon: Icons.description_outlined,
+                  valueColor: orange,
+                  iconColor: orange,
+                  borderColor: s.contractExpiringCount > 0
+                      ? const Color(0xFFFFD591)
+                      : null,
+                ),
+              ];
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      for (var i = 0; i < 4; i++) ...[
+                        if (i > 0) const SizedBox(width: gap),
+                        Expanded(child: cards[i]),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: gap),
+                  Row(
+                    children: [
+                      for (var i = 4; i < 8; i++) ...[
+                        if (i > 4) const SizedBox(width: gap),
+                        Expanded(child: cards[i]),
+                      ],
+                    ],
+                  ),
+                ],
+              );
+            }),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _kBorder),
-              ),
+              decoration: _kCardDecoration,
               child: Obx(() {
                 final status = c.filterEmpStatus.value;
                 final type = c.filterEmpType.value;
@@ -92,29 +227,15 @@ class _Body extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     _FilterText(
-                      label: '姓名',
-                      width: 160,
-                      controller: c.nameCtrl,
-                      hint: '请输入姓名',
-                      onSubmitted: (_) => c.search(),
-                    ),
-                    _FilterText(
-                      label: '工号',
-                      width: 140,
-                      controller: c.noCtrl,
-                      hint: '请输入工号',
-                      onSubmitted: (_) => c.search(),
-                    ),
-                    _FilterText(
-                      label: '手机号',
-                      width: 160,
-                      controller: c.mobileCtrl,
-                      hint: '请输入手机号',
+                      label: '关键词',
+                      width: 220,
+                      controller: c.keywordCtrl,
+                      hint: '姓名/手机/邮箱/工号',
                       onSubmitted: (_) => c.search(),
                     ),
                     _FilterSelect<String>(
                       label: '员工状态',
-                      width: 150,
+                      width: 160,
                       hint: '请选择员工状态',
                       value: status,
                       items: [
@@ -125,11 +246,12 @@ class _Body extends StatelessWidget {
                     ),
                     _FilterSelect<String>(
                       label: '员工类型',
-                      width: 150,
+                      width: 160,
                       hint: '请选择员工类型',
                       value: type,
                       items: [
-                        for (final o in EmployeeArchiveController.typeOptions) o,
+                        for (final o in EmployeeArchiveController.typeOptions)
+                          o,
                       ],
                       onChanged: (v) => c.filterEmpType.value = v,
                     ),
@@ -140,7 +262,6 @@ class _Body extends StatelessWidget {
                     ),
                     AppButton.outline(
                       onPressed: c.resetSearch,
-                      leading: const Icon(Icons.refresh, size: 16),
                       child: const Text('重置'),
                     ),
                   ],
@@ -150,11 +271,7 @@ class _Body extends StatelessWidget {
             const SizedBox(height: 12),
             Expanded(
               child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _kBorder),
-                ),
+                decoration: _kCardDecoration,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -162,28 +279,7 @@ class _Body extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                       child: Row(
                         children: [
-                          AppButton.primary(
-                            onPressed: c.openCreate,
-                            leading: const Icon(
-                              Icons.add,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                            child: const Text('新增'),
-                          ),
                           const Spacer(),
-                          AppInkWell(
-                            onPressed: c.search,
-                            borderRadius: BorderRadius.circular(16),
-                            child: const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Icon(
-                                Icons.search,
-                                size: 18,
-                                color: _kMuted,
-                              ),
-                            ),
-                          ),
                           Obx(() {
                             final loading = c.loading.value;
                             return AppInkWell(
@@ -269,93 +365,139 @@ class _Body extends StatelessWidget {
                               ),
                               columns: [
                                 AppDataGridColumn(
-                                  id: 'no',
-                                  title: '工号',
-                                  width: 88,
-                                  value: (row) =>
-                                      EmployeeArchiveController.displayOrDash(
-                                    row.no,
-                                  ),
-                                ),
-                                AppDataGridColumn(
                                   id: 'name',
                                   title: '姓名',
-                                  width: 88,
+                                  width: 96,
+                                  minWidth: 96,
                                   value: (row) =>
                                       EmployeeArchiveController.displayOrDash(
                                     row.name,
                                   ),
                                 ),
                                 AppDataGridColumn(
-                                  id: 'pinYin',
-                                  title: '拼音',
-                                  width: 100,
+                                  id: 'dept',
+                                  title: '部门',
+                                  width: 140,
+                                  minWidth: 96,
                                   value: (row) =>
-                                      EmployeeArchiveController.displayOrDash(
-                                    row.pinYin,
+                                      EmployeeArchiveController.titleField(
+                                    row,
+                                    (t) => t.deptName,
                                   ),
                                 ),
                                 AppDataGridColumn(
-                                  id: 'alias',
-                                  title: '花名',
-                                  width: 88,
-                                  value: (row) =>
-                                      EmployeeArchiveController.displayOrDash(
-                                    row.aliasName,
-                                  ),
-                                ),
-                                AppDataGridColumn(
-                                  id: 'mobile',
-                                  title: '手机号',
+                                  id: 'post',
+                                  title: '职务',
                                   width: 120,
+                                  minWidth: 96,
                                   value: (row) =>
-                                      EmployeeArchiveController.displayOrDash(
-                                    row.mobile,
+                                      EmployeeArchiveController.titleField(
+                                    row,
+                                    (t) => t.postName,
+                                  ),
+                                ),
+                                AppDataGridColumn(
+                                  id: 'level',
+                                  title: '职级',
+                                  width: 96,
+                                  minWidth: 96,
+                                  value: (row) =>
+                                      EmployeeArchiveController.titleField(
+                                    row,
+                                    (t) => t.postSeqLeveName,
+                                  ),
+                                ),
+                                AppDataGridColumn(
+                                  id: 'report',
+                                  title: '汇报对象',
+                                  width: 140,
+                                  minWidth: 120,
+                                  value: (row) =>
+                                      EmployeeArchiveController.titleField(
+                                    row,
+                                    (t) => t.reportEmployeeName,
                                   ),
                                 ),
                                 AppDataGridColumn(
                                   id: 'status',
-                                  title: '员工状态',
-                                  width: 88,
+                                  title: '状态',
+                                  width: 96,
+                                  minWidth: 96,
+                                  sortable: false,
                                   value: (row) =>
                                       EmployeeArchiveController.statusLabel(
                                     row.empStatus,
+                                  ),
+                                  cellBuilder: (context, row, _) => Center(
+                                    child: _StatusBadge(
+                                      status: row.empStatus,
+                                    ),
                                   ),
                                 ),
                                 AppDataGridColumn(
                                   id: 'type',
                                   title: '员工类型',
-                                  width: 100,
+                                  width: 120,
+                                  minWidth: 120,
                                   value: (row) =>
                                       EmployeeArchiveController.typeLabel(
                                     row.empType,
                                   ),
                                 ),
                                 AppDataGridColumn(
-                                  id: 'timeType',
-                                  title: '工时',
-                                  width: 72,
-                                  value: (row) {
-                                    final s =
-                                        EmployeeArchiveController.timeTypeLabel(
-                                      row.timeType,
-                                    );
-                                    return s.isEmpty ? '-' : s;
-                                  },
+                                  id: 'hireDate',
+                                  title: '入职日期',
+                                  width: 120,
+                                  minWidth: 120,
+                                  value: (row) =>
+                                      EmployeeArchiveController.dateText(
+                                    row.hireDate,
+                                  ),
+                                ),
+                                AppDataGridColumn(
+                                  id: 'tenure',
+                                  title: '司龄',
+                                  width: 88,
+                                  minWidth: 88,
+                                  value: (row) =>
+                                      EmployeeArchiveController.tenureText(
+                                    row.hireDate,
+                                  ),
+                                ),
+                                AppDataGridColumn(
+                                  id: 'mobile',
+                                  title: '手机',
+                                  width: 140,
+                                  minWidth: 96,
+                                  value: (row) =>
+                                      EmployeeArchiveController.displayOrDash(
+                                    row.mobile,
+                                  ),
                                 ),
                                 AppDataGridColumn(
                                   id: 'email',
-                                  title: '企业邮箱',
-                                  width: 180,
+                                  title: '邮箱',
+                                  width: 220,
+                                  minWidth: 96,
                                   value: (row) =>
                                       EmployeeArchiveController.displayOrDash(
                                     row.corpEmail,
                                   ),
                                 ),
                                 AppDataGridColumn(
+                                  id: 'contractExpire',
+                                  title: '合同到期日期',
+                                  width: 148,
+                                  minWidth: 148,
+                                  value: (row) =>
+                                      EmployeeArchiveController
+                                          .contractExpireText(row),
+                                ),
+                                AppDataGridColumn(
                                   id: 'actions',
                                   title: '操作',
-                                  width: 220,
+                                  width: 280,
+                                  minWidth: 96,
                                   sortable: false,
                                   resizable: false,
                                   pin: AppDataGridColumnPin.end,
@@ -484,6 +626,121 @@ class _Body extends StatelessWidget {
   }
 }
 
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    this.valueColor,
+    this.iconColor,
+    this.subtitleColor,
+    this.borderColor,
+  });
+
+  final String label;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+  final Color? valueColor;
+  final Color? iconColor;
+  final Color? subtitleColor;
+  final Color? borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        border: Border.all(color: borderColor ?? _kBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: _kMuted),
+                ),
+              ),
+              Icon(icon, size: 16, color: iconColor ?? const Color(0xFFC9CDD4)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            softWrap: false,
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              color: valueColor ?? _kTitle,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: subtitleColor ?? _kMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
+
+  final String? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final key = status?.trim().toUpperCase() ?? '';
+    final label = EmployeeArchiveController.statusLabel(status);
+    switch (key) {
+      case 'ACTIVE':
+        return AppBadge.success(
+          appearance: AppBadgeStyle.soft,
+          shape: AppBadgeShape.square,
+          child: Text(label),
+        );
+      case 'PENDING_ACTIVE':
+      case 'PENDING':
+        return AppBadge.primary(
+          shape: AppBadgeShape.square,
+          child: Text(label),
+        );
+      case 'PENDING_LEAVE':
+      case 'PROBATION':
+        return AppBadge.warning(
+          appearance: AppBadgeStyle.soft,
+          shape: AppBadgeShape.square,
+          child: Text(label),
+        );
+      case 'LEAVE':
+      case 'LEFT':
+      case 'CANCEL_ACTIVE':
+        return AppBadge.secondary(
+          appearance: AppBadgeStyle.soft,
+          shape: AppBadgeShape.square,
+          child: Text(label),
+        );
+      default:
+        return Text(label, style: const TextStyle(fontSize: 12));
+    }
+  }
+}
+
 class _ActionLinks extends StatelessWidget {
   const _ActionLinks({
     required this.row,
@@ -493,53 +750,22 @@ class _ActionLinks extends StatelessWidget {
   final HrmEmployeeProfile row;
   final EmployeeArchiveController archiveController;
 
-  void _todo(BuildContext context, String action) {
-    final name = row.name?.trim().isNotEmpty == true
-        ? row.name!.trim()
-        : (row.no?.trim() ?? '');
-    AppToast.show(
-      context: context,
-      title: name.isEmpty ? '$action待接入' : '$action「$name」待接入',
-    );
-  }
-
   void _openDetail(BuildContext context) {
-    final userId = row.userId;
-    if (userId == null) {
-      AppToast.show(context: context, title: '缺少用户 ID');
+    final employeeId = row.id?.trim() ?? '';
+    if (employeeId.isEmpty) {
+      AppToast.show(context: context, title: '缺少员工 ID');
       return;
     }
-    archiveController.openDetail(userId);
+    archiveController.openDetail(employeeId);
   }
 
   void _openEdit(BuildContext context) {
-    final userId = row.userId;
-    if (userId == null) {
-      AppToast.show(context: context, title: '缺少用户 ID');
+    final employeeId = row.id?.trim() ?? '';
+    if (employeeId.isEmpty) {
+      AppToast.show(context: context, title: '缺少员工 ID');
       return;
     }
-    archiveController.openEdit(userId);
-  }
-
-  Future<void> _openAppoint(BuildContext context) async {
-    final ok = await showEmployeeAppointDialog(context, employee: row);
-    if (ok && context.mounted) {
-      await archiveController.loadPage();
-    }
-  }
-
-  Future<void> _openRelieve(BuildContext context) async {
-    final ok = await showEmployeeRelieveDialog(context, employee: row);
-    if (ok && context.mounted) {
-      await archiveController.loadPage();
-    }
-  }
-
-  Future<void> _openLevel(BuildContext context) async {
-    final ok = await showEmployeeLevelDialog(context, employee: row);
-    if (ok && context.mounted) {
-      await archiveController.loadPage();
-    }
+    archiveController.openEdit(employeeId: employeeId, userId: row.userId);
   }
 
   @override
@@ -551,45 +777,28 @@ class _ActionLinks extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppInkWell(
-              onPressed: () => _openEdit(context),
-              borderRadius: BorderRadius.circular(4),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Icon(Icons.edit_outlined, size: 16, color: _kPrimary),
-              ),
-            ),
-            for (final label in const ['档案', '任职', '卸任', '职级'])
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: AppInkWell(
-                  onPressed: () {
-                    if (label == '档案') {
-                      _openDetail(context);
-                    } else if (label == '任职') {
-                      _openAppoint(context);
-                    } else if (label == '卸任') {
-                      _openRelieve(context);
-                    } else if (label == '职级') {
-                      _openLevel(context);
-                    } else {
-                      _todo(context, label);
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 4,
-                    ),
-                    child: Text(
-                      label,
-                      style: const TextStyle(fontSize: 12, color: _kPrimary),
-                    ),
-                  ),
-                ),
-              ),
+            _link('编辑', () => _openEdit(context)),
+            _link('档案', () => _openDetail(context)),
+            _link('发起调动', () => showEmployeeTransferDialog(context, row)),
+            _link('办理离职', () => showEmployeeLeaveDialog(context, row)),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _link(String label, VoidCallback onPressed) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: AppInkWell(
+        onPressed: onPressed,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: _kPrimary),
+          ),
         ),
       ),
     );

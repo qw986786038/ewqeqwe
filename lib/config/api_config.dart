@@ -5,8 +5,9 @@ class ApiConfig {
   /// 本地测试环境
   // static const String baseUrl =
   //     'http://192.168.5.77:8089/media-market-service';
-
-  static const String clientId = '099f6954410409ca0b9cc736d9ba1020';
+  // static const String baseUrl =
+  //     'http://192.168.5.37:8089/media-market-service';
+   static const String clientId = '099f6954410409ca0b9cc736d9ba1020';
 
   /// 桌面端固定租户编号（登录 Body 必传）。
   /// 正式环境
@@ -24,6 +25,14 @@ class ApiConfig {
   static const String enterpriseOverview = '/desktop/oac/enterprise/overview';
   /// 企业视角列表：`GET /desktop/oac/enterprise/list`。
   static const String enterpriseList = '/desktop/oac/enterprise/list';
+  /// 4A 公司视角 KPI：`GET /desktop/oac/agency/overview`。
+  static const String agencyOverview = '/desktop/oac/agency/overview';
+  /// 4A 公司视角列表：`GET /desktop/oac/agency/list`。
+  static const String agencyList = '/desktop/oac/agency/list';
+  /// 人视角 KPI：`GET /desktop/oac/person/overview`。
+  static const String personOverview = '/desktop/oac/person/overview';
+  /// 人视角列表：`GET /desktop/oac/person/list`。
+  static const String personList = '/desktop/oac/person/list';
   static const String createOrder = '/admin/oac/order';
   /// 更新订单关联 4A：`PUT /desktop/oac/order/agency`（body: id + agencyCustomerId，空则清空）。
   static const String updateOrderAgency = '/desktop/oac/order/agency';
@@ -32,19 +41,37 @@ class ApiConfig {
   static const String customerCreate = '/desktop/oac/customer';
   /// 客户档案导出（按可见列；序号固定）：`POST /desktop/oac/customer/export`。
   static const String customerExport = '/desktop/oac/customer/export';
+  /// 下载「导入联系人」模板：`POST /desktop/oac/customer/importContactTemplate`。
+  static const String customerImportContactTemplate =
+      '/desktop/oac/customer/importContactTemplate';
+  /// 解析联系人导入文件预览：`POST /desktop/oac/customer/importContact/preview`。
+  static const String customerImportContactPreview =
+      '/desktop/oac/customer/importContact/preview';
+  /// 确认导入联系人：`POST /desktop/oac/customer/importContact/confirm`。
+  static const String customerImportContactConfirm =
+      '/desktop/oac/customer/importContact/confirm';
+  /// 下载「导入经营主体」模板：`POST /desktop/oac/customer/importEnterpriseTemplate`。
+  static const String customerImportEnterpriseTemplate =
+      '/desktop/oac/customer/importEnterpriseTemplate';
+  /// 解析经营主体导入文件预览：`POST /desktop/oac/customer/importEnterprise/preview`。
+  static const String customerImportEnterprisePreview =
+      '/desktop/oac/customer/importEnterprise/preview';
+  /// 确认导入经营主体：`POST /desktop/oac/customer/importEnterprise/confirm`。
+  static const String customerImportEnterpriseConfirm =
+      '/desktop/oac/customer/importEnterprise/confirm';
   static const String adCodeList = '/desktop/common/ad-code';
   static const String hrmDept = '/desktop/hrm/dept';
   /// 公司整体配置：`GET /desktop/hrm/dept/summary`。
   static const String hrmDeptSummary = '/desktop/hrm/dept/summary';
   static const String hrmEmployeeDirectory = '/desktop/hrm/employee-directory';
   static const String hrmPost = '/desktop/hrm/post';
-  /// 岗位序列列表：`GET /desktop/hrm/post-seq`。
+  /// 职务序列列表：`GET /desktop/hrm/post-seq`。
   static const String hrmPostSeq = '/desktop/hrm/post-seq';
-  /// 岗位序列职级列表：`GET /desktop/hrm/post-seq-level`。
+  /// 职务序列职级列表：`GET /desktop/hrm/post-seq-level`。
   static const String hrmPostSeqLevel = '/desktop/hrm/post-seq-level';
-  /// 席位分页 / 增删改：`GET|POST /desktop/hrm/position`，`PUT|DELETE …/{id}`。
+  /// 编制分页 / 增删改：`GET|POST /desktop/hrm/position`，`PUT|DELETE …/{id}`。
   static const String hrmPosition = '/desktop/hrm/position';
-  /// 席位全量列表（组织架构等）：`GET /desktop/hrm/position/list`。
+  /// 编制全量列表（组织架构等）：`GET /desktop/hrm/position/list`。
   static const String hrmPositionList = '/desktop/hrm/position/list';
   static const String hrmEmployeeAssignOnDuty =
       '/desktop/hrm/employee-assign/on-duty';
@@ -57,8 +84,24 @@ class ApiConfig {
   /// 修改职级：`POST /desktop/hrm/employee-assign/level`。
   static const String hrmEmployeeAssignLevel =
       '/desktop/hrm/employee-assign/level';
-  /// 员工分页 / 新增：`GET|POST /desktop/hrm/employee`。
+  /// 调岗：`POST /desktop/hrm/employee-assign/transfer`。
+  static const String hrmEmployeeAssignTransfer =
+      '/desktop/hrm/employee-assign/transfer';
+  /// 员工分页：`GET /desktop/hrm/employee`。
   static const String hrmEmployeeList = '/desktop/hrm/employee';
+  /// 添加待入职：`POST /desktop/hrm/employee/pending-active`。
+  static const String hrmEmployeePendingActive =
+      '/desktop/hrm/employee/pending-active';
+  /// 员工统计：`GET /desktop/hrm/employee/stats`。
+  static const String hrmEmployeeStats = '/desktop/hrm/employee/stats';
+
+  /// 待入职统计：`GET /desktop/hrm/employee/stats/pending-active`。
+  static const String hrmEmployeePendingActiveStats =
+      '/desktop/hrm/employee/stats/pending-active';
+
+  /// 待转正统计：`GET /desktop/hrm/employee/stats/pending-regularization`。
+  static const String hrmEmployeePendingRegularizationStats =
+      '/desktop/hrm/employee/stats/pending-regularization';
   static const String hrmNation = '/desktop/hrm/nation';
   static const String hrmOfficeLocation = '/desktop/hrm/office-location';
   /// 修改 / 删除办公地：`PUT|DELETE /desktop/hrm/office-location/{id}`。
@@ -92,8 +135,18 @@ class ApiConfig {
       '/desktop/oac/ocr/businessLicense';
   /// 经营异常 / 企业风险查询：`GET /desktop/oac/ocr/entRiskQuery?creditCode=`。
   static const String oacOcrEntRiskQuery = '/desktop/oac/ocr/entRiskQuery';
+  /// 阿里云统一识别 RecognizeAllText：`POST /desktop/oac/ocr/allText/upload?type=`。
+  static const String oacOcrAllTextUpload = '/desktop/oac/ocr/allText/upload';
   /// 通用 OSS 上传（logo / 合同等）：`POST /desktop/resource/oss/upload`。
   static const String resourceOssUpload = '/desktop/resource/oss/upload';
+  /// 文件中心 · 预签名上传：`POST /filecenter/presign`。
+  static const String fileCenterPresign = '/filecenter/presign';
+  /// 文件中心 · 直传登记：`POST /filecenter/directComplete`。
+  static const String fileCenterDirectComplete = '/filecenter/directComplete';
+  /// 文件中心 · 文件详情：`GET /filecenter/info/{fileId}`。
+  static String fileCenterInfo(String fileId) => '/filecenter/info/$fileId';
+  /// 文件中心默认业务模块字典键值。
+  static const String fileCenterModuleCode = 'mediaMarketService';
   /// 联行号级联 · 省：`GET /desktop/srm/cnaps/provinces`。
   static const String srmCnapsProvinces = '/desktop/srm/cnaps/provinces';
   /// 联行号级联 · 市：`GET /desktop/srm/cnaps/cities?provinceName=`。
@@ -150,13 +203,16 @@ class ApiConfig {
   /// 部门详情：`GET /desktop/hrm/dept/{deptId}`。
   static String hrmDeptDetail(String deptId) => '/desktop/hrm/dept/$deptId';
 
-  /// 按岗位序列查职级：`GET /desktop/hrm/post-seq-level/post-seq/{postSeqId}`。
+  /// 按职务序列查职级：`GET /desktop/hrm/post-seq-level/post-seq/{postSeqId}`。
   static String hrmPostSeqLevelsBySeq(String postSeqId) =>
       '/desktop/hrm/post-seq-level/post-seq/$postSeqId';
 
   /// 字典数据：Path `dictType`，如 `mm_crm_customer_type`、`mm_industry`。
   static String dictDataByType(String dictType) =>
       '/desktop/oac/dict/data/type/$dictType';
+
+  /// 按员工 ID 查详情：`GET /desktop/hrm/employee/{id}`。
+  static String hrmEmployeeDetail(String id) => '/desktop/hrm/employee/$id';
 
   /// 按 userId 查员工详情：`GET /desktop/hrm/employee/user/{userId}`。
   static String hrmEmployeeByUser(int userId) =>
@@ -165,23 +221,54 @@ class ApiConfig {
   /// 修改员工：`PUT /desktop/hrm/employee/{id}`。
   static String hrmEmployeeUpdate(String id) => '/desktop/hrm/employee/$id';
 
-  /// 紧急联系人：`GET /desktop/hrm/employees/{userId}/contacts`。
-  static String hrmEmployeeContacts(int userId) =>
-      '/desktop/hrm/employees/$userId/contacts';
+  /// 确认入职：`POST /desktop/hrm/employee/{id}/hire`。
+  static String hrmEmployeeHire(String id) => '/desktop/hrm/employee/$id/hire';
 
-  /// 教育背景：`GET /desktop/hrm/employees/{userId}/educations`。
-  static String hrmEmployeeEducations(int userId) =>
-      '/desktop/hrm/employees/$userId/educations';
+  /// 取消入职：`POST /desktop/hrm/employee/{id}/hire-revoke`。
+  static String hrmEmployeeHireRevoke(String id) =>
+      '/desktop/hrm/employee/$id/hire-revoke';
 
-  /// 工作经历：`GET /desktop/hrm/employees/{userId}/work-experiences`。
-  static String hrmEmployeeWorkExperiences(int userId) =>
-      '/desktop/hrm/employees/$userId/work-experiences';
+  /// 恢复为待入职：`POST /desktop/hrm/employee/{id}/hire-restore`。
+  static String hrmEmployeeHireRestore(String id) =>
+      '/desktop/hrm/employee/$id/hire-restore';
 
-  /// 合同与协议：`GET /desktop/hrm/employees/{userId}/contracts`。
-  static String hrmEmployeeContracts(int userId) =>
-      '/desktop/hrm/employees/$userId/contracts';
+  /// 确认转正：`POST /desktop/hrm/employee/{id}/regularize`。
+  static String hrmEmployeeRegularize(String id) =>
+      '/desktop/hrm/employee/$id/regularize';
 
-  /// 能力标签：`GET /desktop/hrm/employees/{userId}/skills`。
-  static String hrmEmployeeSkills(int userId) =>
-      '/desktop/hrm/employees/$userId/skills';
+  /// 离职申请：`POST /desktop/hrm/employee/{id}/leave-apply`。
+  static String hrmEmployeeLeaveApply(String id) =>
+      '/desktop/hrm/employee/$id/leave-apply';
+
+  /// 确认离职：`POST /desktop/hrm/employee/{id}/leave-confirm`。
+  static String hrmEmployeeLeaveConfirm(String id) =>
+      '/desktop/hrm/employee/$id/leave-confirm';
+
+  /// 撤销离职申请：`POST /desktop/hrm/employee/{id}/leave-revoke`。
+  static String hrmEmployeeLeaveRevoke(String id) =>
+      '/desktop/hrm/employee/$id/leave-revoke';
+
+  /// 紧急联系人：`GET /desktop/hrm/employees/{id}/contacts`。
+  static String hrmEmployeeContacts(String id) =>
+      '/desktop/hrm/employees/$id/contacts';
+
+  /// 教育背景：`GET /desktop/hrm/employees/{id}/educations`。
+  static String hrmEmployeeEducations(String id) =>
+      '/desktop/hrm/employees/$id/educations';
+
+  /// 工作经历：`GET /desktop/hrm/employees/{id}/work-experiences`。
+  static String hrmEmployeeWorkExperiences(String id) =>
+      '/desktop/hrm/employees/$id/work-experiences';
+
+  /// 合同与协议：`GET /desktop/hrm/employees/{id}/contracts`。
+  static String hrmEmployeeContracts(String id) =>
+      '/desktop/hrm/employees/$id/contracts';
+
+  /// 能力标签：`GET /desktop/hrm/employees/{id}/skills`。
+  static String hrmEmployeeSkills(String id) =>
+      '/desktop/hrm/employees/$id/skills';
+
+  /// 附件列表：`GET /desktop/hrm/employees/{employeeId}/files`。
+  static String hrmEmployeeFiles(String id) =>
+      '/desktop/hrm/employees/$id/files';
 }

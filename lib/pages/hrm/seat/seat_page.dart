@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/hrm_position.dart';
 import 'add/seat_form_dialog.dart';
+import '../../location_breadcrumb.dart';
 import 'seat_controller.dart';
 
 const _kPrimary = Color(0xFF1677FF);
@@ -12,7 +14,7 @@ const _kMuted = Color(0xFF8C8C8C);
 const _kBorder = Color(0xFFE5E6EB);
 const _kLabel = Color(0xFF4E5969);
 
-/// HRM · 席位。
+/// HRM · 编制。
 class SeatPage extends StatelessWidget {
   const SeatPage({super.key});
 
@@ -40,6 +42,7 @@ class _Body extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const LocationBreadcrumb(segments: ['HRM', '编制']),
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               decoration: BoxDecoration(
@@ -73,9 +76,9 @@ class _Body extends StatelessWidget {
                       onChanged: (v) => c.filterDeptId.value = v,
                     ),
                     _FilterSelect<String>(
-                      label: '所属岗位',
+                      label: '所属职务',
                       width: 180,
-                      hint: '请选择岗位',
+                      hint: '请选择职务',
                       value: postId,
                       items: [
                         for (final p in c.posts)
@@ -221,7 +224,7 @@ class _Body extends StatelessWidget {
                               cellTextStyle: const TextStyle(fontSize: 12),
                               empty: const Center(
                                 child: Text(
-                                  '暂无席位',
+                                  '暂无编制',
                                   style: TextStyle(color: _kMuted),
                                 ),
                               ),
@@ -230,25 +233,37 @@ class _Body extends StatelessWidget {
                                   id: 'dept',
                                   title: '所属部门',
                                   width: 140,
+                                  minWidth: 100,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
+                                  flex: 1,
                                   value: (row) => c.deptDisplay(row),
                                 ),
                                 AppDataGridColumn(
                                   id: 'post',
-                                  title: '所属岗位',
+                                  title: '所属职务',
                                   width: 120,
+                                  minWidth: 88,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
+                                  flex: 1,
                                   value: (row) => c.postDisplay(row),
                                 ),
                                 AppDataGridColumn(
                                   id: 'type',
                                   title: '编制类型',
                                   width: 100,
+                                  minWidth: 80,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
+                                  flex: 1,
                                   value: (row) =>
                                       SeatController.typeLabel(row.type),
                                 ),
                                 AppDataGridColumn(
                                   id: 'report',
-                                  title: '行政汇报席位',
+                                  title: '行政汇报编制',
                                   width: 240,
+                                  minWidth: 140,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
+                                  flex: 2,
                                   value: (row) {
                                     final s = c.positionRefDisplay(
                                       row.reportPositionId,
@@ -258,8 +273,11 @@ class _Body extends StatelessWidget {
                                 ),
                                 AppDataGridColumn(
                                   id: 'dotted',
-                                  title: '虚线汇报席位',
+                                  title: '虚线汇报编制',
                                   width: 240,
+                                  minWidth: 140,
+                                  widthMode: AppDataGridColumnWidthMode.fill,
+                                  flex: 2,
                                   value: (row) {
                                     final s = c.positionRefDisplay(
                                       row.dottedPositionId,
@@ -432,35 +450,35 @@ class _Body extends StatelessWidget {
 Future<void> _confirmDelete(BuildContext context, HrmPosition seat) async {
   final id = seat.id?.trim();
   if (id == null || id.isEmpty) {
-    AppToast.show(context: context, title: '席位 id 无效');
+    AppToast.show(context: context, title: '编制 id 无效');
     return;
   }
   final c = context.lx.find<SeatController>();
   final label =
       '${c.deptDisplay(seat)} / ${c.postDisplay(seat)} / ${SeatController.typeLabel(seat.type)}';
   final hostContext = context;
-  final ok = await AppDialog.show<bool>(
+  final ok = await showHyperDialog<bool>(
     context: context,
-    builder: (dialogContext) => AppAlertDialog(
+    builder: (dialogContext) => HyperDialog(
       title: const Text('确认删除'),
-      content: Text('确定删除席位「$label」吗？'),
+      content: Text('确定删除编制「$label」吗？'),
       actions: [
-        AppButton.outline(
-          onPressed: () => AppOverlay.close(dialogContext, false),
-          child: const Text('取消'),
+        HyperButton.outlined(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          label: const Text('取消'),
         ),
-        AppButton.destructive(
-          onPressed: () => AppOverlay.close(dialogContext, true),
-          child: const Text('删除'),
+        HyperButton.filled(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          label: const Text('删除'),
         ),
       ],
     ),
-  ).future;
+  );
   if (ok != true) return;
   try {
     await c.deleteSeat(id);
     if (hostContext.mounted) {
-      AppToast.show(context: hostContext, title: '删除席位成功');
+      AppToast.show(context: hostContext, title: '删除编制成功');
     }
   } catch (e) {
     if (hostContext.mounted) {

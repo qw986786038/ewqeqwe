@@ -6,6 +6,7 @@ import '../../../../models/hrm_employee_assign.dart';
 import '../../../../models/hrm_employee_contact.dart';
 import '../../../../models/hrm_employee_contract.dart';
 import '../../../../models/hrm_employee_edu.dart';
+import '../../../../models/hrm_employee_file.dart';
 import '../../../../models/hrm_employee_profile.dart';
 import '../../../../models/hrm_employee_skill.dart';
 import '../../../../models/hrm_employee_work.dart';
@@ -33,12 +34,11 @@ class EmployeeAssignDraft {
   String? positionId;
   /// HIRE / REGULARIZATION / PROMOTION
   String startType = 'HIRE';
-  String reportTo = '由席位自动带出';
-  String dottedReport = '由席位自动带出';
+  String reportTo = '由编制自动带出';
+  String dottedReport = '由编制自动带出';
   DateTime? startDate;
 }
 
-/// 紧急联系人（本地编辑）。
 class EmployeeContactDraft {
   EmployeeContactDraft({required this.localKey, this.id});
 
@@ -96,11 +96,14 @@ class EmployeeContractDraft {
 }
 
 class EmployeeEditController extends LxController {
-  /// [userId] 为空时为新增模式。
-  EmployeeEditController({this.userId});
+  /// [employeeId]、[userId] 都为空时为新增。
+  /// 花名册「编辑」传员工 [employeeId]，详情走 `GET /desktop/hrm/employee/{id}`。
+  EmployeeEditController({this.employeeId, this.userId});
 
+  final String? employeeId;
   final int? userId;
-  bool get isCreate => userId == null;
+  bool get isCreate =>
+      (employeeId == null || employeeId!.trim().isEmpty) && userId == null;
 
   final _api = HrmApi();
   final _adCodeApi = AdCodeApi();
@@ -127,9 +130,10 @@ class EmployeeEditController extends LxController {
   final educations = <EmployeeEduDraft>[].obs;
   final workExperiences = <EmployeeWorkDraft>[].obs;
   final contracts = <EmployeeContractDraft>[].obs;
+  final files = <HrmEmployeeFile>[].obs;
   final selectedSkillTagIds = <int>{}.obs;
 
-  /// 全量在任，用于按席位反查汇报对象姓名。
+  /// 全量在任，用于按编制反查汇报对象姓名。
   final List<HrmEmployeeAssign> _allOnDuty = [];
   final Map<String, HrmPosition> _positionById = {};
   final Map<String, HrmPost> _postById = {};
@@ -184,6 +188,8 @@ class EmployeeEditController extends LxController {
     ];
   }
 
+  String nextLocalKey() => _nextKey();
+
   String _nextKey() => 'local_${++_localSeq}';
 
   Future<void> load() async {
@@ -194,7 +200,7 @@ class EmployeeEditController extends LxController {
       if (isCreate) {
         await _loadCreate();
       } else {
-        await _loadEdit(userId!);
+        await _loadEdit();
       }
       loadToken.value++;
       loaded.value = true;
@@ -258,12 +264,14 @@ class EmployeeEditController extends LxController {
     educations.clear();
     workExperiences.clear();
     contracts.clear();
+    files.clear();
     assigns.clear();
     selectedSkillTagIds.clear();
     contacts.refresh();
     educations.refresh();
     workExperiences.refresh();
     contracts.refresh();
+    files.refresh();
     assigns.refresh();
     selectedSkillTagIds.refresh();
 
@@ -273,9 +281,16 @@ class EmployeeEditController extends LxController {
     );
   }
 
-  Future<void> _loadEdit(int uid) async {
+  Future<void> _loadEdit() async {
+    final id = employeeId?.trim() ?? '';
+    final preloaded = id.isNotEmpty ? await _api.fetchEmployeeById(id) : null;
+    final uid = userId ?? preloaded?.userId;
+    final subId = id.isNotEmpty ? id : (preloaded?.id?.trim() ?? '');
+    if (subId.isEmpty) {
+      throw HrmApiException('员工 id 不能为空');
+    }
     final results = await Future.wait([
-      _api.fetchEmployeeByUser(uid),
+      if (preloaded == null) _api.fetchEmployeeByUser(uid!),
       _api.fetchNations(),
       _api.fetchOfficeLocations(),
       _api.fetchSkillGroups(),
@@ -284,52 +299,54 @@ class EmployeeEditController extends LxController {
       _api.fetchPostSeqs(),
       _api.fetchPostSeqLevels(),
       _api.fetchPositions(),
-      _api.fetchEmployeeContacts(uid),
-      _api.fetchEmployeeEducations(uid),
-      _api.fetchEmployeeWorkExperiences(uid),
-      _api.fetchEmployeeContracts(uid),
-      _api.fetchEmployeeSkills(uid),
+      _api.fetchEmployeeContacts(subId),
+      _api.fetchEmployeeEducations(subId),
+      _api.fetchEmployeeWorkExperiences(subId),
+      _api.fetchEmployeeContracts(subId),
+      _api.fetchEmployeeSkills(subId),
+      _api.fetchEmployeeFiles(subId),
       _api.fetchOnDutyAssigns(),
       _api.fetchEmployeeProfiles(pageNum: 1, pageSize: 10000),
     ]);
 
-    final p = results[0] as HrmEmployeeProfile;
+    final p = preloaded ?? results[0] as HrmEmployeeProfile;
+    final base = preloaded == null ? 1 : 0;
     profile.value = p;
     nations
       ..clear()
-      ..addAll(results[1] as List<HrmNation>);
+      ..addAll(results[base] as List<HrmNation>);
     officeLocations
       ..clear()
-      ..addAll(results[2] as List<HrmOfficeLocation>);
+      ..addAll(results[base + 1] as List<HrmOfficeLocation>);
     skillGroups
       ..clear()
-      ..addAll(results[3] as List<HrmSkillGroup>);
+      ..addAll(results[base + 2] as List<HrmSkillGroup>);
     depts
       ..clear()
-      ..addAll(results[4] as List<HrmDept>);
+      ..addAll(results[base + 3] as List<HrmDept>);
     posts
       ..clear()
-      ..addAll(results[5] as List<HrmPost>);
+      ..addAll(results[base + 4] as List<HrmPost>);
     postSeqs
       ..clear()
-      ..addAll(results[6] as List<HrmPostSeq>);
+      ..addAll(results[base + 5] as List<HrmPostSeq>);
     postSeqLevels
       ..clear()
-      ..addAll(results[7] as List<HrmPostSeqLevel>);
+      ..addAll(results[base + 6] as List<HrmPostSeqLevel>);
     positions
       ..clear()
-      ..addAll(results[8] as List<HrmPosition>);
+      ..addAll(results[base + 7] as List<HrmPosition>);
 
-    _bindContacts(results[9] as List<HrmEmployeeContact>);
-    _bindEducations(results[10] as List<HrmEmployeeEdu>);
-    _bindWorks(results[11] as List<HrmEmployeeWork>);
+    _bindContacts(results[base + 8] as List<HrmEmployeeContact>);
+    _bindEducations(results[base + 9] as List<HrmEmployeeEdu>);
+    _bindWorks(results[base + 10] as List<HrmEmployeeWork>);
     final nestedContracts = p.contracts;
-    final apiContracts = results[12] as List<HrmEmployeeContract>;
+    final apiContracts = results[base + 11] as List<HrmEmployeeContract>;
     _bindContracts(
       nestedContracts.isNotEmpty ? nestedContracts : apiContracts,
     );
 
-    final skills = results[13] as List<HrmEmployeeSkill>;
+    final skills = results[base + 12] as List<HrmEmployeeSkill>;
     selectedSkillTagIds
       ..clear()
       ..addAll([
@@ -337,9 +354,15 @@ class EmployeeEditController extends LxController {
           if (s.skillTagId != null) s.skillTagId!,
       ]);
 
+    final fileList = results[base + 13] as List<HrmEmployeeFile>;
+    files
+      ..clear()
+      ..addAll(fileList);
+    files.refresh();
+
     _rebuildLookupMaps(
-      onDuty: results[14] as List<HrmEmployeeAssign>,
-      employees: results[15] as List<HrmEmployeeProfile>,
+      onDuty: results[base + 14] as List<HrmEmployeeAssign>,
+      employees: results[base + 15] as List<HrmEmployeeProfile>,
     );
     _bindAssigns(_allOnDuty);
   }
@@ -434,13 +457,13 @@ class EmployeeEditController extends LxController {
     return draft;
   }
 
-  /// 选中席位后回填部门 / 岗位 / 汇报对象（由席位配置带出）。
+  /// 选中编制后回填部门 / 职务 / 汇报对象（由编制配置带出）。
   void applyPositionToAssign(EmployeeAssignDraft draft, String? positionId) {
     final id = positionId?.trim();
     draft.positionId = id;
     if (id == null || id.isEmpty) {
-      draft.reportTo = '由席位自动带出';
-      draft.dottedReport = '由席位自动带出';
+      draft.reportTo = '由编制自动带出';
+      draft.dottedReport = '由编制自动带出';
       return;
     }
     final pos = _positionById[id];
@@ -448,9 +471,9 @@ class EmployeeEditController extends LxController {
     draft.deptId = pos.sysDeptId?.trim();
     draft.postId = pos.postId?.trim();
     draft.reportTo =
-        _personNameOnPosition(pos.reportPositionId) ?? '由席位自动带出';
+        _personNameOnPosition(pos.reportPositionId) ?? '由编制自动带出';
     draft.dottedReport =
-        _personNameOnPosition(pos.dottedPositionId) ?? '由席位自动带出';
+        _personNameOnPosition(pos.dottedPositionId) ?? '由编制自动带出';
   }
 
   String? _personNameOnPosition(String? positionId) {
@@ -536,7 +559,10 @@ class EmployeeEditController extends LxController {
   DateTime? _parseDate(String? raw) {
     final s = raw?.trim();
     if (s == null || s.isEmpty) return null;
-    return DateTime.tryParse(s);
+    final parsed = DateTime.tryParse(s);
+    if (parsed == null) return null;
+    final local = parsed.toLocal();
+    return DateTime(local.year, local.month, local.day);
   }
 
   bool isSkillSelected(int tagId) => selectedSkillTagIds.contains(tagId);
@@ -782,17 +808,22 @@ class EmployeeEditController extends LxController {
     putStr('residence', values['residence'] ?? p.residence);
     putStr('politicalStatus', values['politicalStatus'] ?? p.politicalStatus);
     putStr('idCardType', values['idCardType'] ?? p.idCardType);
+    putStr('firstWorkDate', _dateText(values['firstWorkDate']) ?? p.firstWorkDate);
+    putStr('socialSecurityAccount', values['socialSecurityAccount'] ?? p.socialSecurityAccount);
+    putStr('housingFundAccount', values['housingFundAccount'] ?? p.housingFundAccount);
+    putStr('hireDate', _dateText(values['hireDate']) ?? p.hireDate);
+    putStr('regularizationDate', p.regularizationDate);
+    putStr('leaveDate', p.leaveDate);
+    putStr('leaveType', p.leaveType);
+    putStr('leaveRemark', p.leaveRemark);
+    putStr('conversionStatus', values['conversionStatus'] ?? p.conversionStatus);
+    putStr('businessTrip', values['businessTrip'] ?? p.businessTrip);
+    putStr('businessTripCity', values['businessTripCity'] ?? p.businessTripCity);
     putStr('highestEducation', p.highestEducation);
     putStr('graduateSchool', p.graduateSchool);
     putStr('major', p.major);
-    putStr(
-      'empStatus',
-      p.empStatus?.trim().isNotEmpty == true ? p.empStatus : 'PENDING',
-    );
-    putStr(
-      'empType',
-      p.empType?.trim().isNotEmpty == true ? p.empType : 'EMPLOYEE',
-    );
+    putStr('empStatus', values['empStatus'] ?? p.empStatus);
+    putStr('empType', values['empType'] ?? p.empType);
     putStr(
       'timeType',
       p.timeType?.trim().isNotEmpty == true ? p.timeType : 'FULL_TIME',
@@ -980,12 +1011,12 @@ class EmployeeEditController extends LxController {
           levelId == null ||
           levelId.isEmpty ||
           startDate == null) {
-        throw HrmApiException('任职需填写席位、职级与开始日期');
+        throw HrmApiException('任职需填写编制、职级与开始日期');
       }
       final positionIdInt = int.tryParse(positionId);
       final levelIdInt = int.tryParse(levelId);
       if (positionIdInt == null || levelIdInt == null) {
-        throw HrmApiException('任职席位或职级无效');
+        throw HrmApiException('任职编制或职级无效');
       }
       final row = <String, dynamic>{
         'positionId': positionIdInt,
@@ -1042,6 +1073,57 @@ class EmployeeEditController extends LxController {
     if (value == null) return null;
     final s = value.toString().trim();
     return s.isEmpty ? null : s;
+  }
+
+  static String? _dateText(Object? value) {
+    if (value is DateTime) return _fmtDate(value);
+    return _str(value);
+  }
+
+  /// 用当前档案和子表拼出 `save` 需要的表单值。分区弹窗改完内存后走这条。
+  Map<String, Object?> collectValues() {
+    final p = profile.value ?? HrmEmployeeProfile();
+    final values = <String, Object?>{
+      'name': p.name,
+      'no': p.no,
+      'pinYin': p.pinYin,
+      'englishName': p.englishName,
+      'aliasName': p.aliasName,
+      'gender': p.gender,
+      'nation': p.nation,
+      'maritalStatus': p.maritalStatus,
+      'idCardNo': p.idCardNo,
+      'mobile': p.mobile,
+      'corpEmail': p.corpEmail,
+      'personalEmail': p.personalEmail,
+      'imAccount': p.imAccount,
+      'workstation': p.workstation,
+      'officePhone': p.officePhone,
+      'officeExt': p.officeExt,
+      'householdAddress': p.householdAddress,
+      'residence': p.residence,
+      'politicalStatus': p.politicalStatus,
+      'idCardType': p.idCardType,
+      'firstWorkDate': p.firstWorkDate,
+      'socialSecurityAccount': p.socialSecurityAccount,
+      'housingFundAccount': p.housingFundAccount,
+      'hireDate': p.hireDate,
+      'conversionStatus': p.conversionStatus,
+      'businessTrip': p.businessTrip,
+      'businessTripCity': p.businessTripCity,
+      'empStatus': p.empStatus,
+      'empType': p.empType,
+      'officeLocation': p.officeLocation,
+      'birthDate': p.birthDate,
+      'showMobile': checkboxFromInt(p.showMobile),
+      'showEmail': checkboxFromInt(p.showEmail),
+      'showIm': checkboxFromInt(p.showIm),
+      'showOffice': checkboxFromInt(p.showOffice),
+      'keepInDirectory': checkboxFromInt(p.keepInDirectory),
+      'overtime': p.overtime?.toString(),
+      'hukouRegion': hukouInitialPath(p),
+    };
+    return values;
   }
 
   static String _fmtDate(DateTime d) {

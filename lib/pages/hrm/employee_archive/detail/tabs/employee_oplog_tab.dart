@@ -174,7 +174,7 @@ const _logs = <_LogData>[
     role: 'HR 管理员',
     type: _OpType.promote,
     typeLabel: '晋升',
-    content: '职级 P6 → P7，岗位调整为客户总监',
+    content: '职级 P6 → P7，职务调整为客户总监',
     ip: '10.20.11.88',
   ),
   _LogData(
