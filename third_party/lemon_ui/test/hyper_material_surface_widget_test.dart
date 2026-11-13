@@ -3,6 +3,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lemon_ui/lemon_ui.dart';
 
 void main() {
+  testWidgets(
+    'material surface preserves tight constraints and applies padding once',
+    (tester) async {
+      const contentKey = ValueKey('material-tight-content');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HyperTheme(
+            data: HyperThemeData.light(),
+            child: const Center(
+              child: SizedBox(
+                width: 240,
+                height: 180,
+                child: HyperMaterialSurface(
+                  material: HyperSurfaceMaterial.frostedGlass(),
+                  padding: EdgeInsets.all(10),
+                  child: SizedBox(key: contentKey, width: 20, height: 10),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.getSize(find.byKey(contentKey)), const Size(220, 160));
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('透明度到达 1 前后，各材质消费者使用相同背景合成方式', (tester) async {
     const recipe = HyperSurfaceMaterial.frostedGlass(
       background: HyperFill.color(Color(0x70FFFFFF)),
@@ -97,7 +123,7 @@ void main() {
     );
   });
 
-  testWidgets('普通材质不建立背景滤镜', (tester) async {
+  testWidgets('普通材质保留禁用滤镜节点，不过滤背景', (tester) async {
     await tester.pumpWidget(
       app(
         const HyperMaterialSurface(
@@ -109,7 +135,10 @@ void main() {
       ),
     );
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(
+      tester.widget<BackdropFilter>(find.byType(BackdropFilter)).enabled,
+      isFalse,
+    );
     expect(find.text('普通内容'), findsOneWidget);
   });
 

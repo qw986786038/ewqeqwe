@@ -1,6 +1,8 @@
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_x/lemon_x.dart';
 
+import '../../../../models/ad_code.dart';
+import '../../../../models/dict_data.dart';
 import '../../../../models/hrm_dept.dart';
 import '../../../../models/hrm_employee_assign.dart';
 import '../../../../models/hrm_employee_contact.dart';
@@ -18,6 +20,7 @@ import '../../../../models/hrm_post_seq.dart';
 import '../../../../models/hrm_post_seq_level.dart';
 import '../../../../models/hrm_skill_group.dart';
 import '../../../../services/ad_code_api.dart';
+import '../../../../services/dict_api.dart';
 import '../../../../services/hrm_api.dart';
 
 /// 任职条目（来自 employee-assign/on-duty，可本地增删改）。
@@ -107,7 +110,13 @@ class EmployeeEditController extends LxController {
 
   final _api = HrmApi();
   final _adCodeApi = AdCodeApi();
+  final _dictApi = DictApi();
   final form = AppFormController();
+
+  static const _editDictTypes = <String>[
+    HrmDictTypes.education,
+    HrmDictTypes.contactRelation,
+  ];
 
   final loading = true.obs;
   final saving = false.obs;
@@ -116,6 +125,7 @@ class EmployeeEditController extends LxController {
   final loadToken = 0.obs;
 
   final profile = Rxn<HrmEmployeeProfile>();
+  final dicts = <String, List<DictDataItem>>{}.obs;
   final nations = <HrmNation>[].obs;
   final officeLocations = <HrmOfficeLocation>[].obs;
   final skillGroups = <HrmSkillGroup>[].obs;
@@ -132,6 +142,11 @@ class EmployeeEditController extends LxController {
   final contracts = <EmployeeContractDraft>[].obs;
   final files = <HrmEmployeeFile>[].obs;
   final selectedSkillTagIds = <int>{}.obs;
+
+  /// 户籍省 / 市 / 区中文名（由行政区划 code 解析）。
+  final hukouProvinceName = ''.obs;
+  final hukouCityName = ''.obs;
+  final hukouDistrictName = ''.obs;
 
   /// 全量在任，用于按编制反查汇报对象姓名。
   final List<HrmEmployeeAssign> _allOnDuty = [];
@@ -165,6 +180,14 @@ class EmployeeEditController extends LxController {
     ];
   }
 
+  /// 户籍展示：优先中文名，解析失败时回退 code。
+  String hukouText({required String name, String? code}) {
+    final zh = name.trim();
+    if (zh.isNotEmpty) return zh;
+    final raw = code?.trim() ?? '';
+    return raw.isEmpty ? '--' : raw;
+  }
+
   /// `GET /desktop/common/ad-code` 按父级加载下级。
   Future<List<AppCascadeOption<String>>> loadRegionOptions(
     AppRegionLevel level,
@@ -188,9 +211,92 @@ class EmployeeEditController extends LxController {
     ];
   }
 
+  Future<void> _resolveHukouNames(HrmEmployeeProfile? p) async {
+    final province = p?.province?.trim() ?? '';
+    final city = p?.city?.trim() ?? '';
+    final district = p?.district?.trim() ?? '';
+    var provinceName = '';
+    var cityName = '';
+    var districtName = '';
+    try {
+      if (province.isNotEmpty) {
+        final provinces = await _adCodeApi.fetchChildren(parentCode: 100000);
+        provinceName = _adCodeName(provinces, province) ?? '';
+        final provinceCode = int.tryParse(province);
+        if (city.isNotEmpty && provinceCode != null && provinceCode > 0) {
+          final cities =
+              await _adCodeApi.fetchChildren(parentCode: provinceCode);
+          cityName = _adCodeName(cities, city) ?? '';
+          final cityCode = int.tryParse(city);
+          if (district.isNotEmpty && cityCode != null && cityCode > 0) {
+            final districts =
+                await _adCodeApi.fetchChildren(parentCode: cityCode);
+            districtName = _adCodeName(districts, district) ?? '';
+          }
+        }
+      }
+    } catch (_) {
+      // 行政区划失败时仍展示原始 code，不阻断整页加载。
+    }
+    hukouProvinceName.value = provinceName;
+    hukouCityName.value = cityName;
+    hukouDistrictName.value = districtName;
+  }
+
+  static String? _adCodeName(List<AdCodeItem> items, String code) {
+    final n = int.tryParse(code);
+    for (final e in items) {
+      final itemCode = e.code;
+      if (itemCode == null) continue;
+      if (itemCode == n || '$itemCode' == code) {
+        final name = e.chName?.trim();
+        if (name != null && name.isNotEmpty) return name;
+      }
+    }
+    return null;
+  }
+
   String nextLocalKey() => _nextKey();
 
   String _nextKey() => 'local_${++_localSeq}';
+
+  /// 字典文案：优先 `dictLabel`，找不到则回退原始值。
+  String dictLabel(String type, String? code) {
+    final value = code?.trim();
+    if (value == null || value.isEmpty) return '--';
+    for (final item in dicts[type] ?? const <DictDataItem>[]) {
+      if (item.dictValue?.trim() == value) {
+        final label = item.dictLabel?.trim();
+        if (label != null && label.isNotEmpty) return label;
+      }
+    }
+    return value;
+  }
+
+  /// 下拉选项；若当前值不在字典中则追加一项，避免回显空白。
+  List<AppOption<String>> dictOptions(String type, {String? current}) {
+    final base = <AppOption<String>>[
+      for (final item in dicts[type] ?? const <DictDataItem>[])
+        if (item.dictValue?.trim().isNotEmpty == true)
+          AppOption(
+            value: item.dictValue!.trim(),
+            label: (item.dictLabel?.trim().isNotEmpty == true)
+                ? item.dictLabel!.trim()
+                : item.dictValue!.trim(),
+          ),
+    ];
+    final value = current?.trim();
+    if (value == null || value.isEmpty) return base;
+    if (base.any((e) => e.value == value)) return base;
+    return [AppOption(value: value, label: value), ...base];
+  }
+
+  void _bindDicts(Map<String, List<DictDataItem>> map) {
+    dicts
+      ..clear()
+      ..addAll(map);
+    dicts.refresh();
+  }
 
   Future<void> load() async {
     loading.value = true;
@@ -223,6 +329,7 @@ class EmployeeEditController extends LxController {
       _api.fetchPositions(),
       _api.fetchOnDutyAssigns(),
       _api.fetchEmployeeProfiles(pageNum: 1, pageSize: 10000),
+      _dictApi.fetchMany(_editDictTypes),
     ]);
     nations
       ..clear()
@@ -248,6 +355,7 @@ class EmployeeEditController extends LxController {
     positions
       ..clear()
       ..addAll(results[7] as List<HrmPosition>);
+    _bindDicts(results[10] as Map<String, List<DictDataItem>>);
 
     profile.value = HrmEmployeeProfile()
       ..empStatus = 'PENDING'
@@ -279,6 +387,7 @@ class EmployeeEditController extends LxController {
       onDuty: results[8] as List<HrmEmployeeAssign>,
       employees: results[9] as List<HrmEmployeeProfile>,
     );
+    await _resolveHukouNames(profile.value);
   }
 
   Future<void> _loadEdit() async {
@@ -307,6 +416,7 @@ class EmployeeEditController extends LxController {
       _api.fetchEmployeeFiles(subId),
       _api.fetchOnDutyAssigns(),
       _api.fetchEmployeeProfiles(pageNum: 1, pageSize: 10000),
+      _dictApi.fetchMany(_editDictTypes),
     ]);
 
     final p = preloaded ?? results[0] as HrmEmployeeProfile;
@@ -364,7 +474,9 @@ class EmployeeEditController extends LxController {
       onDuty: results[base + 14] as List<HrmEmployeeAssign>,
       employees: results[base + 15] as List<HrmEmployeeProfile>,
     );
+    _bindDicts(results[base + 16] as Map<String, List<DictDataItem>>);
     _bindAssigns(_allOnDuty);
+    await _resolveHukouNames(p);
   }
 
   void _rebuildLookupMaps({
@@ -574,6 +686,27 @@ class EmployeeEditController extends LxController {
       selectedSkillTagIds.add(tagId);
     }
     selectedSkillTagIds.refresh();
+  }
+
+  /// 仅保存能力标签：`PUT /desktop/hrm/employees/{id}/skills`。
+  Future<void> saveSkills(Iterable<int> skillTagIds) async {
+    final id = profile.value?.id?.trim() ?? employeeId?.trim() ?? '';
+    if (id.isEmpty) throw HrmApiException('员工 id 无效');
+    final ids = <int>{
+      for (final e in skillTagIds)
+        if (e > 0) e,
+    }.toList()
+      ..sort();
+    saving.value = true;
+    try {
+      await _api.replaceEmployeeSkills(employeeId: id, skillTagIds: ids);
+      selectedSkillTagIds
+        ..clear()
+        ..addAll(ids);
+      selectedSkillTagIds.refresh();
+    } finally {
+      saving.value = false;
+    }
   }
 
   void addAssign() {
@@ -1059,8 +1192,11 @@ class EmployeeEditController extends LxController {
           contactList: contactList,
           eduList: eduList,
           contracts: contractList,
-          skillIds: selectedSkillTagIds.toList(),
           assignAppoint: assignAppoint,
+        );
+        await _api.replaceEmployeeSkills(
+          employeeId: id,
+          skillTagIds: selectedSkillTagIds.toList(),
         );
         await load();
       }

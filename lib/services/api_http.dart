@@ -27,9 +27,51 @@ abstract final class ApiLog {
     if (!kDebugMode) return;
     final url = response.request?.url;
     debugPrint('[API] ← ${response.statusCode}${url == null ? '' : ' $url'}');
-    if (response.body.isNotEmpty) {
-      debugPrint('[API]   res: ${_truncate(response.body)}');
+    final bytes = response.bodyBytes;
+    if (bytes.isEmpty) return;
+    // Excel / 附件等二进制禁止走 response.body（UTF-8 解码会抛 FormatException）。
+    if (_looksBinaryResponse(response.headers['content-type'], bytes)) {
+      final ct = response.headers['content-type'] ?? '';
+      debugPrint('[API]   res: <binary ${bytes.length} bytes'
+          '${ct.isEmpty ? '' : ', content-type=$ct'}>');
+      return;
     }
+    try {
+      final text = utf8.decode(bytes);
+      if (text.isNotEmpty) {
+        debugPrint('[API]   res: ${_truncate(text)}');
+      }
+    } on FormatException {
+      debugPrint('[API]   res: <non-utf8 ${bytes.length} bytes>');
+    }
+  }
+
+  /// 导出文件、ZIP、图片等：勿按文本解码。
+  static bool _looksBinaryResponse(String? contentType, List<int> bytes) {
+    final ct = (contentType ?? '').toLowerCase();
+    if (ct.contains('octet-stream') ||
+        ct.contains('spreadsheet') ||
+        ct.contains('excel') ||
+        ct.contains('zip') ||
+        ct.contains('pdf') ||
+        ct.contains('image/') ||
+        ct.contains('ms-excel') ||
+        ct.contains('multipart/')) {
+      return true;
+    }
+    if (bytes.length >= 2 && bytes[0] == 0x50 && bytes[1] == 0x4B) {
+      // ZIP / xlsx / docx
+      return true;
+    }
+    if (bytes.length >= 8 &&
+        bytes[0] == 0xD0 &&
+        bytes[1] == 0xCF &&
+        bytes[2] == 0x11 &&
+        bytes[3] == 0xE0) {
+      // OLE Compound Document (.xls)
+      return true;
+    }
+    return false;
   }
 
   static void error(String method, Uri uri, Object error) {

@@ -14,17 +14,18 @@ const _kMuted = Color(0xFF8C8C8C);
 const _kLabel = Color(0xFF4E5969);
 const _kTitle = Color(0xFF1D2129);
 const _kBorder = Color(0xFFE5E6EB);
+const _kDanger = Color(0xFFFF4D4F);
 
 const _kEnterpriseFields = <(String key, String title, double width)>[
-  ('fullName', '企业全称', 160),
+  ('fullName', '主体全称', 160),
   ('relationType', '关联关系', 100),
-  ('entityNature', '企业性质', 100),
+  ('entityNature', '主体性质', 100),
   ('marketScope', '市场范围', 110),
   ('businessTypes', '业务类型', 110),
-  ('province', '省', 80),
-  ('city', '市', 80),
+  ('province', '所在省', 80),
+  ('city', '所在市', 80),
   ('address', '详细地址', 140),
-  ('legalPerson', '法定代表人', 100),
+  ('legalPerson', '法人', 100),
   ('regAddress', '注册地址', 140),
   ('regPhone', '注册电话', 110),
   ('creditCode', '统一社会信用代码', 160),
@@ -32,19 +33,47 @@ const _kEnterpriseFields = <(String key, String title, double width)>[
   ('establishDate', '成立日期', 110),
   ('licenseValidPeriod', '营业执照有效期', 130),
   ('businessScope', '经营范围', 140),
-  ('abnormalRecord', '经营异常记录', 120),
-  ('penaltyHistory', '行政处罚历史', 120),
   ('remark', '备注', 120),
+];
+
+/// 确认导入 enterprises 字段（空串转 null，与接口样例一致）。
+const _kEnterpriseConfirmKeys = <String>[
+  'fullName',
+  'relationType',
+  'entityNature',
+  'marketScope',
+  'businessTypes',
+  'province',
+  'city',
+  'address',
+  'legalPerson',
+  'regAddress',
+  'regPhone',
+  'creditCode',
+  'registeredCapital',
+  'establishDate',
+  'licenseValidPeriod',
+  'businessScope',
+  'abnormalRecord',
+  'penaltyHistory',
+  'remark',
+  'licenseImagePlaceholder',
 ];
 
 /// 打开「导入经营主体」弹窗。成功导入并关闭后返回 `true`。
 Future<bool> showEnterpriseImportDialog(BuildContext context) {
   final hostContext = context;
-  return showHyperDialog<bool>(
+    return showHyperDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => AppShadcnScope(
-      config: AppThemeConfig.standard(primary: _kPrimary),
+      config: AppThemeConfig.standard(
+        primary: _kPrimary,
+        dataGrid: const AppDataGridMetrics(
+          rowHeight: 52,
+          horizontalPadding: 4,
+        ),
+      ),
       child: _EnterpriseImportDialog(
         hostContext: hostContext,
         onClose: (ok) => Navigator.of(dialogContext).pop(ok),
@@ -76,6 +105,7 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
   var _parsing = false;
   var _confirming = false;
   var _enterprises = <Map<String, dynamic>>[];
+  var _rowSeq = 0;
 
   void _toast(String title, {bool afterClose = false}) {
     final ctx = afterClose ? widget.hostContext : context;
@@ -142,11 +172,12 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
         return;
       }
       setState(() {
+        _rowSeq = 0;
         _enterprises = [
-          for (var i = 0; i < list.length; i++)
+          for (final item in list)
             {
-              ...Map<String, dynamic>.from(list[i]),
-              '_rowId': 'e_$i',
+              ...Map<String, dynamic>.from(item),
+              '_rowId': _nextRowId(),
             },
         ];
         _stage = _ImportStage.preview;
@@ -166,14 +197,9 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
     if (_confirming || _enterprises.isEmpty) return;
     setState(() => _confirming = true);
     try {
+      // POST .../importEnterprise/confirm → { "enterprises": [ ... ] }
       final payload = [
-        for (final e in _enterprises)
-          {
-            for (final entry in e.entries)
-              if (entry.key != 'licenseImagePlaceholder' &&
-                  entry.key != '_rowId')
-                entry.key: entry.value,
-          },
+        for (final e in _enterprises) _enterpriseConfirmRow(e),
       ];
       await _api.confirmEnterpriseImport(payload);
       if (!mounted) return;
@@ -186,12 +212,52 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
     }
   }
 
-  void _backToUpload() {
+  Map<String, dynamic> _enterpriseConfirmRow(Map<String, dynamic> row) {
+    return {
+      for (final key in _kEnterpriseConfirmKeys) key: _nullIfEmpty(row[key]),
+    };
+  }
+
+  Object? _nullIfEmpty(Object? raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      final s = raw.trim();
+      return s.isEmpty ? null : s;
+    }
+    if (raw is Iterable) {
+      final parts = <String>[
+        for (final e in raw)
+          if (e != null && '$e'.trim().isNotEmpty) '$e'.trim(),
+      ];
+      return parts.isEmpty ? null : parts.join(',');
+    }
+    final s = '$raw'.trim();
+    return s.isEmpty ? null : s;
+  }
+
+  String _nextRowId() {
+    _rowSeq += 1;
+    return 'e_$_rowSeq';
+  }
+
+  void _addRow() {
+    if (_confirming) return;
+    // AppDataGrid 仅在 rows 引用变化时刷新，必须换新 List。
+    setState(() {
+      _enterprises = [
+        ..._enterprises,
+        <String, dynamic>{'_rowId': _nextRowId()},
+      ];
+    });
+  }
+
+  void _removeRow(Map<String, dynamic> row) {
     if (_confirming) return;
     setState(() {
-      _stage = _ImportStage.upload;
-      _files = const [];
-      _enterprises = [];
+      _enterprises = [
+        for (final e in _enterprises)
+          if (!identical(e, row)) e,
+      ];
     });
   }
 
@@ -199,7 +265,7 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
   Widget build(BuildContext context) {
     if (_stage == _ImportStage.preview) {
       return HyperDialog(
-        title: Text('导入经营主体 · 预览确认（${_enterprises.length}）'),
+        title: const Text('导入经营主体预览'),
         scrollable: false,
         style: const HyperDialogStyle(maxWidth: 1120),
         content: SizedBox(
@@ -207,20 +273,25 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                '请核对并修改预览数据，确认无误后再导入。执照插图列仅作模板占位，确认时不提交文本。',
-                style: TextStyle(fontSize: 13, color: _kLabel),
-              ),
-              const SizedBox(height: 10),
               Expanded(child: _buildGrid()),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: HyperButton.text(
+                  onPressed: _confirming ? null : _addRow,
+                  label: const Text(
+                    '+ 添加一行',
+                    style: TextStyle(
+                      color: _kPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
         actions: [
-          HyperButton.outlined(
-            onPressed: _confirming ? null : _backToUpload,
-            label: const Text('重新上传'),
-          ),
           HyperButton.outlined(
             onPressed: _confirming ? null : () => widget.onClose(false),
             label: const Text('取消'),
@@ -296,7 +367,7 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
           ),
           const SizedBox(height: 6),
           const Text(
-            '· 「企业全称」为必填。',
+            '· 「主体全称」为必填。',
             style: TextStyle(fontSize: 12, color: _kMuted, height: 1.5),
           ),
           const SizedBox(height: 6),
@@ -331,15 +402,9 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
           sortable: false,
           showFilters: false,
           empty: const Center(
-            child: Text('暂无预览数据', style: TextStyle(color: _kMuted)),
+            child: Text('暂无预览数据，可点击下方添加', style: TextStyle(color: _kMuted)),
           ),
           columns: [
-            AppDataGridColumn(
-              id: 'no',
-              title: '序号',
-              width: 52,
-              value: (row) => _enterprises.indexOf(row) + 1,
-            ),
             for (final f in _kEnterpriseFields)
               AppDataGridColumn(
                 id: f.$1,
@@ -348,16 +413,39 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
                 alignment: Alignment.centerLeft,
                 titleAlignment: Alignment.centerLeft,
                 value: (row) => '${row[f.$1] ?? ''}',
-                cellBuilder: (context, row, _) => TextFormField(
-                  initialValue: row[f.$1]?.toString() ?? '',
-                  style: const TextStyle(fontSize: 12, color: _kTitle),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                    border: InputBorder.none,
+                cellBuilder: (context, row, _) => Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 6,
                   ),
-                  onChanged: (v) => row[f.$1] = v,
+                  child: TextFormField(
+                    initialValue: row[f.$1]?.toString() ?? '',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.25,
+                      color: _kTitle,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: const BorderSide(color: _kBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: const BorderSide(color: _kBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: const BorderSide(color: _kPrimary),
+                      ),
+                    ),
+                    onChanged: (v) => row[f.$1] = v,
+                  ),
                 ),
               ),
             AppDataGridColumn(
@@ -366,10 +454,11 @@ class _EnterpriseImportDialogState extends State<_EnterpriseImportDialog> {
               width: 72,
               value: (_) => '',
               cellBuilder: (context, row, _) => HyperButton.text(
-                onPressed: _confirming
-                    ? null
-                    : () => setState(() => _enterprises.remove(row)),
-                label: const Text('删除'),
+                onPressed: _confirming ? null : () => _removeRow(row),
+                label: const Text(
+                  '删除',
+                  style: TextStyle(color: _kDanger),
+                ),
               ),
             ),
           ],

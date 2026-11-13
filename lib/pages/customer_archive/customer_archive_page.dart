@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_shadcn/shadcn.dart' show CheckboxState;
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../models/customer_archive.dart';
@@ -75,8 +76,21 @@ class CustomerArchivePage extends StatelessWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+class _Body extends StatefulWidget {
   const _Body();
+
+  @override
+  State<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends State<_Body> {
+  final _pageScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _pageScroll.dispose();
+    super.dispose();
+  }
 
   void _goBack(BuildContext context) {
     try {
@@ -116,10 +130,13 @@ class _Body extends StatelessWidget {
     return ColoredBox(
       color: _kPageBg,
       child: Scrollbar(
+        controller: _pageScroll,
         thumbVisibility: true,
         child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        children: [
+          controller: _pageScroll,
+          primary: false,
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          children: [
           // ── 顶栏：后退/前进 · 当前位置 · 搜索 · 新建档案 ─────────────
           Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -391,57 +408,74 @@ class _Body extends StatelessWidget {
                   }
                   final page = c.pageNum.value;
                   final size = c.pageSize.value;
+                  final selected = c.selectedIds.toSet();
                   // 桌面放大后表格略增高，减少底部空白感。
                   final gridHeight =
                       (MediaQuery.sizeOf(context).height * 0.52)
                           .clamp(520.0, 680.0);
-                  final allColumns = <AppDataGridColumn<CustomerArchive>>[
-                      AppDataGridColumn(
+                  final allColumns = <HyperTableColumn<CustomerArchive>>[
+                      HyperTableColumn(
                         id: 'no',
                         title: '序号',
-                        width: 56,
+                        sortable: false,
+                        reorderable: false,
+                        resizable: false,
+                        width: 72,
+                        minWidth: 72,
+                        headerMaxLines: 1,
                         value: (row) {
                           final i = list.indexOf(row);
                           return (page - 1) * size + i + 1;
                         },
-                        type: AppDataGridColumnType.number,
+                        type: HyperTableColumnType.number,
                         cellBuilder: (context, row, value) =>
                             _cellText('${value ?? ''}'),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'type',
                         title: '客户类型',
+                        sortable: false,
+                        reorderable: false,
                         width: 120,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => c.customerTypeLabel(row.customerType),
                         cellBuilder: (context, row, _) {
                           final raw = row.customerType ?? '';
                           final label = c.customerTypeLabel(raw);
-                          return AppBadge.custom(
-                            color: _typeColor(raw, label),
-                            appearance: AppBadgeStyle.soft,
-                            shape: AppBadgeShape.square,
-                            child: Text(
-                              label,
-                              softWrap: false,
-                              style: const TextStyle(fontSize: 11),
+                          return _archiveCellAlign(
+                            child: AppBadge.custom(
+                              color: _typeColor(raw, label),
+                              appearance: AppBadgeStyle.soft,
+                              shape: AppBadgeShape.square,
+                              child: Text(
+                                label,
+                                softWrap: false,
+                                style: const TextStyle(fontSize: 11),
+                              ),
                             ),
                           );
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'market',
                         title: '市场层级',
+                        sortable: false,
+                        reorderable: false,
                         width: 140,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => c.marketLabel(row.marketLevel),
                         cellBuilder: (context, row, _) =>
                             _cellText(c.marketLabel(row.marketLevel)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'icon',
                         title: '图标',
-                        width: 56,
+                        sortable: false,
+                        reorderable: false,
+                        resizable: false,
+                        width: 72,
+                        minWidth: 72,
+                        headerMaxLines: 1,
                         value: (row) => row.iconLetter ?? '',
                         cellBuilder: (context, row, _) {
                           final main = row.brandName?.trim() ?? '';
@@ -478,13 +512,15 @@ class _Body extends StatelessWidget {
                           );
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'brand',
                         title: '品牌简称',
+                        sortable: false,
+                        reorderable: false,
                         width: 200,
-                        widthMode: AppDataGridColumnWidthMode.content,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        widthMode: HyperTableColumnWidthMode.content,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) {
                           final main = row.brandName?.trim() ?? '';
                           final sub = _subBrandsExcludingMain(
@@ -508,7 +544,7 @@ class _Body extends StatelessWidget {
                               alignment: Alignment.centerLeft,
                             );
                           }
-                          return Align(
+                          return _archiveCellAlign(
                             alignment: Alignment.centerLeft,
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
@@ -567,31 +603,37 @@ class _Body extends StatelessWidget {
                           );
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'industry',
                         title: '所属行业',
+                        sortable: false,
+                        reorderable: false,
                         width: 120,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => c.industryLabel(row.industry),
                         cellBuilder: (context, row, _) =>
                             _cellText(c.industryLabel(row.industry)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'entityCount',
                         title: '关联主体数量',
+                        sortable: false,
+                        reorderable: false,
                         width: 108,
                         value: (row) => row.entityCount ?? 0,
-                        type: AppDataGridColumnType.number,
+                        type: HyperTableColumnType.number,
                         cellBuilder: (context, row, value) =>
                             _cellText('${value ?? 0}'),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'entityName',
                         title: '关联主体全称',
+                        sortable: false,
+                        reorderable: false,
                         width: 220,
-                        widthMode: AppDataGridColumnWidthMode.content,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        widthMode: HyperTableColumnWidthMode.content,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) => row.entityName ?? '-',
                         cellBuilder: (context, row, _) => _multiLineCell(
                           _splitMulti(row.entityName),
@@ -618,55 +660,65 @@ class _Body extends StatelessWidget {
                           },
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'relation',
                         title: '关联关系',
+                        sortable: false,
+                        reorderable: false,
                         width: 120,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => c.relationLabel(row.relation),
                         cellBuilder: (context, row, _) => _multiLineCell([
                           for (final p in _splitMulti(row.relation))
                             c.relationLabel(p),
                         ]),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'nature',
                         title: '主体性质',
+                        sortable: false,
+                        reorderable: false,
                         width: 96,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => c.entityNatureLabel(row.entityNature),
                         cellBuilder: (context, row, _) => _multiLineCell([
                           for (final p in _splitMulti(row.entityNature))
                             c.entityNatureLabel(p),
                         ]),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'city',
                         title: '所在城市',
+                        sortable: false,
+                        reorderable: false,
                         width: 100,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) =>  row.city ?? '-',
                         cellBuilder: (context, row, _) =>
                             _multiLineCell(_splitMulti(row.city)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'address',
                         title: '详细地址',
+                        sortable: false,
+                        reorderable: false,
                         width: 220,
-                        widthMode: AppDataGridColumnWidthMode.content,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        widthMode: HyperTableColumnWidthMode.content,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) => row.address ?? '-',
                         cellBuilder: (context, row, _) => _multiLineCell(
                           _splitMulti(row.address),
                           alignment: Alignment.centerLeft,
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'contact',
                         title: '联系人',
+                        sortable: false,
+                        reorderable: false,
                         width: 140,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => row.contact ?? '-',
                         cellBuilder: (context, row, _) {
                           final entities = _splitMulti(row.entityName);
@@ -692,11 +744,13 @@ class _Body extends StatelessWidget {
                           );
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'createTime',
                         title: '创建时间',
+                        sortable: false,
+                        reorderable: false,
                         width: 168,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => row.createTime ?? '-',
                         cellBuilder: (context, row, _) => _cellText(
                           row.createTime?.trim().isNotEmpty == true
@@ -704,13 +758,15 @@ class _Body extends StatelessWidget {
                               : '-',
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'dynamic',
                         title: '最新动态(AI)',
+                        sortable: false,
+                        reorderable: false,
                         width: 160,
-                        widthMode: AppDataGridColumnWidthMode.content,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        widthMode: HyperTableColumnWidthMode.content,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) => row.latestDynamic ?? '-',
                         cellBuilder: (context, row, _) {
                           final text = row.latestDynamic?.trim();
@@ -726,11 +782,13 @@ class _Body extends StatelessWidget {
                           );
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'owner',
                         title: '负责人',
+                        sortable: false,
+                        reorderable: false,
                         width: 120,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) =>
                             row.owner?.trim().isNotEmpty == true
                                 ? row.owner!.trim()
@@ -748,11 +806,13 @@ class _Body extends StatelessWidget {
                           );
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'assignTime',
                         title: '分配时间',
+                        sortable: false,
+                        reorderable: false,
                         width: 168,
-                        widthMode: AppDataGridColumnWidthMode.content,
+                        widthMode: HyperTableColumnWidthMode.content,
                         value: (row) => row.assignTime ?? '-',
                         cellBuilder: (context, row, _) => _cellText(
                           row.assignTime?.trim().isNotEmpty == true
@@ -760,18 +820,22 @@ class _Body extends StatelessWidget {
                               : '-',
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'assignDays',
                         title: '分配天数',
+                        sortable: false,
+                        reorderable: false,
                         width: 88,
                         value: (row) => row.assignDays,
-                        type: AppDataGridColumnType.number,
+                        type: HyperTableColumnType.number,
                         cellBuilder: (context, row, value) =>
                             _cellText(value == null ? '-' : '$value'),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'status',
                         title: '状态',
+                        sortable: false,
+                        reorderable: false,
                         width: 88,
                         value: (row) => row.status ?? '-',
                         cellBuilder: (context, row, _) {
@@ -797,13 +861,15 @@ class _Body extends StatelessWidget {
                           );
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'remark',
                         title: '备注',
+                        sortable: false,
+                        reorderable: false,
                         width: 120,
-                        widthMode: AppDataGridColumnWidthMode.content,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        widthMode: HyperTableColumnWidthMode.content,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) => row.remark ?? '-',
                         cellBuilder: (context, row, _) => _cellText(
                           row.remark?.trim().isNotEmpty == true
@@ -812,9 +878,11 @@ class _Body extends StatelessWidget {
                           alignment: Alignment.centerLeft,
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'log',
                         title: '日志',
+                        sortable: false,
+                        reorderable: false,
                         width: 64,
                         value: (_) => '查看',
                         cellBuilder: (context, row, _) => Center(
@@ -836,11 +904,13 @@ class _Body extends StatelessWidget {
                           ),
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'actions',
                         title: '操作',
+                        sortable: false,
+                        reorderable: false,
                         width: 148,
-                        pin: AppDataGridColumnPin.end,
+                        pin: HyperTableColumnPin.end,
                         value: (_) => '',
                         cellBuilder: (context, row, _) => Center(
                           child: Row(
@@ -918,26 +988,36 @@ class _Body extends StatelessWidget {
                           !hidden.contains(col.id))
                         col,
                   ];
-                  return AppDataGrid<CustomerArchive>.local(
-                    key: ValueKey(
-                      'archive-grid-$dictVer-${hidden.join(',')}',
-                    ),
+                  return SizedBox(
                     height: gridHeight,
-                    rows: list,
-                    rowKey: (row) => row.id ?? row.archiveCode ?? '',
-                    sortable: false,
-                    selectionMode: AppDataGridSelectionMode.multiple,
-                    showInternalDividers: true,
-                    headerBackgroundColor: const Color(0xFFFAFAFA),
-                    textStyle: const TextStyle(fontSize: 12),
-                    cellTextStyle: const TextStyle(fontSize: 12),
-                    empty: const Center(
-                      child: Text(
-                        '暂无客户档案',
-                        style: TextStyle(color: _kMuted),
+                    child: HyperTable<CustomerArchive>(
+                      key: ValueKey(
+                        'archive-grid-$dictVer-${hidden.join(',')}',
+                      ),
+                      columns: visibleColumns,
+                      rows: list,
+                      rowKey: (row) => row.id ?? row.archiveCode ?? '',
+                      dataMode: HyperTableDataMode.local,
+                      showPagination: false,
+                      selectionMode: HyperTableSelectionMode.multiple,
+                      selectedKeys: selected,
+                      onSelectionChanged: c.setSelectedKeys,
+                      striped: true,
+                      // 多关联主体时显式加高；单主体保持默认行高。
+                      rowHeightBuilder: _archiveEntityRowHeight,
+                      style: const HyperTableStyle(
+                        headerTextStyle: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      empty: const Center(
+                        child: Text(
+                          '暂无客户档案',
+                          style: TextStyle(color: _kMuted),
+                        ),
                       ),
                     ),
-                    columns: visibleColumns,
                   );
                 }),
                 const SizedBox(height: 12),
@@ -988,6 +1068,7 @@ class _Body extends StatelessWidget {
                                         : Colors.white,
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(
+
                                       color: p == page ? _kPrimary : _kBorder,
                                     ),
                                   ),
@@ -1196,18 +1277,92 @@ String _subBrandsExcludingMain(String? rawSub, String main) {
 }
 
 /// 表格单元格：单行完整展示，不裁切为「…」（列宽不足时靠表格横向滚动）。
+/// 在加高行内垂直居中。
 Widget _cellText(
   String text, {
   TextStyle? style,
   Alignment alignment = Alignment.center,
 }) {
-  return Align(
+  return _archiveCellAlign(
     alignment: alignment,
     child: Text(
       text,
       softWrap: false,
       style: style ?? const TextStyle(fontSize: 12, color: _kTitle),
     ),
+  );
+}
+
+/// 单元格内容在行高内垂直居中（多主体加高行时单值列也居中）。
+Widget _archiveCellAlign({
+  required Widget child,
+  Alignment alignment = Alignment.center,
+}) {
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      // HyperTable 测高时可能给无限高/宽，勿写成 infinity 的 tight SizedBox。
+      final h = constraints.hasBoundedHeight && constraints.maxHeight.isFinite
+          ? constraints.maxHeight
+          : null;
+      final w = constraints.hasBoundedWidth && constraints.maxWidth.isFinite
+          ? constraints.maxWidth
+          : null;
+      return SizedBox(
+        width: w,
+        height: h,
+        child: Align(alignment: alignment, child: child),
+      );
+    },
+  );
+}
+
+/// 多行均分行高：分割线落在等分边界；每行在各自区域内垂直居中。
+/// 例如两行时，上半 / 下半各居中，中间一条分割线。
+Widget _archiveSplitLines(
+  List<Widget> children, {
+  Alignment alignment = Alignment.center,
+}) {
+  assert(children.length > 1);
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final h = constraints.hasBoundedHeight && constraints.maxHeight.isFinite
+          ? constraints.maxHeight
+          : null;
+      final w = constraints.hasBoundedWidth && constraints.maxWidth.isFinite
+          ? constraints.maxWidth
+          : null;
+      // 测高阶段高度无界：不能用 Expanded，改为按内容撑开。
+      if (h == null) {
+        return SizedBox(
+          width: w,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) const ColoredBox(color: _kBorder, child: SizedBox(height: 1)),
+                Align(alignment: alignment, child: children[i]),
+              ],
+            ],
+          ),
+        );
+      }
+      return SizedBox(
+        width: w,
+        height: h,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) const ColoredBox(color: _kBorder, child: SizedBox(height: 1)),
+              Expanded(
+                child: Align(alignment: alignment, child: children[i]),
+              ),
+            ],
+          ],
+        ),
+      );
+    },
   );
 }
 
@@ -1221,6 +1376,22 @@ List<String> _splitMulti(String? raw) {
       .where((e) => e.isNotEmpty)
       .toList();
   return parts.isEmpty ? const ['-'] : parts;
+}
+
+/// 关联主体行数（优先全称拆分，其次 entityCount）。
+int _archiveEntityLineCount(CustomerArchive row) {
+  final fromName = _splitMulti(row.entityName).where((e) => e != '-').length;
+  if (fromName > 0) return fromName;
+  final count = row.entityCount ?? 0;
+  return count < 1 ? 1 : count;
+}
+
+/// 多主体行显式加高；单主体返回 null 走表格默认高度。
+double? _archiveEntityRowHeight(CustomerArchive row) {
+  final n = _archiveEntityLineCount(row);
+  if (n <= 1) return null;
+  // 桌面默认约 48；每多一个主体增加一行文案 + 分割线余量。
+  return 48 + (n - 1) * 24;
 }
 
 /// `contactNames`：不同关联主体用 `;` 隔开。
@@ -1284,69 +1455,37 @@ Widget _contactLinkCell(
     if (names.isEmpty) {
       return const Text('-', softWrap: false, style: TextStyle(fontSize: 12));
     }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < names.length; i++) ...[
-          if (i > 0)
-            const Text('、', softWrap: false, style: plainStyle),
-          if (i == 0)
-            AppInkWell(
-              onPressed: () => onNamePressed(lineIndex, names[i]),
-              child: Text(names[i], softWrap: false, style: linkStyle),
-            )
-          else
-            Text(names[i], softWrap: false, style: plainStyle),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < names.length; i++) ...[
+            if (i > 0)
+              const Text('、', softWrap: false, style: plainStyle),
+            if (i == 0)
+              AppInkWell(
+                onPressed: () => onNamePressed(lineIndex, names[i]),
+                child: Text(names[i], softWrap: false, style: linkStyle),
+              )
+            else
+              Text(names[i], softWrap: false, style: plainStyle),
+          ],
         ],
-      ],
+      ),
     );
   }
 
   if (lines.length <= 1) {
-    return Align(
-      alignment: Alignment.center,
+    return _archiveCellAlign(
       child: lineChild(0, lines.isEmpty ? '-' : lines.first),
     );
   }
 
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      final maxH = constraints.maxHeight.isFinite
-          ? constraints.maxHeight
-          : 40.0;
-      final maxW = constraints.maxWidth.isFinite
-          ? constraints.maxWidth
-          : double.infinity;
-      return SizedBox(
-        width: maxW,
-        height: maxH,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.center,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxW),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < lines.length; i++) ...[
-                  if (i > 0)
-                    const ColoredBox(
-                      color: _kBorder,
-                      child: SizedBox(height: 1, width: double.infinity),
-                    ),
-                  Align(
-                    alignment: Alignment.center,
-                    child: lineChild(i, lines[i]),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      );
-    },
-  );
+  return _archiveSplitLines([
+    for (var i = 0; i < lines.length; i++) lineChild(i, lines[i]),
+  ]);
 }
 
 Future<void> _openListContact(
@@ -1424,7 +1563,7 @@ String? _findContactIdInDetail(
 }
 
 /// 关联主体等多值单元格：每个主体单独一行，多行之间加分割线。
-/// 行高与整表一致；内容超出时缩放装入，避免 RenderFlex overflow。
+/// 多行时按内容撑高表格行；单行仍可横向缩放避免溢出。
 Widget _multiLineCell(
   List<String> lines, {
   Alignment alignment = Alignment.center,
@@ -1437,57 +1576,31 @@ Widget _multiLineCell(
     fontWeight: linkStyle ? FontWeight.w600 : FontWeight.w400,
   );
   Widget lineChild(String line) {
-    if (onLinePressed != null && line != '-') {
-      return GestureDetector(
-        onTap: () => onLinePressed(line),
-        behavior: HitTestBehavior.opaque,
-        child: Text(line, softWrap: false, style: style),
-      );
-    }
-    return Text(line, softWrap: false, style: style);
+    final text = line.isEmpty ? '-' : line;
+    final child = onLinePressed != null && text != '-'
+        ? GestureDetector(
+            onTap: () => onLinePressed(text),
+            behavior: HitTestBehavior.opaque,
+            child: Text(text, softWrap: false, style: style),
+          )
+        : Text(text, softWrap: false, style: style);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: alignment,
+      child: child,
+    );
   }
 
   if (lines.length <= 1) {
-    return Align(alignment: alignment, child: lineChild(lines.first));
+    return _archiveCellAlign(
+      alignment: alignment,
+      child: lineChild(lines.isEmpty ? '-' : lines.first),
+    );
   }
 
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      final maxH = constraints.maxHeight.isFinite
-          ? constraints.maxHeight
-          : 40.0;
-      final maxW = constraints.maxWidth.isFinite
-          ? constraints.maxWidth
-          : double.infinity;
-      return SizedBox(
-        width: maxW,
-        height: maxH,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: alignment,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxW),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < lines.length; i++) ...[
-                  if (i > 0)
-                    const ColoredBox(
-                      color: _kBorder,
-                      child: SizedBox(height: 1, width: double.infinity),
-                    ),
-                  Align(
-                    alignment: alignment,
-                    child: lineChild(lines[i]),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      );
-    },
+  return _archiveSplitLines(
+    [for (final line in lines) lineChild(line)],
+    alignment: alignment,
   );
 }
 

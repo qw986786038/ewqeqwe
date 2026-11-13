@@ -108,8 +108,10 @@ class CustomerEntityDetailController extends LxController {
       final e = Map<String, dynamic>.from(rawItem);
       first ??= e;
       if (key.isEmpty) continue;
+      final id = _str(e['id']);
       final name = _str(e['fullName']);
-      if (name == key) return e;
+      final shortName = _str(e['shortName']);
+      if (id == key || name == key || shortName == key) return e;
       if (fallback == null && name.contains(key)) fallback = e;
     }
     // 仅传档案 id（无主体名）时回退第一条，供 4A 详情弹窗等场景。
@@ -277,10 +279,6 @@ class CustomerEntityDetailController extends LxController {
 
   String get regAddress => _entField('regAddress', 'registeredAddress');
   String get businessScope => _entField('businessScope', 'bizScope');
-  String get abnormalRecord =>
-      _entField('abnormalRecord', 'businessAbnormal', 'abnormal');
-  String get penaltyHistory =>
-      _entField('penaltyHistory', 'adminPenalty', 'punishmentHistory');
   String get remark => _entField('remark', 'remarks');
   String get attachmentText {
     final ossId = _str(enterprise.value?['licenseOssId']);

@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_x/lemon_x.dart';
 
+import '../../brand_detail/dialogs/agency_overview_dialog.dart';
 import '../dialogs/quick_create_brand_dialog.dart';
 import 'customer_brand_detail_controller.dart';
-import 'customer_contact_detail_page.dart';
-import 'customer_entity_detail_page.dart';
+import 'dialogs/contact_overview_dialog.dart';
 
 const _kPrimary = Color(0xFF1677FF);
 const _kPageBg = Color(0xFFF0F2F5);
@@ -64,13 +64,11 @@ class _Body extends StatelessWidget {
       AppToast.show(context: context, title: '缺少主体全称，无法打开详情');
       return;
     }
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CustomerEntityDetailPage(
-          customerId: c.customerId,
-          enterpriseName: name,
-        ),
-      ),
+    // 详情页内点击主体 → 弹窗（列表仍跳转主体详情页）。
+    showAgencyOverviewDialog(
+      context,
+      customerId: c.customerId,
+      enterpriseName: name,
     );
   }
 
@@ -80,11 +78,8 @@ class _Body extends StatelessWidget {
       AppToast.show(context: context, title: '缺少联系人 ID，无法打开详情');
       return;
     }
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CustomerContactDetailPage(contactId: id),
-      ),
-    );
+    // 详情页内点击联系人 → 弹窗。
+    showContactOverviewDialog(context, contactId: id);
   }
 
   @override

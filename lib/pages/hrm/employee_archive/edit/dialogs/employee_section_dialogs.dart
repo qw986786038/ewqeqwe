@@ -4,6 +4,7 @@ import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
+import '../../../../../models/dict_data.dart';
 import '../../../../../models/hrm_employee_profile.dart';
 import '../../employee_archive_controller.dart';
 import '../employee_edit_controller.dart';
@@ -38,7 +39,7 @@ const _tripOptions = <AppOption<String>>[
   AppOption(value: '0', label: '不可以'),
 ];
 
-const _degreeOptions = <AppOption<String>>[
+const _degreeFallbackOptions = <AppOption<String>>[
   AppOption(value: '大专', label: '大专'),
   AppOption(value: '本科', label: '本科'),
   AppOption(value: '硕士', label: '硕士'),
@@ -53,7 +54,7 @@ const _contractTypeOptions = <AppOption<String>>[
   AppOption(value: 'OTHER', label: '其他'),
 ];
 
-const _relationOptions = <AppOption<String>>[
+const _relationFallbackOptions = <AppOption<String>>[
   AppOption(value: '父母', label: '父母'),
   AppOption(value: '配偶', label: '配偶'),
   AppOption(value: '子女', label: '子女'),
@@ -700,7 +701,7 @@ class _ContactsDialogState extends State<_ContactsDialog> {
                     label: '与本人关系',
                     required: true,
                     hintText: '请选择',
-                    options: _withCurrent(_relationOptions, items[i].relation),
+                    options: _relationSelectOptions(c, items[i].relation),
                     initialValue: _blank(items[i].relation),
                     validator: _required,
                   ),
@@ -1022,7 +1023,7 @@ class _EducationsDialogState extends State<_EducationsDialog> {
                     name: 'degree_${items[i].localKey}',
                     label: '学历',
                     hintText: '请选择',
-                    options: _withCurrent(_degreeOptions, items[i].degree),
+                    options: _degreeSelectOptions(c, items[i].degree),
                     initialValue: _blank(items[i].degree),
                     clearable: true,
                   ),
@@ -1291,21 +1292,12 @@ class _SkillsDialogState extends State<_SkillsDialog> {
   }
 
   Future<void> _save(BuildContext context, EmployeeEditController c) async {
-    final backup = {...c.selectedSkillTagIds};
-    c.selectedSkillTagIds
-      ..clear()
-      ..addAll(_selected ?? const <int>{});
-    c.selectedSkillTagIds.refresh();
     try {
-      await c.save(c.collectValues());
+      await c.saveSkills(_selected ?? const <int>{});
       if (!context.mounted) return;
       AppToast.show(context: context, title: '保存成功');
       Navigator.of(context).pop();
     } catch (e) {
-      c.selectedSkillTagIds
-        ..clear()
-        ..addAll(backup);
-      c.selectedSkillTagIds.refresh();
       if (!context.mounted) return;
       AppToast.show(context: context, title: e.toString());
     }
@@ -1644,6 +1636,27 @@ List<AppOption<String>> _withCurrent(
   if (value == null || value.isEmpty) return base;
   if (base.any((e) => e.value == value)) return base;
   return [AppOption(value: value, label: value), ...base];
+}
+
+List<AppOption<String>> _relationSelectOptions(
+  EmployeeEditController c,
+  String? current,
+) {
+  final fromDict = c.dictOptions(
+    HrmDictTypes.contactRelation,
+    current: current,
+  );
+  if (fromDict.isNotEmpty) return fromDict;
+  return _withCurrent(_relationFallbackOptions, current);
+}
+
+List<AppOption<String>> _degreeSelectOptions(
+  EmployeeEditController c,
+  String? current,
+) {
+  final fromDict = c.dictOptions(HrmDictTypes.education, current: current);
+  if (fromDict.isNotEmpty) return fromDict;
+  return _withCurrent(_degreeFallbackOptions, current);
 }
 
 List<AppOption<String>> _statusOptions(String? current) {

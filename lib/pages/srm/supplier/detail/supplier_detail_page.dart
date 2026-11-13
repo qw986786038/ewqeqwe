@@ -754,8 +754,6 @@ class _BasicInfoCard extends StatelessWidget {
           _KV('企业性质', _dash(detail.enterpriseNature)),
           _KV('注册地址', _dash(detail.registeredAddress)),
           _KV('经营范围', _dash(detail.businessScope)),
-          _KV('经营异常记录', _dash(detail.abnormalRecord)),
-          _KV('行政处罚记录', _dash(detail.penaltyHistory)),
           _KV('备注', _dash(detail.remark)),
         ],
       ),

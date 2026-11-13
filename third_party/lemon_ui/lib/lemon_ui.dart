@@ -1,6 +1,8 @@
 /// Lemon UI 组件库。
 library;
 
+export 'src/foundation/hyper_image_colors.dart';
+
 export 'src/foundation/hyper_line.dart';
 export 'src/painting/hyper_dashed_border.dart';
 
@@ -302,6 +304,7 @@ export 'src/components/form/hyper_number_form_field.dart';
 export 'src/components/form/hyper_autocomplete_form_field.dart';
 export 'src/components/form/hyper_form_list_field.dart';
 export 'src/components/file_picker/hyper_file_picker.dart';
+export 'src/components/file_picker/hyper_file_dialog.dart';
 export 'src/components/form/hyper_file_form_field.dart';
 export 'src/components/form/hyper_cascader_form_field.dart';
 export 'src/components/form/hyper_tree_select_form_field.dart';
@@ -312,3 +315,78 @@ export 'src/components/table/hyper_table_theme.dart';
 export 'src/theme/size/components/hyper_table_size.dart';
 
 export 'src/components/form/hyper_color_picker_form_field.dart';
+
+export 'src/components/charts/hyper_bar_chart.dart';
+export 'src/components/charts/hyper_candlestick_chart.dart';
+export 'src/components/charts/hyper_chart_common.dart';
+export 'src/components/charts/hyper_chart_export.dart';
+export 'src/components/charts/hyper_chart_style.dart';
+export 'src/components/charts/hyper_chart_theme.dart';
+export 'src/components/charts/hyper_line_chart.dart';
+export 'src/components/charts/hyper_pie_chart.dart';
+export 'src/components/charts/hyper_radar_chart.dart';
+export 'src/components/charts/hyper_rank_bar_chart.dart';
+export 'src/components/charts/hyper_scatter_chart.dart';
+export 'src/theme/size/components/hyper_chart_size.dart';
+export 'src/components/charts/hyper_chart_legend.dart';
+export 'src/components/charts/hyper_chart_legend_controller.dart';
+export 'src/components/charts/hyper_chart_viewport.dart';
+
+export 'src/components/inline_edit/hyper_inline_edit.dart';
+export 'src/components/inline_edit/hyper_inline_edit_style.dart';
+export 'src/components/inline_edit/hyper_inline_edit_theme.dart';
+export 'src/components/rating/hyper_rating.dart';
+export 'src/components/rating/hyper_rating_style.dart';
+export 'src/components/rating/hyper_rating_theme.dart';
+export 'src/components/transfer/hyper_transfer.dart';
+export 'src/components/transfer/hyper_transfer_style.dart';
+export 'src/components/transfer/hyper_transfer_theme.dart';
+export 'src/components/resizable/hyper_resizable.dart';
+export 'src/components/resizable/hyper_resizable_style.dart';
+export 'src/components/resizable/hyper_resizable_theme.dart';
+export 'src/components/movable_dialog/hyper_movable_dialog.dart';
+export 'src/components/movable_dialog/hyper_movable_dialog_style.dart';
+export 'src/components/movable_dialog/hyper_movable_dialog_theme.dart';
+export 'src/components/navigation_bar/hyper_navigation_bar.dart';
+export 'src/components/navigation_bar/hyper_navigation_bar_style.dart';
+export 'src/components/navigation_bar/hyper_navigation_bar_theme.dart';
+export 'src/components/form/hyper_rating_form_field.dart';
+export 'src/components/form/hyper_transfer_form_field.dart';
+export 'src/theme/size/components/hyper_rating_size.dart';
+export 'src/theme/size/components/hyper_transfer_size.dart';
+export 'src/components/list_tile/hyper_list_group.dart';
+export 'src/theme/size/components/hyper_navigation_bar_size.dart';
+
+export 'src/components/popover/hyper_popover.dart';
+export 'src/components/popover/hyper_popover_style.dart';
+export 'src/components/popover/hyper_popover_theme.dart';
+
+export 'src/components/number_input/hyper_number_input_layout.dart';
+export 'src/components/number_input/hyper_number_input_theme.dart';
+export 'src/foundation/hyper_icons.dart';
+export 'src/components/overlay/hyper_overlay.dart';
+export 'src/components/form/hyper_validators.dart';
+
+export 'src/components/image/hyper_image.dart'
+    show
+        HyperImage,
+        HyperImageLoadingBuilder,
+        HyperImageErrorBuilder,
+        resolveHyperImageStyle;
+export 'src/components/image/hyper_image_style.dart';
+export 'src/components/image/hyper_image_theme.dart';
+export 'src/theme/size/components/hyper_image_size.dart';
+
+export 'src/components/image/hyper_image_preview.dart';
+export 'src/components/image/hyper_image_preview_style.dart';
+export 'src/components/image/hyper_image_preview_theme.dart';
+export 'src/theme/size/components/hyper_image_preview_size.dart';
+export 'src/components/image/hyper_image_editor.dart';
+export 'src/components/image/hyper_image_editor_style.dart';
+export 'src/components/image/hyper_image_editor_theme.dart';
+export 'src/theme/size/components/hyper_image_editor_size.dart';
+
+export 'src/motion/hyper_motion.dart';
+export 'src/motion/hyper_lift_style.dart';
+export 'src/motion/hyper_lift_theme.dart';
+export 'src/theme/size/components/hyper_lift_size.dart';

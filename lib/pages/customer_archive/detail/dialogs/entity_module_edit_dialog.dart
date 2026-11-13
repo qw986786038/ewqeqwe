@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_ui/lemon_ui.dart';
+import 'package:lemon_x/lemon_x.dart';
 
 import '../../../../services/customer_api.dart';
 import '../customer_entity_detail_controller.dart';
@@ -10,13 +11,22 @@ const _kPrimary = Color(0xFF1677FF);
 const _kMuted = Color(0xFF8C8C8C);
 const _kTitle = Color(0xFF1D2129);
 
-enum EntityEditModule { overview, basic, tax, contacts }
+enum EntityEditModule {
+  overview,
+  basic,
+  tax,
+  contacts,
+
+  /// 企业视角详情：只改当前匹配的经营主体，不动品牌档案头。
+  enterprise,
+}
 
 /// 各模块「编辑」：弹窗内仅展示该模块字段。
 Future<void> showEntityModuleEditDialog(
   BuildContext context, {
   required CustomerEntityDetailController controller,
   required EntityEditModule module,
+  VoidCallback? onSaved,
 }) {
   if (module == EntityEditModule.tax) {
     return showEntityTaxEditDialog(context, controller: controller);
@@ -26,6 +36,7 @@ Future<void> showEntityModuleEditDialog(
     EntityEditModule.basic => '编辑基本信息',
     EntityEditModule.tax => '编辑银税信息',
     EntityEditModule.contacts => '编辑联系人信息',
+    EntityEditModule.enterprise => '编辑企业信息',
   };
   final hostContext = context;
   return showHyperDialog<void>(
@@ -38,9 +49,113 @@ Future<void> showEntityModuleEditDialog(
         title: title,
         onClose: () => Navigator.of(dialogContext).pop(),
         hostContext: hostContext,
+        onSaved: onSaved,
       ),
     ),
   );
+}
+
+/// 企业视角详情「编辑」：按经营主体名/ID 定位后只 PUT 该条 enterprise。
+Future<void> showEnterprisePerspectiveEditDialog(
+  BuildContext context, {
+  required String customerId,
+  required String enterpriseName,
+  VoidCallback? onSaved,
+}) {
+  final id = customerId.trim();
+  final key = enterpriseName.trim();
+  if (id.isEmpty) {
+    showHyperToast(context, content: const Text('缺少客户档案 ID'));
+    return Future.value();
+  }
+  if (key.isEmpty) {
+    showHyperToast(context, content: const Text('缺少企业名称'));
+    return Future.value();
+  }
+  final hostContext = context;
+  return showHyperDialog<void>(
+    context: context,
+    builder: (dialogContext) => LxScope(
+      bindings: (container) {
+        container.put<CustomerEntityDetailController>(
+          () => CustomerEntityDetailController(
+            customerId: id,
+            enterpriseName: key,
+          ),
+        );
+      },
+      child: AppShadcnScope(
+        config: AppThemeConfig.standard(primary: _kPrimary),
+        child: _EnterprisePerspectiveEditShell(
+          onClose: () => Navigator.of(dialogContext).pop(),
+          hostContext: hostContext,
+          onSaved: onSaved,
+        ),
+      ),
+    ),
+  );
+}
+
+class _EnterprisePerspectiveEditShell extends StatelessWidget {
+  const _EnterprisePerspectiveEditShell({
+    required this.onClose,
+    required this.hostContext,
+    this.onSaved,
+  });
+
+  final VoidCallback onClose;
+  final BuildContext hostContext;
+  final VoidCallback? onSaved;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.lx.find<CustomerEntityDetailController>();
+    return Obx(() {
+      if (c.loading.value && c.raw.value == null) {
+        return HyperDialog(
+          title: const Text('编辑企业信息'),
+          onClose: onClose,
+          content: const SizedBox(
+            height: 180,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+        );
+      }
+      final err = c.errorMessage.value;
+      if (err != null && c.enterprise.value == null) {
+        return HyperDialog(
+          title: const Text('编辑企业信息'),
+          onClose: onClose,
+          content: SizedBox(
+            height: 180,
+            child: Center(
+              child: Text(err, style: const TextStyle(color: _kMuted)),
+            ),
+          ),
+        );
+      }
+      if (c.enterprise.value == null) {
+        return HyperDialog(
+          title: const Text('编辑企业信息'),
+          onClose: onClose,
+          content: const SizedBox(
+            height: 180,
+            child: Center(
+              child: Text('未找到对应经营主体', style: TextStyle(color: _kMuted)),
+            ),
+          ),
+        );
+      }
+      return _EntityModuleEditDialog(
+        controller: c,
+        module: EntityEditModule.enterprise,
+        title: '编辑企业信息',
+        onClose: onClose,
+        hostContext: hostContext,
+        onSaved: onSaved,
+      );
+    });
+  }
 }
 
 class _EntityModuleEditDialog extends StatefulWidget {
@@ -50,6 +165,7 @@ class _EntityModuleEditDialog extends StatefulWidget {
     required this.title,
     required this.onClose,
     required this.hostContext,
+    this.onSaved,
   });
 
   final CustomerEntityDetailController controller;
@@ -57,6 +173,7 @@ class _EntityModuleEditDialog extends StatefulWidget {
   final String title;
   final VoidCallback onClose;
   final BuildContext hostContext;
+  final VoidCallback? onSaved;
 
   @override
   State<_EntityModuleEditDialog> createState() =>
@@ -93,14 +210,17 @@ class _EntityModuleEditDialogState extends State<_EntityModuleEditDialog> {
           case EntityEditModule.contacts:
             // 联系人结构复杂，本弹窗仅改备注类占位；行内编辑走完整档案。
             break;
+          case EntityEditModule.enterprise:
+            _patchEnterprise(ent, values);
         }
         _replaceEnterprise(raw, ent);
         raw['id'] = _c.customerId;
-        await _api.updateCustomer(raw);
+        await  _api.updateCustomer(raw);
       });
       if (!ok || !mounted) return;
       widget.onClose();
       await _c.load();
+      widget.onSaved?.call();
       if (widget.hostContext.mounted) {
         AppToast.show(context: widget.hostContext, title: '保存成功');
       }
@@ -168,8 +288,29 @@ class _EntityModuleEditDialogState extends State<_EntityModuleEditDialog> {
     put('entityNature', values['entityNature']);
     put('regAddress', values['regAddress']);
     put('businessScope', values['businessScope']);
-    put('abnormalRecord', values['abnormalRecord']);
-    put('penaltyHistory', values['penaltyHistory']);
+    put('remark', values['remark']);
+  }
+
+  /// 企业视角：只写经营主体字段，不改父级品牌档案头。
+  void _patchEnterprise(Map<String, dynamic> ent, Map<String, dynamic> values) {
+    void put(String key, dynamic v) {
+      final s = v?.toString().trim();
+      if (s != null) ent[key] = s.isEmpty ? null : s;
+    }
+
+    put('fullName', values['fullName']);
+    put('shortName', values['shortName']);
+    put('relationType', values['relationType']);
+    put('entityNature', values['entityNature']);
+    put('city', values['city']);
+    put('address', values['address']);
+    put('creditCode', values['creditCode']);
+    put('legalPerson', values['legalPerson']);
+    put('registeredCapital', values['registeredCapital']);
+    put('establishDate', values['establishDate']);
+    put('licenseValidPeriod', values['licenseValidPeriod']);
+    put('regAddress', values['regAddress']);
+    put('businessScope', values['businessScope']);
     put('remark', values['remark']);
   }
 
@@ -393,18 +534,6 @@ class _EntityModuleEditDialogState extends State<_EntityModuleEditDialog> {
                 _c.businessScope == '-' ? '' : _c.businessScope,
           ),
           AppTextFormField(
-            name: 'abnormalRecord',
-            label: '经营异常记录',
-            initialValue:
-                _c.abnormalRecord == '-' ? '' : _c.abnormalRecord,
-          ),
-          AppTextFormField(
-            name: 'penaltyHistory',
-            label: '行政处罚历史',
-            initialValue:
-                _c.penaltyHistory == '-' ? '' : _c.penaltyHistory,
-          ),
-          AppTextFormField(
             name: 'remark',
             label: '备注',
             initialValue: _c.remark == '-' ? '' : _c.remark,
@@ -476,6 +605,88 @@ class _EntityModuleEditDialogState extends State<_EntityModuleEditDialog> {
           const Text(
             '联系人请在列表中点击「编辑」修改单条；此处保存将刷新详情。',
             style: TextStyle(fontSize: 13, color: _kMuted),
+          ),
+        ];
+      case EntityEditModule.enterprise:
+        return [
+          AppTextFormField(
+            name: 'fullName',
+            label: '企业全称',
+            initialValue:
+                _c.entityFullName == '-' ? '' : _c.entityFullName,
+          ),
+          AppTextFormField(
+            name: 'shortName',
+            label: '企业简称',
+            initialValue:
+                _c.entityShortName == '-' ? '' : _c.entityShortName,
+          ),
+          AppTextFormField(
+            name: 'relationType',
+            label: '关联关系',
+            initialValue: _c.entityRelationLabel == '-'
+                ? ''
+                : _c.entityRelationLabel,
+          ),
+          AppTextFormField(
+            name: 'entityNature',
+            label: '企业性质',
+            initialValue: _c.entityNatureLabel == '-'
+                ? ''
+                : _c.entityNatureLabel,
+          ),
+          AppTextFormField(
+            name: 'city',
+            label: '所在城市',
+            initialValue: _c.cityText == '-' ? '' : _c.cityText,
+          ),
+          AppTextFormField(
+            name: 'address',
+            label: '详细地址',
+            initialValue: _c.address == '-' ? '' : _c.address,
+          ),
+          AppTextFormField(
+            name: 'creditCode',
+            label: '统一社会信用代码',
+            initialValue: _c.creditCode == '-' ? '' : _c.creditCode,
+          ),
+          AppTextFormField(
+            name: 'legalPerson',
+            label: '法定代表人',
+            initialValue: _c.legalPerson == '-' ? '' : _c.legalPerson,
+          ),
+          AppTextFormField(
+            name: 'registeredCapital',
+            label: '注册资金',
+            initialValue: _c.regCapital == '-' ? '' : _c.regCapital,
+          ),
+          AppTextFormField(
+            name: 'establishDate',
+            label: '成立日期',
+            initialValue:
+                _c.establishDate == '-' ? '' : _c.establishDate,
+          ),
+          AppTextFormField(
+            name: 'licenseValidPeriod',
+            label: '营业执照有效期',
+            initialValue:
+                _c.licenseExpire == '-' ? '' : _c.licenseExpire,
+          ),
+          AppTextFormField(
+            name: 'regAddress',
+            label: '注册地址',
+            initialValue: _c.regAddress == '-' ? '' : _c.regAddress,
+          ),
+          AppTextAreaFormField(
+            name: 'businessScope',
+            label: '经营范围',
+            initialValue:
+                _c.businessScope == '-' ? '' : _c.businessScope,
+          ),
+          AppTextFormField(
+            name: 'remark',
+            label: '备注',
+            initialValue: _c.remark == '-' ? '' : _c.remark,
           ),
         ];
     }

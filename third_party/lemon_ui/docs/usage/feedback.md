@@ -49,6 +49,11 @@ HyperMenuButton(
 ~~~
 
 点击按钮展开菜单；variant/size/buttonStyle 管理按钮，menuStyle 管理菜单。
+`HyperMenuThemeData.buttonStyle` 统一配置菜单触发按钮；全局、局部主题及实例
+`buttonStyle` 按字段依次合并，实例显式字段优先。菜单默认选中文字使用主题主色，
+可通过 `HyperMenuStyle.selectedForegroundColor` 覆盖。
+菜单及共用选择浮层的默认外阴影采用 macOS 27 官方 UI Kit 的两层配方，
+来源版本、亮暗参数和 Flutter 单位映射见 [菜单默认外阴影](../macos-menu-shadow.md)。
 placement 设置首选方向，空间不足会调整；transitionBuilder 替换过渡。
 [源码](../../lib/src/components/menu/hyper_menu_button.dart)。
 
@@ -175,13 +180,15 @@ transitionBuilder 替换加载完成过渡。循环遵守减少动画和 TickerM
 全局 skeletonTheme、局部 HyperSkeletonTheme、实例 HyperSkeletonStyle。
 [源码](../../lib/src/components/skeleton/hyper_skeleton.dart)。
 
-## HyperEmptyState 空状态
+## HyperResult.empty 空状态
+
+空内容使用 `HyperResult.empty`，主题通过 `resultTheme.empty` 配置；详见[结果页](result.md)。
 
 ~~~dart
-HyperEmptyState(
+HyperResult.empty(
   title: '暂无文档',
   description: '创建第一个文档后会显示在这里',
-  icon: Icons.description_outlined,
+  style: const HyperResultStyle(icon: Icons.description_outlined),
   actions: [
     HyperButton.filled(label: const Text('新建文档'), onPressed: () {}),
   ],
@@ -192,9 +199,9 @@ title/description 是默认文字；titleWidget/descriptionWidget 替换文字�
 illustration 优先于 icon，showIllustration: false 隐藏插图；
 content 添加任意内容，actions 自动换行。父级决定可用范围。
 空状态不管理网络、加载、重试与路由。
-全局 emptyStateTheme、局部 HyperEmptyStateTheme、实例 HyperEmptyStateStyle。
-[源码](../../lib/src/components/empty_state/hyper_empty_state.dart) ·
-[Demo](../../example/lib/pages/feedback/hyper_empty_state_page.dart)。
+全局 resultTheme.empty、局部 HyperResultTheme、实例 HyperResultStyle。
+[源码](../../lib/src/components/result/hyper_result.dart) ·
+[Demo](../../example/lib/pages/feedback/hyper_result_empty_page.dart)。
 
 ## 通知卡片
 

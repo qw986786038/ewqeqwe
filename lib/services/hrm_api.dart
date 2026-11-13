@@ -1598,6 +1598,25 @@ class HrmApi {
     );
   }
 
+  /// 覆盖员工能力标签：`PUT /desktop/hrm/employees/{employeeId}/skills`。
+  /// Body：`[skillTagId, ...]`（`List<Long>`；空数组表示清空）。
+  Future<void> replaceEmployeeSkills({
+    required String employeeId,
+    required List<int> skillTagIds,
+  }) async {
+    final id = employeeId.trim();
+    if (id.isEmpty) throw HrmApiException('员工 id 不能为空');
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.hrmEmployeeSkills(id)}',
+    );
+    final payload = <int>[
+      for (final tagId in skillTagIds)
+        if (tagId > 0) tagId,
+    ];
+    final body = await _putJsonBody(uri, payload);
+    _ensureOk(body, '能力标签保存失败');
+  }
+
   /// 附件列表：`GET /desktop/hrm/employees/{employeeId}/files`。
   Future<List<HrmEmployeeFile>> fetchEmployeeFiles(String id) async {
     final employeeId = id.trim();
@@ -2018,6 +2037,11 @@ class HrmApi {
     return _sendJson('PUT', uri, payload);
   }
 
+  /// PUT 任意 JSON（对象或数组）；子资源全量覆盖接口用。
+  Future<Map<String, dynamic>> _putJsonBody(Uri uri, Object payload) async {
+    return _sendJson('PUT', uri, payload);
+  }
+
   Future<Map<String, dynamic>> _deleteJson(Uri uri) async {
     try {
       final response = await ApiHttp.delete(
@@ -2038,7 +2062,7 @@ class HrmApi {
   Future<Map<String, dynamic>> _sendJson(
     String method,
     Uri uri,
-    Map<String, dynamic> payload,
+    Object payload,
   ) async {
     try {
       final request = http.Request(method, uri)

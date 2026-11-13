@@ -1,3 +1,4 @@
+import '../../foundation/hyper_icons.dart';
 import 'hyper_select_focus.dart';
 import '../../foundation/hyper_fill.dart';
 import '../text_field/hyper_text_field_theme.dart';
@@ -391,7 +392,7 @@ class _HyperSelectFieldState<T> extends State<HyperSelectField<T>> {
               label: _label(value),
               enabled: _enabled && _labels[value]?.enabled != false,
               onDeleted: () => _remove(value),
-              deleteIcon: Icon(_resolved.clearIcon ?? Icons.close),
+              deleteIcon: Icon(_resolved.clearIcon ?? HyperIcons.x),
               style: chipStyle,
             ),
         ],
@@ -481,8 +482,8 @@ class _HyperSelectFieldState<T> extends State<HyperSelectField<T>> {
                 background:
                     HyperTextFieldTheme.of(context).style.background ??
                     HyperFill.color(HyperTheme.of(context).colors.surface),
-                height:
-                    HyperTextFieldTheme.of(context).style.height ??
+                height: HyperTextFieldTheme.of(context).style.height,
+                minimumHeight:
                     HyperTheme.sizesOf(context).select.minimumHeight ??
                     HyperTheme.sizesOf(context).textField.minimumHeight,
                 padding:
@@ -783,7 +784,7 @@ class _HyperSelectFieldState<T> extends State<HyperSelectField<T>> {
               ),
               SizedBox(width: dropdown.arrowSpacing),
               Icon(
-                _open ? Icons.expand_less : Icons.expand_more,
+                _open ? HyperIcons.chevronUp : HyperIcons.chevronDown,
                 size: widget.buttonStyle?.iconSize ?? dropdown.arrowSize,
                 color: _enabled
                     ? dropdown.arrowColor

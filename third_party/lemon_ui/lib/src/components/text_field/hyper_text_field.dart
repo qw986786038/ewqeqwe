@@ -1,21 +1,19 @@
+import 'hyper_text_field_resolver.dart';
 import '../../painting/hyper_box_decoration.dart';
 
-import 'dart:ui' show SemanticsValidationResult;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../foundation/hyper_control_state.dart';
-import '../../foundation/hyper_fill.dart';
 import '../../interaction/hyper_pressable.dart';
 import '../../theme/core/hyper_theme.dart';
 import '../card/hyper_card.dart';
-import '../card/hyper_card_style.dart';
 import '../menu/hyper_menu_surface.dart';
 import '../overlay/hyper_anchored_overlay.dart';
 import '../surface/hyper_material_surface.dart';
+import '../widget_group/hyper_widget_group_scope.dart';
 import 'hyper_text_field_style.dart';
-import 'hyper_text_field_theme.dart';
 import 'hyper_text_field_layout.dart';
 
 /// 原生文本编辑，错误以尾部图标和浮层呈现，不增加辅助文字行。
@@ -42,6 +40,7 @@ class HyperTextField extends StatefulWidget {
     this.maxLengthEnforcement,
     this.maxLines = 1,
     this.minLines,
+    this.expands = false,
     this.keyboardType,
     this.textInputAction,
     this.textCapitalization = TextCapitalization.none,
@@ -59,7 +58,8 @@ class HyperTextField extends StatefulWidget {
     this.semanticLabel,
     this.style,
     this.errorBuilder,
-  }) : assert(controller == null || initialValue == null),
+  }) : assert(!expands || (maxLines == null && minLines == null)),
+       assert(controller == null || initialValue == null),
        assert(maxLines == null || maxLines > 0),
        assert(minLines == null || minLines > 0),
        assert(maxLines == null || minLines == null || minLines <= maxLines),
@@ -85,6 +85,9 @@ class HyperTextField extends StatefulWidget {
       autocorrect,
       enableSuggestions;
   final int? maxLength, maxLines, minLines;
+
+  /// Fill a bounded parent height and scroll multiline text within the surface.
+  final bool expands;
   final MaxLengthEnforcement? maxLengthEnforcement;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
@@ -104,6 +107,8 @@ class HyperTextField extends StatefulWidget {
 }
 
 class _HyperTextFieldState extends State<HyperTextField> {
+  // Keep native editing state when a theme adds or removes a material wrapper.
+  final _nativeFieldKey = GlobalKey();
   TextEditingController? _ownedController;
   FocusNode? _ownedFocus;
   bool _hovered = false, _showPassword = false;
@@ -163,108 +168,132 @@ class _HyperTextFieldState extends State<HyperTextField> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = HyperTheme.of(context);
-    final metrics = HyperTheme.sizesOf(context).textField;
     final states = <HyperControlState>{
       if (_hovered && widget.enabled) HyperControlState.hovered,
       if (_focus.hasFocus) HyperControlState.focused,
       if (_hasError) HyperControlState.error,
       if (!widget.enabled) HyperControlState.disabled,
     };
-    final defaults = HyperTextFieldThemeData(
-      style: HyperTextFieldStyle(
-        background: HyperFill.color(theme.colors.surfaceMuted),
-        borderColor: theme.colors.outline,
-        borderWidth: 1,
-        borderRadius: BorderRadius.circular(metrics.radius),
-        minimumHeight: metrics.minimumHeight,
-        padding: EdgeInsets.symmetric(
-          horizontal: metrics.horizontalPadding,
-          vertical: metrics.verticalPadding,
-        ),
-        iconSize: metrics.iconSize,
-        actionWidth: metrics.actionWidth,
-        labelGap: metrics.labelGap,
-        textStyle: theme.textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w400,
-          height: theme.textTheme.labelLarge?.height ?? 1,
-        ),
-        hintStyle: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colors.textTertiary,
-          fontWeight: FontWeight.w400,
-        ),
-        labelStyle: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colors.textSecondary,
-        ),
-        counterStyle: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colors.textSecondary,
-        ),
-        foregroundColor: theme.colors.textPrimary,
-        iconColor: theme.colors.textSecondary,
-        cursorColor: theme.colors.primary,
-        cursorWidth: 2,
-        cursorRadius: const Radius.circular(1),
-        errorIcon: Icons.error_outline,
-        clearIcon: Icons.close,
-        showPasswordIcon: Icons.visibility_outlined,
-        hidePasswordIcon: Icons.visibility_off_outlined,
-        errorIconColor: theme.colors.error,
-        errorMaxWidth: metrics.errorMaxWidth,
-        errorTextStyle: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colors.textPrimary,
-        ),
-        errorPopupStyle: HyperCardStyle(
-          padding: EdgeInsets.all(metrics.horizontalPadding),
-        ),
-      ),
-      hovered: HyperTextFieldStyle(
-        background: HyperFill.color(
-          Color.alphaBlend(
-            theme.colors.stateLayer.withValues(
-              alpha: HyperTheme.sizesOf(context).button.hoverOverlayOpacity,
-            ),
-            theme.colors.surfaceMuted,
-          ),
-        ),
-      ),
-      focused: HyperTextFieldStyle(borderColor: theme.colors.primary),
-      error: HyperTextFieldStyle(
-        borderColor: theme.colors.error,
-        cursorColor: theme.colors.error,
-      ),
-      disabled: HyperTextFieldStyle(
-        foregroundColor: theme.colors.disabled,
-        iconColor: theme.colors.disabled,
-        borderColor: theme.colors.outline,
+    final resolved = resolveHyperTextFieldStyle(
+      context,
+      states: states,
+      style: widget.style,
+    );
+    final direction = widget.textDirection ?? Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final groupHeight = HyperWidgetGroupScope.maybeOf(context)?.itemHeight;
+    final borderVertical = _contentBorderVertical(context, resolved);
+    // Adaptive layout still needs a preferred height when an intrinsic parent
+    // measures it before layout. Measure typography without executing a build
+    // callback speculatively; ordinary layout continues to use real constraints.
+    return _TextFieldIntrinsicHeight(
+      measure: (width) {
+        final padding = resolved.padding!.resolve(direction);
+        final textPainter =
+            TextPainter(
+              text: TextSpan(
+                text: _controller.text.isEmpty ? ' ' : _controller.text,
+                style: resolved.textStyle,
+              ),
+              textDirection: direction,
+              textScaler: scaler,
+              strutStyle: resolveHyperTextFieldStrut(resolved.textStyle!),
+              maxLines: widget.maxLines,
+            )..layout(
+              maxWidth: (width - padding.horizontal).clamp(
+                0.0,
+                double.infinity,
+              ),
+            );
+        final contentHeight = textPainter.height
+            .clamp(
+              textPainter.preferredLineHeight * (widget.minLines ?? 1),
+              double.infinity,
+            )
+            .clamp(resolved.iconSize!, double.infinity);
+        textPainter.dispose();
+        var height =
+            resolved.height ??
+            groupHeight ??
+            (contentHeight + padding.vertical + borderVertical).clamp(
+              resolved.minimumHeight!,
+              double.infinity,
+            );
+        if (widget.label != null) {
+          final labelPainter = TextPainter(
+            text: TextSpan(text: widget.label, style: resolved.labelStyle),
+            textDirection: direction,
+            textScaler: scaler,
+          )..layout(maxWidth: width);
+          height += labelPainter.height + resolved.labelGap!;
+          labelPainter.dispose();
+        }
+        return height;
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) =>
+            _build(context, constraints, resolved),
       ),
     );
-    var resolved = defaults
-        .merge(HyperTextFieldTheme.of(context))
-        .resolve(states)
-        .merge(widget.style);
-    if (resolved.height != null) {
+  }
+
+  Widget _build(
+    BuildContext context,
+    BoxConstraints constraints,
+    HyperTextFieldStyle resolved,
+  ) {
+    final theme = HyperTheme.of(context);
+    final groupHeight = HyperWidgetGroupScope.maybeOf(context)?.itemHeight;
+    double? effectiveHeight = resolved.height ?? groupHeight;
+    final borderVertical = _contentBorderVertical(context, resolved);
+    if (!widget.expands &&
+        (effectiveHeight != null || constraints.hasBoundedHeight)) {
       final textPainter = TextPainter(
         text: TextSpan(text: ' ', style: resolved.textStyle),
         textDirection: widget.textDirection ?? Directionality.of(context),
         textScaler: MediaQuery.textScalerOf(context),
+        strutStyle: resolveHyperTextFieldStrut(resolved.textStyle!),
       );
       final lineHeight = textPainter.preferredLineHeight;
       textPainter.dispose();
       final contentHeight =
           lineHeight * (widget.minLines ?? widget.maxLines ?? 1);
+      final measuredContentHeight = contentHeight > resolved.iconSize!
+          ? contentHeight
+          : resolved.iconSize!;
+      final padding = resolved.padding!.resolve(Directionality.of(context));
+      if (constraints.hasBoundedHeight) {
+        var availableHeight = constraints.maxHeight;
+        if (widget.label != null) {
+          final labelPainter = TextPainter(
+            text: TextSpan(text: widget.label, style: resolved.labelStyle),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout(maxWidth: constraints.maxWidth);
+          availableHeight -= labelPainter.height + resolved.labelGap!;
+          labelPainter.dispose();
+        }
+        availableHeight = availableHeight.clamp(0.0, double.infinity);
+        final naturalHeight =
+            (measuredContentHeight + padding.vertical + borderVertical).clamp(
+              resolved.minimumHeight!,
+              double.infinity,
+            );
+        // A loose page constraint only caps content; it must not make an
+        // otherwise natural-height field fill the page.
+        if (effectiveHeight != null) {
+          effectiveHeight = effectiveHeight.clamp(0.0, availableHeight);
+        } else if (constraints.hasTightHeight ||
+            naturalHeight > availableHeight) {
+          effectiveHeight = availableHeight;
+        }
+      }
       final layout = resolveHyperTextFieldLayout(
-        height: resolved.height,
+        height: effectiveHeight,
         minimumHeight: resolved.minimumHeight!,
         padding: resolved.padding!.resolve(Directionality.of(context)),
-        contentHeight: contentHeight > resolved.iconSize!
-            ? contentHeight
-            : resolved.iconSize!,
-        borderWidth: resolved.border == null
-            ? resolved.borderWidth!
-            : resolved.border!.dimensions
-                      .resolve(Directionality.of(context))
-                      .vertical /
-                  2,
+        contentHeight: measuredContentHeight,
+        borderWidth: borderVertical / 2,
       );
       resolved = resolved.copyWith(
         minimumHeight: layout.minimumHeight,
@@ -354,6 +383,7 @@ class _HyperTextFieldState extends State<HyperTextField> {
           ),
         );
         Widget field = TextField(
+          key: _nativeFieldKey,
           controller: _controller,
           focusNode: _focus,
           enabled: widget.enabled,
@@ -361,6 +391,7 @@ class _HyperTextFieldState extends State<HyperTextField> {
           obscureText: widget.obscureText && !_showPassword,
           maxLines: widget.maxLines,
           minLines: widget.minLines,
+          expands: widget.expands,
           maxLength: widget.maxLength,
           maxLengthEnforcement: widget.maxLengthEnforcement,
           keyboardType: widget.keyboardType,
@@ -385,6 +416,7 @@ class _HyperTextFieldState extends State<HyperTextField> {
           onEditingComplete: widget.onEditingComplete,
           onTap: widget.onTap,
           style: resolved.textStyle?.copyWith(color: resolved.foregroundColor),
+          strutStyle: resolveHyperTextFieldStrut(resolved.textStyle!),
           cursorColor: resolved.cursorColor,
           cursorWidth: resolved.cursorWidth!,
           cursorRadius: resolved.cursorRadius,
@@ -419,6 +451,7 @@ class _HyperTextFieldState extends State<HyperTextField> {
               minWidth: resolved.actionWidth!,
               minHeight: resolveHyperTextFieldActionHeight(
                 minimumHeight: resolved.minimumHeight!,
+                borderVertical: _contentBorderVertical(context, resolved),
                 iconSize: resolved.iconSize!,
                 padding: resolved.padding!.resolve(Directionality.of(context)),
               ),
@@ -427,27 +460,22 @@ class _HyperTextFieldState extends State<HyperTextField> {
             suffixIconConstraints: const BoxConstraints(),
           ),
         );
-        field = ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight:
-                (resolved.minimumHeight! -
-                        (resolved.material == null
-                            ? (resolved.border?.dimensions
-                                      .resolve(Directionality.of(context))
-                                      .vertical ??
-                                  resolved.borderWidth! * 2)
-                            : 0))
-                    .clamp(0.0, double.infinity),
+        final contentMinimumHeight = (resolved.minimumHeight! - borderVertical)
+            .clamp(0.0, double.infinity);
+        final alignedField = Align(
+          alignment: Alignment(
+            0,
+            resolved.textAlignVertical?.y ?? (widget.maxLines == 1 ? 0 : -1),
           ),
-          child: Align(
-            alignment: Alignment(
-              0,
-              resolved.textAlignVertical?.y ?? (widget.maxLines == 1 ? 0 : -1),
-            ),
-            heightFactor: 1,
-            child: field,
-          ),
+          heightFactor: effectiveHeight == null || widget.expands ? 1 : null,
+          child: field,
         );
+        field = effectiveHeight != null && !widget.expands
+            ? SizedBox(height: contentMinimumHeight, child: alignedField)
+            : ConstrainedBox(
+                constraints: BoxConstraints(minHeight: contentMinimumHeight),
+                child: alignedField,
+              );
         Widget surface = AnimatedContainer(
           duration: duration,
           curve: curve,
@@ -492,6 +520,15 @@ class _HyperTextFieldState extends State<HyperTextField> {
             child: surface,
           );
         }
+        final semanticSurface = Semantics(
+          label: widget.semanticLabel ?? widget.label,
+          hint: _hasError ? widget.errorText : null,
+          liveRegion: _hasError,
+          validationResult: _hasError
+              ? SemanticsValidationResult.invalid
+              : SemanticsValidationResult.none,
+          child: surface,
+        );
         return MouseRegion(
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() => _hovered = false),
@@ -503,15 +540,10 @@ class _HyperTextFieldState extends State<HyperTextField> {
                 Text(widget.label!, style: resolved.labelStyle),
                 SizedBox(height: resolved.labelGap),
               ],
-              Semantics(
-                label: widget.semanticLabel ?? widget.label,
-                hint: _hasError ? widget.errorText : null,
-                liveRegion: _hasError,
-                validationResult: _hasError
-                    ? SemanticsValidationResult.invalid
-                    : SemanticsValidationResult.none,
-                child: surface,
-              ),
+              if (widget.expands)
+                Expanded(child: semanticSurface)
+              else
+                semanticSurface,
             ],
           ),
         );
@@ -532,6 +564,7 @@ class _HyperTextFieldState extends State<HyperTextField> {
     width: style.actionWidth,
     height: resolveHyperTextFieldActionHeight(
       minimumHeight: style.minimumHeight!,
+      borderVertical: _contentBorderVertical(context, style),
       iconSize: style.iconSize!,
       padding: style.padding!.resolve(Directionality.of(context)),
     ),
@@ -634,6 +667,7 @@ class _ErrorHintState extends State<_ErrorHint> {
       width: style.actionWidth,
       height: resolveHyperTextFieldActionHeight(
         minimumHeight: style.minimumHeight!,
+        borderVertical: _contentBorderVertical(context, style),
         iconSize: style.iconSize!,
         padding: style.padding!.resolve(Directionality.of(context)),
       ),
@@ -721,3 +755,48 @@ class _ErrorHintState extends State<_ErrorHint> {
         ),
       );
 }
+
+class _TextFieldIntrinsicHeight extends SingleChildRenderObjectWidget {
+  const _TextFieldIntrinsicHeight({
+    required this.measure,
+    required super.child,
+  });
+  final double Function(double width) measure;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderTextFieldIntrinsicHeight(measure);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderTextFieldIntrinsicHeight renderObject,
+  ) {
+    renderObject.measure = measure;
+  }
+}
+
+class _RenderTextFieldIntrinsicHeight extends RenderProxyBox {
+  _RenderTextFieldIntrinsicHeight(this._measure);
+  double Function(double width) _measure;
+  set measure(double Function(double width) value) {
+    if (identical(value, _measure)) return;
+    _measure = value;
+    markNeedsLayout();
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _measure(width);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _measure(width);
+}
+
+// Solid decoration borders consume layout space; material borders paint on top.
+double _contentBorderVertical(
+  BuildContext context,
+  HyperTextFieldStyle style,
+) => style.material != null
+    ? 0
+    : style.border?.dimensions.resolve(Directionality.of(context)).vertical ??
+          style.borderWidth! * 2;

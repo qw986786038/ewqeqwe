@@ -19,7 +19,10 @@ class OacEnterpriseOverview {
 /// 企业列表行（OacEnterpriseVo）
 class OacEnterprise {
   String? id;
+  /// 客户档案 / 详情聚合入口（`GET /desktop/oac/brand/{customerId}/detail`）。
+  String? customerId;
   String? tenantId;
+  String? enterpriseCode;
   String? name;
   String? shortName;
   String? industry;
@@ -32,17 +35,27 @@ class OacEnterprise {
   List<String>? tagList;
   String? clientTag;
   int? weight;
+  /// 覆盖评分（企业视角，不同于品牌健康度）。
+  int? coverageScore;
+  /// 覆盖等级，如 `B 级`。
+  String? coverageGrade;
   String? iconUrl;
   String? ownerNames;
   List<String>? ownerNameList;
   String? latestDynamic;
   int? orderCount;
   String? orderAmount;
+  /// 订单金额同比（%）。
+  String? orderAmountYoyRate;
+  /// 部门业绩占比（%）。
+  String? deptPerfShareRate;
   int? brandCount;
   String? brandNames;
   List<String>? brandNameList;
+  List<String>? brandIdList;
   int? agencyCount;
   String? agencyNames;
+  List<String>? agencyNameList;
   int? contactCount;
   String? latestOrderTime;
   String? status;

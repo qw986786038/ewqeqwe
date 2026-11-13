@@ -5,6 +5,7 @@ extension _ReviewWorkspace on _ThemeEditorState {
   Widget _reviewPanel() {
     final theme = _resolveTheme(_dark), s = theme.sizes.resolve(_device);
     final objects = switch (_component) {
+      'popoverReview' => const {'popover': '锚定面板'},
       'tooltipReview' => const {'tooltip': '文字提示'},
       'appBarReview' => const {'appBar': '应用顶栏'},
       'drawerReview' => const {'drawer': '抽屉'},
@@ -152,7 +153,12 @@ extension _ReviewWorkspace on _ThemeEditorState {
         decimal ? max : upper,
         (x) {
           set(x);
-          constrainEditorReviewDimensions(object, m, s);
+          constrainEditorReviewDimensions(
+            object,
+            m,
+            s,
+            viewport: editorPreviewSize(_device, landscape: _landscape),
+          );
         },
         () => set(null),
         value != null,
@@ -174,10 +180,22 @@ extension _ReviewWorkspace on _ThemeEditorState {
             'translucent': '半透明',
             'frostedGlass': '磨砂玻璃',
             'softLightGlass': '柔光玻璃',
+            'clearFrostedGlass': '高透毛玻璃',
           },
           (x) => _change(() => target.materialKind = x == 'inherit' ? null : x),
         ),
         if (target.materialKind != null && recipe?.usesBackdrop == true) ...[
+          _select(
+            '高光描边',
+            target.materialEdgeEnabled?.toString() ?? 'inherit',
+            const {'inherit': '按表面用途默认', 'true': '开启', 'false': '关闭'},
+            (value) => _change(
+              () => target.materialEdgeEnabled = value == 'inherit'
+                  ? null
+                  : value == 'true',
+            ),
+          ),
+
           n(
             '材质水平模糊',
             target.materialBlurX,
@@ -453,7 +471,7 @@ extension _ReviewWorkspace on _ThemeEditorState {
         n(
           '面板内边距',
           pm.horizontalPadding,
-          menu?.surfacePadding ?? s.menu.padding,
+          menu?.surfacePadding ?? s.menu.surfacePadding ?? s.menu.padding,
           0,
           s.minimumInteractiveDimension,
           (x) => pm.horizontalPadding = x,
@@ -553,6 +571,25 @@ extension _ReviewWorkspace on _ThemeEditorState {
                 : theme.colors.textPrimary,
           ),
         if (object == 'sidebar' && part == 'item') ...[
+          if (state == 'common') ...[
+            _heading('条目布局'),
+            n(
+              '条目最小高度',
+              m.itemHeight,
+              s.sidebar.itemHeight,
+              0,
+              editorLayoutInsetLimit,
+              (x) => m.itemHeight = x,
+            ),
+            n(
+              '条目左右内边距',
+              m.itemPadding,
+              s.sidebar.itemPadding ?? s.sidebar.itemSpacing,
+              0,
+              editorSidebarItemPaddingLimit(s.sidebar),
+              (x) => m.itemPadding = x,
+            ),
+          ],
           _heading('前置图标'),
           if (state == 'common')
             n(
@@ -562,6 +599,15 @@ extension _ReviewWorkspace on _ThemeEditorState {
               0,
               editorSidebarIconSizeLimit(s),
               (x) => _spec.reviews.sidebar.iconSize = x,
+            ),
+          if (state == 'common')
+            n(
+              '图标到文字间距',
+              m.itemSpacing,
+              s.sidebar.itemSpacing,
+              0,
+              editorSidebarContentSpacingLimit(s.sidebar),
+              (x) => m.itemSpacing = x,
             ),
           _color(
             '前置图标颜色',
@@ -590,6 +636,24 @@ extension _ReviewWorkspace on _ThemeEditorState {
               (x) => _spec.reviews.sidebar.collapsedRowGap = x,
             ),
           _heading('展开 / 收起图标'),
+          if (state == 'common') ...[
+            n(
+              '文字到尾部间距',
+              m.trailingSpacing,
+              s.sidebar.trailingSpacing ?? s.sidebar.itemSpacing,
+              0,
+              editorSidebarContentSpacingLimit(s.sidebar),
+              (x) => m.trailingSpacing = x,
+            ),
+            n(
+              '徽标到箭头间距',
+              m.badgeSpacing,
+              s.sidebar.badgeSpacing ?? s.sidebar.itemSpacing,
+              0,
+              editorSidebarContentSpacingLimit(s.sidebar),
+              (x) => m.badgeSpacing = x,
+            ),
+          ],
           if (state == 'common')
             n(
               '展开收起图标尺寸',
@@ -615,11 +679,19 @@ extension _ReviewWorkspace on _ThemeEditorState {
         ),
         ...material(sv),
         n(
-          '表面圆角',
+          object == 'tabBar' && _reviewVariant == 'segmented'
+              ? (item ? '内层标签圆角' : '外层底槽圆角')
+              : '表面圆角',
           sm.surfaceRadius,
           object == 'tabBar'
               ? (_reviewVariant == 'segmented'
-                    ? s.tabBar.segmentedRadius
+                    ? (item
+                          ? (s.tabBar.segmentedRadius -
+                                    s.tabBar.padding
+                                        .resolve(TextDirection.ltr)
+                                        .left)
+                                .clamp(0, double.infinity)
+                          : s.tabBar.segmentedRadius)
                     : s.tabBar.separatedRadius)
               : item
               ? extent / 2
@@ -782,6 +854,119 @@ extension _ReviewWorkspace on _ThemeEditorState {
 
     List<Widget> body() {
       switch (object) {
+        case 'popover':
+          final tipColors = theme.colors;
+          final native = theme.popoverTheme.style;
+          final insets =
+              native.surfaceStyle?.padding?.resolve(
+                Directionality.of(context),
+              ) ??
+              EdgeInsets.all(s.menu.padding);
+          return [
+            const HyperText('尺寸按当前设备保存，表面外观按亮暗保存。'),
+            _heading('布局'),
+            n(
+              '锚点间距',
+              m.spacing,
+              s.overlaySpacing,
+              0,
+              editorContentSpacingLimit,
+              (x) => m.spacing = x,
+            ),
+            _heading('文字'),
+            _color(
+              '文字颜色',
+              v.foregroundColor,
+              (x) => v.foregroundColor = x,
+              inheritedColor:
+                  theme.popoverTheme.style.surfaceStyle?.foregroundColor ??
+                  tipColors.textPrimary,
+            ),
+            _heading('浮层表面'),
+            ...material(v),
+            ...[
+              ('Left', '左'),
+              ('Top', '上'),
+              ('Right', '右'),
+              ('Bottom', '下'),
+            ].map(
+              (axis) => switch (axis.$1) {
+                'Left' => n(
+                  '内容内边距 · 左',
+                  m.paddingLeft,
+                  insets.left,
+                  0,
+                  editorContentSpacingLimit,
+                  (x) => m.paddingLeft = x,
+                ),
+                'Top' => n(
+                  '内容内边距 · 上',
+                  m.paddingTop,
+                  insets.top,
+                  0,
+                  editorContentSpacingLimit,
+                  (x) => m.paddingTop = x,
+                ),
+                'Right' => n(
+                  '内容内边距 · 右',
+                  m.paddingRight,
+                  insets.right,
+                  0,
+                  editorContentSpacingLimit,
+                  (x) => m.paddingRight = x,
+                ),
+                _ => n(
+                  '内容内边距 · 下',
+                  m.paddingBottom,
+                  insets.bottom,
+                  0,
+                  editorContentSpacingLimit,
+                  (x) => m.paddingBottom = x,
+                ),
+              },
+            ),
+            n(
+              '表面圆角',
+              m.surfaceRadius,
+              (native.surfaceStyle?.borderRadius
+                      ?.resolve(Directionality.of(context))
+                      .topLeft
+                      .x ??
+                  s.menu.surfaceRadius),
+              0,
+              editorSurfaceRadiusLimit,
+              (x) => m.surfaceRadius = x,
+            ),
+            _color(
+              '背景',
+              v.background,
+              (x) => v.background = x,
+              inheritedColor:
+                  theme.popoverTheme.style.surfaceStyle?.background?.color ??
+                  tipColors.surfaceElevated,
+            ),
+            n(
+              '边框宽度',
+              v.borderWidth,
+              0,
+              0,
+              editorLineThicknessLimit,
+              (x) => v.borderWidth = x,
+            ),
+            _color(
+              '边框颜色',
+              v.borderColor,
+              (x) => v.borderColor = x,
+              inheritedColor: tipColors.outline,
+            ),
+            ..._focusedShadowProperties(
+              maxExtent: s.controlHeightLg,
+              EditorComponent(),
+              stateTarget: v.shadow,
+              label: '浮层阴影',
+              description: '继承公共提示表面；空列表关闭阴影。',
+            ),
+          ];
         case 'tooltip':
           final tipColors =
               theme.tooltipTheme.appearance == HyperTooltipAppearance.theme
@@ -1041,27 +1226,71 @@ extension _ReviewWorkspace on _ThemeEditorState {
           ];
         case 'drawer':
           final native = theme.drawerTheme.style ?? const HyperDrawerStyle();
+          final viewport = editorPreviewSize(_device, landscape: _landscape);
+          final margin = (native.margin ?? s.drawer.margin).resolve(
+            Directionality.of(context),
+          );
+          final corners =
+              (native.surfaceStyle?.borderRadius ??
+                      s.drawer.borderRadius ??
+                      BorderRadiusDirectional.horizontal(
+                        end: Radius.circular(s.drawer.radius ?? 0),
+                      ))
+                  .resolve(Directionality.of(context));
+          final radiusLimit = editorDrawerRadiusLimit(
+            s.drawer.width,
+            viewport,
+            margin,
+          );
           return [
-            n(
-              '表面圆角',
-              m.radius,
-              s.drawer.radius ?? 0,
-              0,
-              editorRadiusLimit(s.drawer.width),
-              (x) => m.radius = x,
-            ),
             if (state == 'common') ...[
               _heading('布局'),
               n(
                 '展开宽度',
                 m.width,
                 s.drawer.width,
-                0,
-                editorContentWidthLimit,
+                1,
+                (viewport.width - margin.horizontal)
+                    .clamp(1, double.infinity)
+                    .floorToDouble(),
                 (x) => m.width = x,
                 decimal: false,
               ),
+              _heading('四边外边距'),
+              n(
+                '左外边距',
+                m.insetPaddingLeft,
+                margin.left,
+                0,
+                editorDrawerMarginLimit(s),
+                (x) => m.insetPaddingLeft = x,
+              ),
+              n(
+                '上外边距',
+                m.insetPaddingTop,
+                margin.top,
+                0,
+                editorDrawerMarginLimit(s),
+                (x) => m.insetPaddingTop = x,
+              ),
+              n(
+                '右外边距',
+                m.insetPaddingRight,
+                margin.right,
+                0,
+                editorDrawerMarginLimit(s),
+                (x) => m.insetPaddingRight = x,
+              ),
+              n(
+                '下外边距',
+                m.insetPaddingBottom,
+                margin.bottom,
+                0,
+                editorDrawerMarginLimit(s),
+                (x) => m.insetPaddingBottom = x,
+              ),
             ],
+            _heading('抽屉表面'),
             _color(
               '背景',
               v.backgroundColor,
@@ -1069,6 +1298,48 @@ extension _ReviewWorkspace on _ThemeEditorState {
               inheritedColor: native.backgroundColor ?? theme.colors.surface,
             ),
             ...material(v),
+            _heading('四角圆角'),
+            const HyperText('未覆盖时保留贴边圆角；分别设置后，两侧抽屉共用这组四角。'),
+            n(
+              '贴边默认圆角',
+              m.radius,
+              s.drawer.radius ?? 0,
+              0,
+              radiusLimit,
+              (x) => m.radius = x,
+            ),
+            n(
+              '左上圆角',
+              m.radiusTopLeft,
+              corners.topLeft.x,
+              0,
+              radiusLimit,
+              (x) => m.radiusTopLeft = x,
+            ),
+            n(
+              '右上圆角',
+              m.radiusTopRight,
+              corners.topRight.x,
+              0,
+              radiusLimit,
+              (x) => m.radiusTopRight = x,
+            ),
+            n(
+              '右下圆角',
+              m.radiusBottomRight,
+              corners.bottomRight.x,
+              0,
+              radiusLimit,
+              (x) => m.radiusBottomRight = x,
+            ),
+            n(
+              '左下圆角',
+              m.radiusBottomLeft,
+              corners.bottomLeft.x,
+              0,
+              radiusLimit,
+              (x) => m.radiusBottomLeft = x,
+            ),
             n(
               '边框宽度',
               v.borderWidth,
@@ -3689,24 +3960,6 @@ extension _ReviewWorkspace on _ThemeEditorState {
                 decimal: false,
               ),
               n(
-                '条目最小高度',
-                m.itemHeight,
-                s.sidebar.itemHeight,
-                0,
-                editorLayoutInsetLimit,
-                (x) => m.itemHeight = x,
-                decimal: false,
-              ),
-              n(
-                '条目间距',
-                m.itemSpacing,
-                s.sidebar.itemSpacing,
-                0,
-                editorContentSpacingLimit,
-                (x) => m.itemSpacing = x,
-                decimal: false,
-              ),
-              n(
                 '行间距',
                 m.rowGap,
                 s.sidebar.rowGap ?? 0,
@@ -3866,6 +4119,16 @@ extension _ReviewWorkspace on _ThemeEditorState {
                   0,
                   editorContentSpacingLimit,
                   (x) => m.itemSpacing = x,
+                  decimal: false,
+                ),
+                n(
+                  '标签水平内边距',
+                  m.itemHorizontalPadding,
+                  s.tabBar.itemHorizontalPadding ??
+                      s.controlPadding.horizontal / 2,
+                  0,
+                  editorContentSpacingLimit,
+                  (x) => m.itemHorizontalPadding = x,
                   decimal: false,
                 ),
                 n(
@@ -4885,6 +5148,21 @@ extension _ReviewWorkspace on _ThemeEditorState {
         case 'breadcrumb':
           final native = theme.breadcrumbTheme.style;
           return [
+            if (state == 'common') ...[
+              _heading('分隔符'),
+              _select(
+                '分隔符样式',
+                v.breadcrumbSeparator ?? 'inherit',
+                const {
+                  'inherit': '继承主题（默认斜线）',
+                  'slash': '斜线 /',
+                  'chevron': '小箭头 ›',
+                },
+                (x) => _change(
+                  () => v.breadcrumbSeparator = x == 'inherit' ? null : x,
+                ),
+              ),
+            ],
             _heading('文字'),
             if (state == 'common')
               n(
@@ -5252,6 +5530,11 @@ extension _ReviewWorkspace on _ThemeEditorState {
               _spec.reviews.sidebar.expandIconSize = null;
               _spec.reviews.sidebar.collapsedIconSize = null;
               _spec.reviews.sidebar.collapsedRowGap = null;
+              _spec.reviews.sidebar.itemHeight = null;
+              _spec.reviews.sidebar.itemPadding = null;
+              _spec.reviews.sidebar.itemSpacing = null;
+              _spec.reviews.sidebar.trailingSpacing = null;
+              _spec.reviews.sidebar.badgeSpacing = null;
             }
             _mode.reviews.reset(surfaceSlot);
             _spec.reviews.reset(surfaceSlot);

@@ -164,14 +164,21 @@ final class HyperBottomSheetStyle {
           dragHandleBorderRadius: other.dragHandleBorderRadius,
           dragHandlePadding: other.dragHandlePadding,
           barrierColor: other.barrierColor,
-          animationStyle:
-              animationStyle?.copyWith(
-                curve: other.animationStyle?.curve,
-                duration: other.animationStyle?.duration,
-                reverseCurve: other.animationStyle?.reverseCurve,
-                reverseDuration: other.animationStyle?.reverseDuration,
-              ) ??
-              other.animationStyle,
+          // 本机 Flutter 3.44 / Dart 3.12 尚无 AnimationStyle.merge；上游新 SDK 才有。
+          // 合并语义：other 非空字段覆盖当前值（等同 copyWith 覆盖）。
+          animationStyle: other.animationStyle == null
+              ? animationStyle
+              : AnimationStyle(
+                  curve: other.animationStyle!.curve ?? animationStyle?.curve,
+                  duration:
+                      other.animationStyle!.duration ?? animationStyle?.duration,
+                  reverseCurve:
+                      other.animationStyle!.reverseCurve ??
+                      animationStyle?.reverseCurve,
+                  reverseDuration:
+                      other.animationStyle!.reverseDuration ??
+                      animationStyle?.reverseDuration,
+                ),
           clipBehavior: other.clipBehavior,
         );
   static HyperBottomSheetStyle lerp(
@@ -254,7 +261,7 @@ final class HyperBottomSheetStyle {
           : t < .5
           ? a.closeIcon
           : b.closeIcon,
-      closeIconColor: a.closeIconColor == null || b.closeIconColor == null  
+      closeIconColor: a.closeIconColor == null || b.closeIconColor == null
           ? (t < .5 ? a.closeIconColor : b.closeIconColor)
           : Color.lerp(a.closeIconColor, b.closeIconColor, t),
       closeIconSize: a.closeIconSize == null || b.closeIconSize == null

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_x/lemon_x.dart';
 
+import '../../../../models/dict_data.dart';
 import '../../../../models/hrm_employee_profile.dart';
 import '../employee_archive_controller.dart';
 import 'dialogs/employee_section_dialogs.dart';
@@ -24,6 +25,10 @@ class EmployeeEditOverview extends StatelessWidget {
       color: const Color(0xFFF5F6F8),
       child: Obx(() {
         c.loadToken.value;
+        c.dicts.length;
+        c.hukouProvinceName.value;
+        c.hukouCityName.value;
+        c.hukouDistrictName.value;
         c.contacts.length;
         c.educations.length;
         c.workExperiences.length;
@@ -38,7 +43,12 @@ class EmployeeEditOverview extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: [
             _WorkInfoCard(profile: p),
-            _PersonalCard(profile: p),
+            _PersonalCard(
+              profile: p,
+              provinceName: c.hukouProvinceName.value,
+              cityName: c.hukouCityName.value,
+              districtName: c.hukouDistrictName.value,
+            ),
             const _ContactCard(),
             const _ContractCard(),
             const _EducationCard(),
@@ -182,9 +192,17 @@ class _WorkInfoCard extends StatelessWidget {
 }
 
 class _PersonalCard extends StatelessWidget {
-  const _PersonalCard({required this.profile});
+  const _PersonalCard({
+    required this.profile,
+    required this.provinceName,
+    required this.cityName,
+    required this.districtName,
+  });
 
   final HrmEmployeeProfile profile;
+  final String provinceName;
+  final String cityName;
+  final String districtName;
 
   @override
   Widget build(BuildContext context) {
@@ -212,9 +230,18 @@ class _PersonalCard extends StatelessWidget {
           ('公积金账号', _text(p.housingFundAccount)),
           ('证件号码', _text(p.idCardNo)),
           ('现居住地', _text(p.residence)),
-          ('户籍省', _text(p.province)),
-          ('户籍市', _text(p.city)),
-          ('户籍区', _text(p.district)),
+          (
+            '户籍省',
+            c.hukouText(name: provinceName, code: p.province),
+          ),
+          (
+            '户籍市',
+            c.hukouText(name: cityName, code: p.city),
+          ),
+          (
+            '户籍区',
+            c.hukouText(name: districtName, code: p.district),
+          ),
           ('户籍详细地址', _text(p.householdAddress)),
         ],
       ),
@@ -248,7 +275,13 @@ class _ContactCard extends StatelessWidget {
                     columns: 5,
                     items: [
                       ('姓名', _text(c.contacts[i].name)),
-                      ('与本人关系', _text(c.contacts[i].relation)),
+                      (
+                        '与本人关系',
+                        c.dictLabel(
+                          HrmDictTypes.contactRelation,
+                          c.contacts[i].relation,
+                        ),
+                      ),
                       ('联系电话', _text(c.contacts[i].phone)),
                     ],
                   ),
@@ -329,7 +362,13 @@ class _EducationCard extends StatelessWidget {
                       ('结束日期', _day(c.educations[i].endDate)),
                       ('毕业院校', _text(c.educations[i].school)),
                       ('专业', _text(c.educations[i].major)),
-                      ('学历', _text(c.educations[i].degree)),
+                      (
+                        '学历',
+                        c.dictLabel(
+                          HrmDictTypes.education,
+                          c.educations[i].degree,
+                        ),
+                      ),
                     ],
                   ),
                 ],

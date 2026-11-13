@@ -1,3 +1,4 @@
+import '../../foundation/hyper_surface_material.dart';
 import '../../painting/hyper_box_decoration.dart';
 
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ const _unchanged = Object();
 final class HyperContainerThemeData {
   HyperContainerThemeData({
     this.background,
+    this.material,
     this.border,
     this.borderRadius,
     this.padding,
@@ -23,11 +25,25 @@ final class HyperContainerThemeData {
     this.animationDuration,
     this.animationCurve,
     this.clipBehavior,
+    this.imageColorStrength,
     List<BoxShadow>? boxShadow,
-  }) : boxShadow = boxShadow == null ? null : List.unmodifiable(boxShadow);
+  }) : boxShadow = boxShadow == null ? null : List.unmodifiable(boxShadow) {
+    if (imageColorStrength != null &&
+        (!imageColorStrength!.isFinite ||
+            imageColorStrength! < 0 ||
+            imageColorStrength! > 1)) {
+      throw ArgumentError.value(imageColorStrength, 'imageColorStrength');
+    }
+  }
+
+  /// The image-gradient color blend strength; null uses the default of 0.2.
+  final double? imageColorStrength;
 
   /// 容器的 background 配置；null 表示未指定。
   final HyperFill? background;
+
+  /// 实例未指定时使用的独立表面材质。
+  final HyperSurfaceMaterial? material;
 
   /// 容器的 border 配置；null 表示未指定。
   final BoxBorder? border;
@@ -62,6 +78,7 @@ final class HyperContainerThemeData {
   /// 不传参数保留原值；显式传 null 恢复该字段的继承行为。
   HyperContainerThemeData copyWith({
     Object? background = _unchanged,
+    Object? material = _unchanged,
     Object? border = _unchanged,
     Object? borderRadius = _unchanged,
     Object? padding = _unchanged,
@@ -72,7 +89,14 @@ final class HyperContainerThemeData {
     Object? animationCurve = _unchanged,
     Object? clipBehavior = _unchanged,
     Object? boxShadow = _unchanged,
+    Object? imageColorStrength = _unchanged,
   }) => HyperContainerThemeData(
+    imageColorStrength: identical(imageColorStrength, _unchanged)
+        ? this.imageColorStrength
+        : imageColorStrength as double?,
+    material: identical(material, _unchanged)
+        ? this.material
+        : material as HyperSurfaceMaterial?,
     background: identical(background, _unchanged)
         ? this.background
         : background as HyperFill?,
@@ -110,7 +134,9 @@ final class HyperContainerThemeData {
   HyperContainerThemeData merge(HyperContainerThemeData? other) {
     if (other == null) return this;
     return HyperContainerThemeData(
+      imageColorStrength: other.imageColorStrength ?? imageColorStrength,
       background: other.background ?? background,
+      material: other.material ?? material,
       border: other.border ?? border,
       borderRadius: other.borderRadius ?? borderRadius,
       padding: other.padding ?? padding,
@@ -140,7 +166,13 @@ final class HyperContainerThemeData {
     }
 
     return HyperContainerThemeData(
+      imageColorStrength: blend(
+        a.imageColorStrength,
+        b.imageColorStrength,
+        (x, y, t) => x + (y - x) * t,
+      ),
       background: blend(a.background, b.background, HyperFill.lerp),
+      material: blend(a.material, b.material, HyperSurfaceMaterial.lerp),
       border: blend(
         a.border,
         b.border,
@@ -195,6 +227,8 @@ final class HyperContainerThemeData {
     return identical(this, other) ||
         other is HyperContainerThemeData &&
             other.background == background &&
+            other.imageColorStrength == imageColorStrength &&
+            other.material == material &&
             other.border == border &&
             other.borderRadius == borderRadius &&
             other.padding == padding &&
@@ -209,7 +243,9 @@ final class HyperContainerThemeData {
 
   @override
   int get hashCode => Object.hash(
+    imageColorStrength,
     background,
+    material,
     border,
     borderRadius,
     padding,

@@ -184,7 +184,7 @@ class HomeController extends LxController {
   final exporting = false.obs;
   final errorMessage = Rxn<String>();
 
-  /// 顶栏全局搜索（UI 占位，列表筛选用下方关键词）
+  /// 顶栏全局搜索（与筛选区 [keywordCtrl] 同步，按当前视角请求对应列表）
   final topSearchCtrl = TextEditingController();
 
   String get displayName {
@@ -576,12 +576,21 @@ class HomeController extends LxController {
   }
 
   Future<void> search() async {
+    topSearchCtrl.text = keywordCtrl.text;
+    pageNum.value = 1;
+    await Future.wait([loadOverview(), loadList(resetPage: false)]);
+  }
+
+  /// 顶栏全局搜索：写入筛选关键词后按当前视角刷新列表 / KPI。
+  Future<void> searchFromTopBar() async {
+    keywordCtrl.text = topSearchCtrl.text;
     pageNum.value = 1;
     await Future.wait([loadOverview(), loadList(resetPage: false)]);
   }
 
   Future<void> resetFilters() async {
     keywordCtrl.clear();
+    topSearchCtrl.clear();
     industry.value = null;
     city.value = null;
     tags.value = null;
@@ -728,15 +737,16 @@ class HomeController extends LxController {
     }
   }
 
-  /// 按当前筛选/排序导出 Excel（SpreadsheetML `.xls`，Excel 可直接打开）。
-  /// [columns]：可见数据列 `(id, title)`，不含序号/操作。
+  /// 导出 Excel。品牌 Tab：`POST /desktop/oac/brand/export`；
+  /// 其余 Tab 仍按可见列本地生成 SpreadsheetML `.xls`。
+  /// [columns]：可见数据列 `(id, title)`，不含序号/操作（品牌 Tab 可忽略）。
   Future<({Uint8List bytes, String fileName})> exportExcel({
     required List<(String id, String title)> columns,
   }) async {
     if (exporting.value) {
       throw BrandApiException('正在导出，请稍候');
     }
-    if (columns.isEmpty) {
+    if (!isBrandTab && columns.isEmpty) {
       throw BrandApiException('没有可导出的列，请先在列设置中勾选');
     }
     exporting.value = true;
@@ -801,25 +811,7 @@ class HomeController extends LxController {
         return (bytes: bytes, fileName: name);
       }
 
-      final page = await _api.fetchList(
-        _buildBrandQuery(page: 1, size: 5000),
-      );
-      final rows = page.rows;
-      if (rows.isEmpty) {
-        throw BrandApiException('暂无数据可导出');
-      }
-      final bytes = _buildSpreadsheetMl(
-        sheetName: '品牌主体汇总',
-        columns: columns,
-        rows: rows,
-        industryLabel: industryLabel,
-        tagLabel: tagLabel,
-      );
-      final stamp = DateTime.now();
-      final name =
-          '品牌主体汇总_${stamp.year}${_pad2(stamp.month)}${_pad2(stamp.day)}_'
-          '${_pad2(stamp.hour)}${_pad2(stamp.minute)}.xls';
-      return (bytes: bytes, fileName: name);
+      return await _api.export(_buildBrandQuery());
     } finally {
       exporting.value = false;
     }
@@ -835,68 +827,6 @@ String _xmlEscape(String raw) {
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&apos;');
-}
-
-String _exportCell(
-  OacBrand row,
-  String id, {
-  String Function(String?)? industryLabel,
-  String Function(String?)? tagLabel,
-}) {
-  switch (id) {
-    case 'weight':
-      return '${row.weight ?? ''}';
-    case 'icon':
-      return row.iconUrl?.trim() ?? '';
-    case 'name':
-      return row.name?.trim() ?? '';
-    case 'industry':
-      final labeled = industryLabel?.call(row.industry);
-      if (labeled != null && labeled != '-') return labeled;
-      return row.industry?.trim() ?? '';
-    case 'tags':
-      final rawList = <String>[];
-      final list = row.tagList;
-      if (list != null && list.isNotEmpty) {
-        for (final e in list) {
-          final v = e.trim();
-          if (v.isNotEmpty) rawList.add(v);
-        }
-      } else {
-        final raw = row.tags?.trim();
-        if (raw != null && raw.isNotEmpty) {
-          for (final part in raw.split(RegExp(r'[,，;；\s]+'))) {
-            final v = part.trim();
-            if (v.isNotEmpty) rawList.add(v);
-          }
-        }
-      }
-      if (tagLabel == null) return rawList.join('、');
-      return [
-        for (final t in rawList)
-          if (tagLabel(t).isNotEmpty) tagLabel(t),
-      ].join('、');
-    case 'spokesperson':
-      return row.spokesperson?.trim() ?? '';
-    case 'agency':
-      return '${row.agencyCount ?? ''}';
-    case 'enterprise':
-      return '${row.enterpriseCount ?? ''}';
-    case 'orders':
-      return '${row.orderCount ?? ''}';
-    case 'amount':
-      return row.orderAmount?.trim() ?? '';
-    case 'latestOrder':
-      return row.latestOrderTime?.trim() ?? '';
-    case 'contact':
-      return row.contactCount == null ? '' : '${row.contactCount}';
-    case 'sales':
-      return row.ownerNames?.trim() ?? '';
-    case 'dynamic':
-      return row.latestDynamic?.trim() ?? '';
-    default:
-      return '';
-  }
 }
 
 String _exportEnterpriseCell(
@@ -1161,74 +1091,6 @@ Uint8List _buildAgencySpreadsheetMl({
   return Uint8List.fromList(utf8.encode(sb.toString()));
 }
 
-Uint8List _buildSpreadsheetMl({
-  required String sheetName,
-  required List<(String id, String title)> columns,
-  required List<OacBrand> rows,
-  String Function(String?)? industryLabel,
-  String Function(String?)? tagLabel,
-}) {
-  final sb = StringBuffer()
-    ..writeln('<?xml version="1.0" encoding="UTF-8"?>')
-    ..writeln('<?mso-application progid="Excel.Sheet"?>')
-    ..writeln(
-      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
-      'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
-    )
-    ..writeln('<Worksheet ss:Name="${_xmlEscape(sheetName)}">')
-    ..writeln('<Table>');
-
-  sb.write('<Row>');
-  sb.write(
-    '<Cell><Data ss:Type="String">${_xmlEscape('序号')}</Data></Cell>',
-  );
-  for (final (_, title) in columns) {
-    sb.write(
-      '<Cell><Data ss:Type="String">${_xmlEscape(title)}</Data></Cell>',
-    );
-  }
-  sb.writeln('</Row>');
-
-  for (var i = 0; i < rows.length; i++) {
-    final row = rows[i];
-    sb.write('<Row>');
-    sb.write(
-      '<Cell><Data ss:Type="Number">${i + 1}</Data></Cell>',
-    );
-    for (final (id, _) in columns) {
-      final text = _exportCell(
-        row,
-        id,
-        industryLabel: industryLabel,
-        tagLabel: tagLabel,
-      );
-      final asNum = num.tryParse(text);
-      if (asNum != null &&
-          (id == 'weight' ||
-              id == 'agency' ||
-              id == 'enterprise' ||
-              id == 'orders' ||
-              id == 'amount' ||
-              id == 'contact')) {
-        sb.write(
-          '<Cell><Data ss:Type="Number">$asNum</Data></Cell>',
-        );
-      } else {
-        sb.write(
-          '<Cell><Data ss:Type="String">${_xmlEscape(text)}</Data></Cell>',
-        );
-      }
-    }
-    sb.writeln('</Row>');
-  }
-
-  sb
-    ..writeln('</Table>')
-    ..writeln('</Worksheet>')
-    ..writeln('</Workbook>');
-  return Uint8List.fromList(utf8.encode(sb.toString()));
-}
-
 String _exportPersonCell(OacPerson row, String id) {
   switch (id) {
     case 'icon':
@@ -1248,6 +1110,13 @@ String _exportPersonCell(OacPerson row, String id) {
     case 'address':
       return row.address?.trim() ?? '';
     case 'sameContact':
+      final names = row.sameEnterpriseContactNames;
+      if (names != null && names.isNotEmpty) {
+        return [
+          for (final e in names)
+            if (e.trim().isNotEmpty) e.trim(),
+        ].join('、');
+      }
       return '${row.sameEnterpriseContactCount ?? ''}';
     case 'brandCount':
       return '${row.brandCount ?? ''}';

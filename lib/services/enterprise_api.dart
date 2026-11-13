@@ -138,7 +138,10 @@ OacEnterpriseOverview _parseOverview(Map<String, dynamic> json) =>
 
 OacEnterprise _parseEnterprise(Map<String, dynamic> json) => OacEnterprise()
   ..id = _asString(json['id'])
+  ..customerId = _asString(json['customerId']) ??
+      _asString(json['customer_id'])
   ..tenantId = _asString(json['tenantId'])
+  ..enterpriseCode = _asString(json['enterpriseCode'])
   ..name = _asString(json['name']) ??
       _asString(json['fullName']) ??
       _asString(json['enterpriseName'])
@@ -154,6 +157,8 @@ OacEnterprise _parseEnterprise(Map<String, dynamic> json) => OacEnterprise()
       _splitCsv(_asString(json['tags']))
   ..clientTag = _asString(json['clientTag'])
   ..weight = _asInt(json['weight'])
+  ..coverageScore = _asInt(json['coverageScore'])
+  ..coverageGrade = _asString(json['coverageGrade'])
   ..iconUrl = _asString(json['iconUrl'])
   ..ownerNames = _asString(json['ownerNames'])
   ..ownerNameList = _asStringList(json['ownerNameList']) ??
@@ -161,15 +166,20 @@ OacEnterprise _parseEnterprise(Map<String, dynamic> json) => OacEnterprise()
   ..latestDynamic = _asString(json['latestDynamic'])
   ..orderCount = _asInt(json['orderCount'])
   ..orderAmount = _asString(json['orderAmount'])
+  ..orderAmountYoyRate = _asString(json['orderAmountYoyRate'])
+  ..deptPerfShareRate = _asString(json['deptPerfShareRate'])
   ..brandCount = _asInt(json['brandCount']) ??
       _asInt(json['relatedBrandCount'])
   ..brandNames = _asString(json['brandNames']) ??
       _asString(json['relatedBrandNames'])
   ..brandNameList = _asStringList(json['brandNameList']) ??
       _splitCsv(_asString(json['brandNames']))
+  ..brandIdList = _asStringList(json['brandIdList'])
   ..agencyCount = _asInt(json['agencyCount']) ??
       _asInt(json['relatedAgencyCount'])
   ..agencyNames = _asString(json['agencyNames'])
+  ..agencyNameList = _asStringList(json['agencyNameList']) ??
+      _splitCsv(_asString(json['agencyNames']))
   ..contactCount = _asInt(json['contactCount'])
   ..latestOrderTime = _asString(json['latestOrderTime'])
   ..status = _asString(json['status'])

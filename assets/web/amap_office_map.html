@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>办公地图</title>
+  __SECURITY_BLOCK__
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: system-ui, sans-serif;
+      background: #f5f7fa;
+    }
+    #container { height: 100%; width: 100%; }
+    #status {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      text-align: center;
+      color: #4E5969;
+      font-size: 14px;
+      background: #f5f7fa;
+      z-index: 2;
+    }
+    #status.show { display: flex; }
+    .pin {
+      width: 28px;
+      height: 28px;
+      margin-left: -14px;
+      margin-top: -28px;
+      position: relative;
+    }
+    .pin-head {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #EB2F96;
+      border: 3px solid #fff;
+      box-shadow: 0 2px 8px rgba(235, 47, 150, 0.45);
+      box-sizing: border-box;
+    }
+    .pin-tail {
+      width: 0;
+      height: 0;
+      margin: -3px auto 0;
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      border-top: 10px solid #EB2F96;
+      filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.12));
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <div id="status"></div>
+  <script src="https://webapi.amap.com/loader.js"></script>
+  <script>
+    (function () {
+      var key = '__AMAP_KEY__';
+      var address = __ADDRESS_JSON__;
+      var city = __CITY_JSON__;
+      var prefLng = __LNG_JSON__;
+      var prefLat = __LAT_JSON__;
+      var showZoom = __SHOW_ZOOM__;
+      var statusEl = document.getElementById('status');
+
+      function showStatus(text) {
+        statusEl.textContent = text || '';
+        if (text) statusEl.classList.add('show');
+        else statusEl.classList.remove('show');
+      }
+
+      function notifyFlutter(payload) {
+        try {
+          if (window.onOfficeMapReady && window.onOfficeMapReady.postMessage) {
+            window.onOfficeMapReady.postMessage(JSON.stringify(payload));
+          }
+        } catch (_) {}
+      }
+
+      function pinContent() {
+        return '<div class="pin"><div class="pin-head"></div><div class="pin-tail"></div></div>';
+      }
+
+      function placeMarker(AMap, map, lng, lat, formatted) {
+        var marker = new AMap.Marker({
+          position: [lng, lat],
+          content: pinContent(),
+          offset: new AMap.Pixel(0, 0),
+          anchor: 'bottom-center',
+          zIndex: 120
+        });
+        map.add(marker);
+        map.setZoomAndCenter(16, [lng, lat]);
+        showStatus('');
+        notifyFlutter({
+          ok: true,
+          lng: lng,
+          lat: lat,
+          address: address || '',
+          formatted: formatted || address || ''
+        });
+        setTimeout(function () {
+          try { map.resize(); } catch (_) {}
+        }, 120);
+      }
+
+      if (!key || key.indexOf('请替换') !== -1) {
+        showStatus('请配置有效的高德 webJsApiKey');
+        notifyFlutter({ ok: false, error: 'missing_key' });
+        return;
+      }
+      var hasPref =
+        typeof prefLng === 'number' &&
+        typeof prefLat === 'number' &&
+        isFinite(prefLng) &&
+        isFinite(prefLat);
+      if (!hasPref && !address) {
+        showStatus('暂无办公地址');
+        notifyFlutter({ ok: false, error: 'empty_address' });
+        return;
+      }
+      if (typeof AMapLoader === 'undefined') {
+        showStatus('无法加载高德 Loader，请检查网络');
+        notifyFlutter({ ok: false, error: 'loader' });
+        return;
+      }
+
+      showStatus('地图加载中…');
+
+      AMapLoader.load({
+        key: key,
+        version: '2.0',
+        plugins: ['AMap.Scale', 'AMap.ToolBar', 'AMap.Geocoder']
+      }).then(function (AMap) {
+        // 有坐标后再建地图，避免无结果时落在广州默认中心造成「假定位」。
+        function showMapAt(lng, lat, formatted) {
+          var map = new AMap.Map('container', {
+            zoom: 15,
+            center: [lng, lat],
+            viewMode: '2D'
+          });
+          map.addControl(new AMap.Scale({ position: 'LB' }));
+          if (showZoom) {
+            map.addControl(new AMap.ToolBar({ position: 'RB', liteStyle: true }));
+          }
+          placeMarker(AMap, map, lng, lat, formatted);
+        }
+
+        if (hasPref) {
+          showMapAt(prefLng, prefLat, address);
+          return;
+        }
+
+        showStatus('正在解析地址…');
+        var geocoder = new AMap.Geocoder({
+          city: city || '全国'
+        });
+        geocoder.getLocation(address, function (status, result) {
+          if (status !== 'complete' || !result || !result.geocodes || !result.geocodes.length) {
+            showStatus('未能定位该地址，请检查地址是否完整');
+            notifyFlutter({ ok: false, error: 'geocode_failed', address: address });
+            return;
+          }
+          var loc = result.geocodes[0].location;
+          showMapAt(
+            loc.lng,
+            loc.lat,
+            result.geocodes[0].formattedAddress || address
+          );
+        });
+      }).catch(function (err) {
+        showStatus('地图加载失败：' + (err && err.message ? err.message : String(err)));
+        notifyFlutter({ ok: false, error: 'map_load', message: String(err) });
+      });
+    })();
+  </script>
+</body>
+</html>

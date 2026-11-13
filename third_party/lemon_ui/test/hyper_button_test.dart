@@ -171,6 +171,34 @@ void main() {
     expect(text.style.fontSize, 16);
   });
 
+  testWidgets('30 高度桌面 small 按钮的中英文文字布局框仍垂直居中', (tester) async {
+    for (final label in ['全部', 'TOP10', '收起']) {
+      await tester.pumpWidget(
+        app(
+          HyperButton.outlined(
+            size: HyperButtonSizeVariant.small,
+            onPressed: () {},
+            style: HyperButtonStyle(
+              height: 30,
+              minimumSize: const Size(0, 30),
+              minimumTapTargetSize: Size.zero,
+            ),
+            child: Text(label),
+          ),
+          theme: HyperThemeData.light(
+            sizes: const HyperSizeThemeData(tablet: HyperSizeScheme.desktop()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final visual = tester.getRect(buttonVisual());
+      final text = tester.getRect(find.text(label));
+      expect(visual.height, 30);
+      expect(text.center.dy, closeTo(visual.center.dy, .01));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('40 高度手机按钮的文字完整并垂直居中', (tester) async {
     await tester.pumpWidget(
       app(
@@ -192,7 +220,13 @@ void main() {
 
     expect(visualRect.height, 40);
     expect(text.style?.fontSize, 16);
-    expect(text.style?.height, isNull);
+    expect(
+      text.style?.height,
+      HyperTheme.of(tester.element(find.byType(HyperButton)))
+          .textTheme
+          .labelLarge
+          ?.height,
+    );
     expect(textRect.top, greaterThanOrEqualTo(visualRect.top));
     expect(textRect.bottom, lessThanOrEqualTo(visualRect.bottom));
     expect(textRect.center.dy, closeTo(visualRect.center.dy, .01));

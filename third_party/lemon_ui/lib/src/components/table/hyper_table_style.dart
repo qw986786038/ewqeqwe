@@ -11,6 +11,10 @@ import '../../foundation/hyper_surface_material.dart';
 @immutable
 final class HyperTableStyle {
   const HyperTableStyle({
+    this.embedded,
+    this.hoverLift,
+    this.striped,
+    this.showColumnResizeHandles,
     this.editorStyle,
     this.footerPadding,
     this.scrollbarTheme,
@@ -32,6 +36,7 @@ final class HyperTableStyle {
     this.stripeBackground,
     this.hoverBackground,
     this.selectedBackground,
+    this.selectedForeground,
     this.editingBackground,
     this.borderColor,
     this.focusColor,
@@ -48,10 +53,23 @@ final class HyperTableStyle {
     this.curve,
   });
   final HyperTextFieldStyle? editorStyle;
+
+  /// Whether the table omits its outer border, corners and shadow for nesting.
+  ///
+  /// An omitted [material] uses a solid fill in this mode. Internal row and
+  /// footer separators retain [borderWidth]; surface settings are retained
+  /// for use when embedded mode is disabled.
+  final bool? embedded;
+  final bool? hoverLift, striped, showColumnResizeHandles;
   final EdgeInsetsGeometry? footerPadding;
   final ScrollbarThemeData? scrollbarTheme;
   final double? treeIndent;
+
+  /// Minimum body row height, before separators. Individual explicit heights
+  /// and content fitting never reduce this or the accessible text minimum.
   final double? rowHeight;
+
+  /// Minimum header height. Wrapped titles and system text scaling can grow it.
   final double? headerHeight;
   final double? columnWidth;
   final double? minimumColumnWidth;
@@ -68,6 +86,12 @@ final class HyperTableStyle {
   final Color? stripeBackground;
   final Color? hoverBackground;
   final Color? selectedBackground;
+
+  /// The selected row color for default cell text and built-in row icons.
+  ///
+  /// Null uses the shared contrast theme against the selected background.
+  /// Custom cell and editor builders retain their own styles.
+  final Color? selectedForeground;
   final Color? editingBackground;
   final Color? borderColor;
   final Color? focusColor;
@@ -87,6 +111,10 @@ final class HyperTableStyle {
   final Duration? liftDuration;
   final Curve? curve;
   HyperTableStyle copyWith({
+    bool? embedded,
+    bool? hoverLift,
+    bool? striped,
+    bool? showColumnResizeHandles,
     HyperTextFieldStyle? editorStyle,
     EdgeInsetsGeometry? footerPadding,
     ScrollbarThemeData? scrollbarTheme,
@@ -108,6 +136,7 @@ final class HyperTableStyle {
     Color? stripeBackground,
     Color? hoverBackground,
     Color? selectedBackground,
+    Color? selectedForeground,
     Color? editingBackground,
     Color? borderColor,
     Color? focusColor,
@@ -123,6 +152,11 @@ final class HyperTableStyle {
     Duration? liftDuration,
     Curve? curve,
   }) => HyperTableStyle(
+    embedded: embedded ?? this.embedded,
+    hoverLift: hoverLift ?? this.hoverLift,
+    striped: striped ?? this.striped,
+    showColumnResizeHandles:
+        showColumnResizeHandles ?? this.showColumnResizeHandles,
     editorStyle: editorStyle ?? this.editorStyle,
     footerPadding: footerPadding ?? this.footerPadding,
     scrollbarTheme: scrollbarTheme ?? this.scrollbarTheme,
@@ -144,6 +178,7 @@ final class HyperTableStyle {
     stripeBackground: stripeBackground ?? this.stripeBackground,
     hoverBackground: hoverBackground ?? this.hoverBackground,
     selectedBackground: selectedBackground ?? this.selectedBackground,
+    selectedForeground: selectedForeground ?? this.selectedForeground,
     editingBackground: editingBackground ?? this.editingBackground,
     borderColor: borderColor ?? this.borderColor,
     focusColor: focusColor ?? this.focusColor,
@@ -162,6 +197,11 @@ final class HyperTableStyle {
   HyperTableStyle merge(HyperTableStyle? other) => other == null
       ? this
       : HyperTableStyle(
+          embedded: other.embedded ?? embedded,
+          hoverLift: other.hoverLift ?? hoverLift,
+          striped: other.striped ?? striped,
+          showColumnResizeHandles:
+              other.showColumnResizeHandles ?? showColumnResizeHandles,
           footerPadding: other.footerPadding ?? footerPadding,
           editorStyle:
               editorStyle?.merge(other.editorStyle) ?? other.editorStyle,
@@ -186,6 +226,7 @@ final class HyperTableStyle {
           stripeBackground: other.stripeBackground ?? stripeBackground,
           hoverBackground: other.hoverBackground ?? hoverBackground,
           selectedBackground: other.selectedBackground ?? selectedBackground,
+          selectedForeground: other.selectedForeground ?? selectedForeground,
           editingBackground: other.editingBackground ?? editingBackground,
           borderColor: other.borderColor ?? borderColor,
           focusColor: other.focusColor ?? focusColor,
@@ -207,6 +248,12 @@ final class HyperTableStyle {
       : t == 1
       ? b
       : HyperTableStyle(
+          embedded: t < .5 ? a.embedded : b.embedded,
+          hoverLift: t < .5 ? a.hoverLift : b.hoverLift,
+          striped: t < .5 ? a.striped : b.striped,
+          showColumnResizeHandles: t < .5
+              ? a.showColumnResizeHandles
+              : b.showColumnResizeHandles,
           editorStyle: a.editorStyle == null || b.editorStyle == null
               ? (t < .5 ? a.editorStyle : b.editorStyle)
               : HyperTextFieldStyle.lerp(a.editorStyle!, b.editorStyle!, t),
@@ -263,6 +310,11 @@ final class HyperTableStyle {
             b.selectedBackground,
             t,
           ),
+          selectedForeground: Color.lerp(
+            a.selectedForeground,
+            b.selectedForeground,
+            t,
+          ),
           editingBackground: Color.lerp(
             a.editingBackground,
             b.editingBackground,
@@ -316,6 +368,10 @@ final class HyperTableStyle {
   @override
   bool operator ==(Object other) =>
       other is HyperTableStyle &&
+      embedded == other.embedded &&
+      hoverLift == other.hoverLift &&
+      striped == other.striped &&
+      showColumnResizeHandles == other.showColumnResizeHandles &&
       footerPadding == other.footerPadding &&
       editorStyle == other.editorStyle &&
       scrollbarTheme == other.scrollbarTheme &&
@@ -337,6 +393,7 @@ final class HyperTableStyle {
       stripeBackground == other.stripeBackground &&
       hoverBackground == other.hoverBackground &&
       selectedBackground == other.selectedBackground &&
+      selectedForeground == other.selectedForeground &&
       editingBackground == other.editingBackground &&
       borderColor == other.borderColor &&
       focusColor == other.focusColor &&
@@ -353,6 +410,10 @@ final class HyperTableStyle {
       curve == other.curve;
   @override
   int get hashCode => Object.hashAll([
+    embedded,
+    hoverLift,
+    striped,
+    showColumnResizeHandles,
     footerPadding,
     editorStyle,
     scrollbarTheme,
@@ -374,6 +435,7 @@ final class HyperTableStyle {
     stripeBackground,
     hoverBackground,
     selectedBackground,
+    selectedForeground,
     editingBackground,
     borderColor,
     focusColor,

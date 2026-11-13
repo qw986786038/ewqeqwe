@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_shadcn/shadcn.dart' show CheckboxState;
+import 'package:lemon_ui/lemon_ui.dart';
 import 'package:lemon_x/lemon_x.dart';
 
 import '../../../models/srm_purchase_order.dart';
@@ -70,8 +71,21 @@ class PurchaseOrderListPage extends StatelessWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+class _Body extends StatefulWidget {
   const _Body();
+
+  @override
+  State<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends State<_Body> {
+  final _pageScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _pageScroll.dispose();
+    super.dispose();
+  }
 
   void _goBack(BuildContext context) {
     try {
@@ -111,8 +125,11 @@ class _Body extends StatelessWidget {
     return ColoredBox(
       color: _kPageBg,
       child: Scrollbar(
+        controller: _pageScroll,
         thumbVisibility: true,
         child: ListView(
+          controller: _pageScroll,
+          primary: false,
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           children: [
             Container(
@@ -332,11 +349,13 @@ class _Body extends StatelessWidget {
                     final gridHeight =
                         (MediaQuery.sizeOf(context).height * 0.48)
                             .clamp(420.0, 620.0);
-                    final allColumns = <AppDataGridColumn<SrmPurchaseOrder>>[
-                      AppDataGridColumn(
+                    final allColumns = <HyperTableColumn<SrmPurchaseOrder>>[
+                      HyperTableColumn(
                         id: 'no',
                         title: '序号',
                         width: 56,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) {
                           final i = list.indexOf(row);
                           final page = c.pageNum.value;
@@ -346,67 +365,81 @@ class _Body extends StatelessWidget {
                         cellBuilder: (context, row, value) =>
                             _cellText('${value ?? '-'}'),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'orderNo',
                         title: '订单号',
                         width: 168,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.orderNo ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.orderNo)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'orderName',
                         title: '订单名称',
                         width: 140,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        sortable: false,
+                        reorderable: false,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) => row.orderName ?? '-',
                         cellBuilder: (context, row, _) => _cellText(
                           _dash(row.orderName),
                           alignment: Alignment.centerLeft,
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'orderTag',
                         title: '订单标签',
                         width: 110,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.orderTag ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.orderTag)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'brand',
                         title: '关联品牌',
                         width: 100,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.brandName ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.brandName)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'supplier',
                         title: '供应商全称',
                         width: 200,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        sortable: false,
+                        reorderable: false,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) => row.supplierFullName ?? '-',
                         cellBuilder: (context, row, _) => _cellText(
                           _dash(row.supplierFullName),
                           alignment: Alignment.centerLeft,
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'contractType',
                         title: '合同类型',
                         width: 110,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.contractType ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.contractType)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'orderAmount',
                         title: '订单金额(万元)',
                         width: 130,
-                        type: AppDataGridColumnType.number,
+                        sortable: false,
+                        reorderable: false,
+                        type: HyperTableColumnType.number,
                         value: (row) => row.orderAmount,
                         cellBuilder: (context, row, _) {
                           final v = row.orderAmount;
@@ -414,83 +447,102 @@ class _Body extends StatelessWidget {
                           return _cellText(v.toStringAsFixed(2));
                         },
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'orderTime',
                         title: '订单时间',
                         width: 120,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.orderTime ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.orderTime)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'settle',
                         title: '结算方式',
                         width: 110,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.settlementMethod ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.settlementMethod)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'invoice',
                         title: '发票类型',
                         width: 110,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.invoiceType ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.invoiceType)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'taxRate',
                         title: '税率',
                         width: 88,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.taxRate ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.taxRate)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'city',
                         title: '城市',
                         width: 100,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.city ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.city)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'contact',
                         title: '联系人',
                         width: 100,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.contactName ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.contactName)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'staff',
                         title: '我方对接人',
                         width: 120,
+                        sortable: false,
+                        reorderable: false,
                         value: (row) => row.staffName ?? '-',
                         cellBuilder: (context, row, _) =>
                             _cellText(_dash(row.staffName)),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'remark',
                         title: '备注',
                         width: 160,
-                        alignment: Alignment.centerLeft,
-                        titleAlignment: Alignment.centerLeft,
+                        sortable: false,
+                        reorderable: false,
+                        textAlign: TextAlign.left,
+                        headerTextAlign: TextAlign.left,
                         value: (row) => row.remark ?? '-',
                         cellBuilder: (context, row, _) => _cellText(
                           _dash(row.remark),
                           alignment: Alignment.centerLeft,
                         ),
                       ),
-                      AppDataGridColumn(
+                      HyperTableColumn(
                         id: 'actions',
                         title: '操作',
-                        width: 80,
-                        pin: AppDataGridColumnPin.end,
+                        width: 88,
+                        sortable: false,
+                        reorderable: false,
+                        resizable: false,
+                        pin: HyperTableColumnPin.end,
                         value: (_) => '',
                         cellBuilder: (context, row, _) => Center(
-                          child: AppButton.primary(
-                            size: AppButtonSize.xSmall,
+                          child: HyperButton.filled(
+                            size: HyperButtonSizeVariant.small,
                             onPressed: () async {
                               final id = row.id?.trim();
                               if (id == null || id.isEmpty) {
@@ -509,7 +561,7 @@ class _Body extends StatelessWidget {
                                 await c.refreshAll(clearSelected: true);
                               }
                             },
-                            child: const Text('查看'),
+                            label: const Text('查看'),
                           ),
                         ),
                       ),
@@ -1056,7 +1108,38 @@ List<int> _pageWindow(int current, int total) {
   return [for (var i = start; i <= end; i++) i];
 }
 
-/// 在 AppDataGrid 表头上叠一层可点筛选（上游暂无 titleBuilder，待回收）。
+Alignment _headerAlign(TextAlign align) => switch (align) {
+      TextAlign.left || TextAlign.start => Alignment.centerLeft,
+      TextAlign.right || TextAlign.end => Alignment.centerRight,
+      _ => Alignment.center,
+    };
+
+/// 叠层筛选用真实标题；表格本体清空 title，避免与叠层重影。
+HyperTableColumn<T> _hyperColumnBlankTitle<T>(HyperTableColumn<T> col) =>
+    HyperTableColumn<T>(
+      id: col.id,
+      title: '',
+      value: col.value,
+      type: col.type,
+      width: col.width,
+      minWidth: col.minWidth,
+      widthMode: col.widthMode,
+      flex: col.flex,
+      pin: col.pin,
+      hidden: col.hidden,
+      sortable: col.sortable,
+      resizable: col.resizable,
+      reorderable: col.reorderable,
+      editable: col.editable,
+      textAlign: col.textAlign,
+      headerTextAlign: col.headerTextAlign,
+      cellBuilder: col.cellBuilder,
+      editorBuilder: col.editorBuilder,
+      maxLines: col.maxLines,
+      headerMaxLines: 1,
+    );
+
+/// 在 HyperTable 表头上叠一层可点筛选（上游暂无 headerBuilder，待回收）。
 class _OrderGridWithColumnFilters extends StatefulWidget {
   const _OrderGridWithColumnFilters({
     required this.controller,
@@ -1068,7 +1151,7 @@ class _OrderGridWithColumnFilters extends StatefulWidget {
   final PurchaseOrderListController controller;
   final double height;
   final List<SrmPurchaseOrder> rows;
-  final List<AppDataGridColumn<SrmPurchaseOrder>> columns;
+  final List<HyperTableColumn<SrmPurchaseOrder>> columns;
 
   @override
   State<_OrderGridWithColumnFilters> createState() =>
@@ -1077,16 +1160,58 @@ class _OrderGridWithColumnFilters extends StatefulWidget {
 
 class _OrderGridWithColumnFiltersState
     extends State<_OrderGridWithColumnFilters> {
-  static const _kSelectionColW = 40.0;
-  static const _kHeaderH = 40.0;
+  /// 仅驱动表头偏移，避免 setState 重建 HyperTable 导致横向滚动被打断。
+  final _hScroll = ValueNotifier<double>(0);
 
-  double _hScroll = 0;
+  @override
+  void dispose() {
+    _hScroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
     final cols = widget.columns;
-    final bodyW = cols.fold<double>(0, (sum, col) => sum + col.width);
+    final theme = HyperTheme.of(context);
+    final tableSize = HyperTheme.sizesOf(context).table;
+    final selectionColW = tableSize.controlColumnWidth;
+    final headerH = tableSize.headerHeight;
+    final bodyW = cols.fold<double>(
+      0,
+      (sum, col) => sum + (col.width ?? tableSize.columnWidth),
+    );
+    final gridColumns = [
+      for (final col in cols) _hyperColumnBlankTitle(col),
+    ];
+
+    final headerRow = SizedBox(
+      width: bodyW,
+      height: headerH,
+      child: Row(
+        children: [
+          for (final col in cols)
+            if (_kFilterableColumnIds.contains(col.id))
+              Obx(() {
+                final selected = c.columnFilterOf(col.id);
+                return ColumnHeaderFilter(
+                  title: col.title,
+                  width: col.width ?? tableSize.columnWidth,
+                  options: c.columnOptionsOf(col.id),
+                  selected: selected,
+                  alignment: _headerAlign(col.headerTextAlign),
+                  onApply: (next) => c.applyColumnFilter(col.id, next),
+                );
+              })
+            else
+              ColumnHeaderLabel(
+                title: col.title,
+                width: col.width ?? tableSize.columnWidth,
+                alignment: _headerAlign(col.headerTextAlign),
+              ),
+        ],
+      ),
+    );
 
     return SizedBox(
       height: widget.height,
@@ -1096,106 +1221,57 @@ class _OrderGridWithColumnFiltersState
             onNotification: (n) {
               if (n.metrics.axis == Axis.horizontal) {
                 final next = n.metrics.pixels;
-                if ((next - _hScroll).abs() > 0.5) {
-                  setState(() => _hScroll = next);
+                if ((next - _hScroll.value).abs() > 0.5) {
+                  _hScroll.value = next;
                 }
               }
               return false;
             },
-            child: AppDataGrid<SrmPurchaseOrder>.local(
-              key: ValueKey(
-                'po-grid-${cols.map((e) => e.id).join(',')}-'
-                '${c.pageNum.value}-${c.pageSize.value}',
-              ),
-              height: widget.height,
-              rows: widget.rows,
-              rowKey: (row) => row.id ?? row.orderNo ?? '',
-              sortable: false,
-              selectionMode: AppDataGridSelectionMode.multiple,
-              onSelectionChanged: c.setSelectedRows,
-              showInternalDividers: true,
-              headerBackgroundColor: const Color(0xFFFAFAFA),
-              headerForegroundColor: Colors.transparent,
-              headerTextStyle: const TextStyle(
-                color: Colors.transparent,
-                fontSize: 1,
-              ),
-              textStyle: const TextStyle(fontSize: 12),
-              cellTextStyle: const TextStyle(fontSize: 12),
-              empty: const Center(
-                child: Text(
-                  '暂无采购订单',
-                  style: TextStyle(color: _kMuted),
+            child: Obx(() {
+              final selected = c.selectedIds.toSet();
+              return HyperTable<SrmPurchaseOrder>(
+                key: ValueKey(
+                  'po-grid-${cols.map((e) => e.id).join(',')}-'
+                  '${c.pageNum.value}-${c.pageSize.value}',
                 ),
-              ),
-              columns: [
-                for (final col in cols)
-                  AppDataGridColumn<SrmPurchaseOrder>(
-                    id: col.id,
-                    title: col.title,
-                    value: col.value,
-                    type: col.type,
-                    cellBuilder: col.cellBuilder,
-                    width: col.width,
-                    minWidth: col.minWidth,
-                    widthMode: col.widthMode,
-                    flex: col.flex,
-                    pin: col.pin,
-                    sortable: false,
-                    filterable: false,
-                    resizable: col.resizable,
-                    reorderable: false,
-                    editable: col.editable,
-                    hidden: col.hidden,
-                    alignment: col.alignment,
-                    titleAlignment: col.titleAlignment,
+                columns: gridColumns,
+                rows: widget.rows,
+                rowKey: (row) => row.id?.trim().isNotEmpty == true
+                    ? row.id!.trim()
+                    : (row.orderNo ?? ''),
+                dataMode: HyperTableDataMode.local,
+                showPagination: false,
+                selectionMode: HyperTableSelectionMode.multiple,
+                selectedKeys: selected,
+                onSelectionChanged: c.setSelectedKeys,
+                striped: true,
+                empty: const Center(
+                  child: Text(
+                    '暂无采购订单',
+                    style: TextStyle(color: _kMuted),
                   ),
-              ],
-            ),
+                ),
+              );
+            }),
           ),
           Positioned(
             top: 0,
-            left: _kSelectionColW,
+            left: selectionColW,
             right: 0,
-            height: _kHeaderH,
+            height: headerH,
             child: Material(
-              color: const Color(0xFFFAFAFA),
+              color: theme.colors.surfaceMuted,
               child: ClipRect(
                 child: OverflowBox(
                   alignment: Alignment.centerLeft,
                   minWidth: bodyW,
                   maxWidth: bodyW,
-                  child: Transform.translate(
-                    offset: Offset(-_hScroll, 0),
-                    child: SizedBox(
-                      width: bodyW,
-                      height: _kHeaderH,
-                      child: Row(
-                        children: [
-                          for (final col in cols)
-                            if (_kFilterableColumnIds.contains(col.id))
-                              Obx(() {
-                                final selected = c.columnFilterOf(col.id);
-                                return ColumnHeaderFilter(
-                                  title: col.title,
-                                  width: col.width,
-                                  options: c.columnOptionsOf(col.id),
-                                  selected: selected,
-                                  alignment:
-                                      col.titleAlignment ?? col.alignment,
-                                  onApply: (next) =>
-                                      c.applyColumnFilter(col.id, next),
-                                );
-                              })
-                            else
-                              ColumnHeaderLabel(
-                                title: col.title,
-                                width: col.width,
-                                alignment:
-                                    col.titleAlignment ?? col.alignment,
-                              ),
-                        ],
-                      ),
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _hScroll,
+                    child: headerRow,
+                    builder: (context, offset, child) => Transform.translate(
+                      offset: Offset(-offset, 0),
+                      child: child,
                     ),
                   ),
                 ),

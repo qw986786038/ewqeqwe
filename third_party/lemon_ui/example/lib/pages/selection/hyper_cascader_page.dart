@@ -44,7 +44,11 @@ class HyperCascaderPage extends StatefulWidget {
 }
 
 class _HyperCascaderPageState extends State<HyperCascaderPage> {
-  List<String> _region = [], _remote = [], _local = [], _instance = [];
+  List<String> _region = [],
+      _remote = [],
+      _local = [],
+      _instance = [],
+      _industry = [];
   bool _failNext = true;
   final _form = HyperFormController();
   String _submitted = '尚未提交';
@@ -92,6 +96,29 @@ class _HyperCascaderPageState extends State<HyperCascaderPage> {
           ),
         ),
         DemoSection(
+          title: '仅选择一级行业 · maxDepth: 1',
+          child: HyperCascader<String>(
+            nodes: const [
+              HyperCascaderNode(
+                value: 'technology',
+                label: '信息技术',
+                children: [HyperCascaderNode(value: 'software', label: '软件服务')],
+              ),
+              HyperCascaderNode(
+                value: 'manufacturing',
+                label: '制造业',
+                children: [
+                  HyperCascaderNode(value: 'equipment', label: '设备制造'),
+                ],
+              ),
+            ],
+            value: _industry,
+            maxDepth: 1,
+            placeholder: '选择一级行业',
+            onChanged: (value) => setState(() => _industry = value),
+          ),
+        ),
+        DemoSection(
           title: '异步分支 · 首次失败后重试（本地模拟）',
           child: HyperCascader<String>(
             nodes: const [
@@ -113,7 +140,7 @@ class _HyperCascaderPageState extends State<HyperCascaderPage> {
           ),
         ),
         DemoSection(
-          title: 'Form · 必填校验、提交和重置（本地演示）',
+          title: '表单 · 必填校验、提交和重置（本地演示）',
           child: HyperForm(
             controller: _form,
             child: HyperFormSection(

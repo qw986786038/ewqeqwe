@@ -199,15 +199,24 @@ class _EditorComponentNavigationState extends State<EditorComponentNavigation>
             child: Row(
               children: [
                 for (final item in items)
-                  HyperButton.ghost(
-                    onPressed: () => widget.onSelected(item.id),
-                    style: HyperButtonStyle(
-                      foregroundColor: widget.page == item.id
-                          ? HyperTheme.of(context).colors.primary
-                          : HyperTheme.of(context).colors.textPrimary,
+                  Semantics(
+                    selected: widget.page == item.id,
+                    child: HyperButton.ghost(
+                      onPressed: () => widget.onSelected(item.id),
+                      style: HyperButtonStyle(
+                        background: widget.page == item.id
+                            ? HyperFill.color(
+                                HyperTheme.of(context).colors.primaryContainer,
+                              )
+                            : const HyperFill.none(),
+                        foregroundColor: widget.page == item.id
+                            ? HyperTheme.of(context).colors.primary
+                            : HyperTheme.of(context).colors.textPrimary,
+                        contrastMode: HyperContrastMode.standard,
+                      ),
+                      icon: Icon(item.icon),
+                      label: Text(_label(item.id)),
                     ),
-                    icon: Icon(item.icon),
-                    label: Text(_label(item.id)),
                   ),
               ],
             ),
@@ -226,6 +235,8 @@ class _EditorComponentNavigationState extends State<EditorComponentNavigation>
 }
 
 String _label(String id) => switch (id) {
+  'hyper-table' => '数据表格',
+  'hyper-scrolling-text' => '滚动文字',
   'hyper-color-picker' => '颜色选择器',
   'hyper-fill' => '填充',
   'hyper-container-theme' => '容器主题',
@@ -258,7 +269,13 @@ String _label(String id) => switch (id) {
   'hyper-divider' => '分隔线',
   'hyper-line' => '线条样式',
   'hyper-list-tile' => '列表项',
-  'hyper-anchored-overlay' => '锚定浮层',
+  'hyper-anchored-overlay' => '锚定浮层基础设施',
+  'hyper-image-preview' => '图片预览',
+  'hyper-image-editor' => '图片编辑',
+  'hyper-image' => '图片',
+  'hyper-motion-lift' => '悬停上浮',
+  'hyper-image-gradient' => '图片取色渐变',
+  'hyper-popover' => '锚定面板',
   'hyper-pressable' => '按压交互',
   'hyper-text-field' => '文本输入',
   'hyper-select-fields' => '选择与自动补全',
@@ -290,5 +307,5 @@ String _label(String id) => switch (id) {
   'hyper-top-navigation' => '顶部导航',
   'hyper-menu' => '菜单',
   'hyper-tooltip' => '悬停提示',
-  _ => id,
+  _ => galleryItems.where((item) => item.id == id).firstOrNull?.title ?? id,
 };

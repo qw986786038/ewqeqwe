@@ -1,3 +1,4 @@
+import '../surface/hyper_material_edge.dart';
 import '../../painting/hyper_box_decoration.dart';
 
 import 'dart:async';
@@ -256,6 +257,16 @@ class _HyperButtonState extends State<HyperButton> {
     final groupScope = HyperWidgetGroupScope.maybeOf(context);
     final groupConnected = groupScope?.connected ?? false;
     final style = defaults
+        // Connected surfaces default to square, shadow-free items. Explicit
+        // theme/instance surfaces still own their radius and state shadows.
+        .merge(
+          groupConnected
+              ? HyperButtonStyle(
+                  borderRadius: BorderRadius.zero,
+                  boxShadow: const [],
+                )
+              : null,
+        )
         .merge(themedStyle)
         .merge(widget.style)
         .merge(
@@ -263,8 +274,6 @@ class _HyperButtonState extends State<HyperButton> {
               ? HyperButtonStyle(
                   border: BorderSide.none,
                   boxBorder: const Border(),
-                  borderRadius: BorderRadius.zero,
-                  boxShadow: const [],
                   margin: EdgeInsets.zero,
                   minimumTapTargetSize: Size.zero,
                   height: groupScope?.itemHeight,
@@ -278,7 +287,7 @@ class _HyperButtonState extends State<HyperButton> {
     final materialTheme = HyperMaterialTheme.of(context);
     final material = materialTheme.resolveMaterial(
       material: style.material,
-      semanticBackground: style.material == null ? style.background : null,
+      semanticBackground: style.background,
     );
     final explicitBackground =
         style.material == null && !(material?.usesBackdrop ?? false)
@@ -656,6 +665,12 @@ class _HyperButtonState extends State<HyperButton> {
             result,
           ],
         ),
+      );
+      result = HyperMaterialEdge(
+        material: material,
+        radius: radius,
+        hasBorderOverride: style.border != null || style.boxBorder != null,
+        child: result,
       );
       if (shadows != null && shadows.isNotEmpty) {
         result = DecoratedBox(

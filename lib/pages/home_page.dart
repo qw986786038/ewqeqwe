@@ -8,6 +8,7 @@ import '../bokong/http/bokong_auto_auth.dart';
 import '../bokong/main.dart';
 import '../models/oac_agency.dart';
 import '../models/oac_brand.dart';
+import '../models/oac_brand_detail.dart';
 import '../models/oac_enterprise.dart';
 import '../models/oac_person.dart';
 import '../services/auth_session.dart';
@@ -15,6 +16,8 @@ import 'brand_detail/brand_detail_page.dart';
 import 'brand_detail/dialogs/add_order_dialog.dart';
 import 'customer_archive/customer_archive_page.dart';
 import 'home_controller.dart';
+import 'person_detail/person_detail_page.dart';
+import 'office_map_dialog.dart';
 import 'location_breadcrumb.dart';
 import 'hrm/directory/enterprise_directory_page.dart';
 import 'hrm/hrm_placeholder_page.dart';
@@ -96,12 +99,39 @@ class _Body extends StatelessWidget {
     );
   }
 
-  void _openBrandDetail(BuildContext context, OacBrand row) {
-    final id = row.id?.trim();
-    if (id == null || id.isEmpty) return;
+  void _openOacDetail(
+    BuildContext context,
+    String? id, {
+    OacDetailPerspective perspective = OacDetailPerspective.brand,
+    OacEnterprise? enterpriseSeed,
+    OacAgency? agencySeed,
+  }) {
+    final trimmed = id?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => BrandDetailPage(brandId: id),
+        builder: (_) => BrandDetailPage(
+          brandId: trimmed,
+          perspective: perspective,
+          enterpriseSeed: enterpriseSeed,
+          agencySeed: agencySeed,
+        ),
+      ),
+    );
+  }
+
+  void _openPersonDetail(BuildContext context, OacPerson row) {
+    final id = row.id?.trim();
+    if (id == null || id.isEmpty) {
+      showHyperToast(context, content: const Text('缺少联系人 ID'));
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PersonDetailPage(
+          contactId: id,
+          personSeed: row,
+        ),
       ),
     );
   }
@@ -142,11 +172,21 @@ class _Body extends StatelessWidget {
                   if (c.sideMenu.value != 'orders') {
                     return const SizedBox.shrink();
                   }
+                  final searchHint = switch (c.entityTab.value) {
+                    1 => '全局搜索：企业',
+                    2 => '全局搜索：4A',
+                    3 => '全局搜索：联系人',
+                    _ => '全局搜索：品牌',
+                  };
                   return _TopBar(
                     searchController: c.topSearchCtrl,
+                    searchHint: searchHint,
+                    onSearch: c.searchFromTopBar,
                     displayName: c.displayName,
                     syncing: c.overviewLoading.value || c.listLoading.value,
+                    exporting: c.exporting.value,
                     onAddOrder: () => _openAddOrder(context),
+                    onExport: () => _exportBrands(context, c),
                     onSync: c.refreshAll,
                     onLogout: () => _logout(context),
                   );
@@ -199,9 +239,31 @@ class _Body extends StatelessWidget {
                     if (menu.startsWith('srm_')) {
                       return SrmPlaceholderPage(menuId: menu);
                     }
-                    return _OrderBrandPage(
-                      onOpenBrandDetail: (row) =>
-                          _openBrandDetail(context, row),
+                      return _OrderBrandPage(
+                      onOpenBrandDetail: (row) => _openOacDetail(
+                        context,
+                        row.id,
+                        perspective: OacDetailPerspective.brand,
+                      ),
+                      onOpenBrandById: (brandId) => _openOacDetail(
+                        context,
+                        brandId,
+                        perspective: OacDetailPerspective.brand,
+                      ),
+                      onOpenEnterpriseDetail: (row) => _openOacDetail(
+                        context,
+                        row.customerId ?? row.id,
+                        perspective: OacDetailPerspective.enterprise,
+                        enterpriseSeed: row,
+                      ),
+                      onOpenAgencyDetail: (row) => _openOacDetail(
+                        context,
+                        row.customerId ?? row.id,
+                        perspective: OacDetailPerspective.agency,
+                        agencySeed: row,
+                      ),
+                      onOpenPersonDetail: (row) =>
+                          _openPersonDetail(context, row),
                     );
                   }),
                 ),
@@ -238,11 +300,14 @@ Future<void> _exportBrands(BuildContext context, HomeController c) async {
             : c.isEnterpriseTab
                 ? '导出企业主体汇总'
                 : '导出品牌主体汇总';
+    final isXlsx = file.fileName.toLowerCase().endsWith('.xlsx');
     final savedUri = await FilePicker.saveFile(
       dialogTitle: dialogTitle,
       fileName: file.fileName,
       bytes: file.bytes,
-      mimeType: 'application/vnd.ms-excel',
+      mimeType: isXlsx
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'application/vnd.ms-excel',
       windowsOptions: const WindowsOptions(lockParentWindow: true),
     );
     if (!context.mounted) return;
@@ -256,9 +321,20 @@ Future<void> _exportBrands(BuildContext context, HomeController c) async {
 
 /// 订单管理 · 品牌列表（原首页主体）
 class _OrderBrandPage extends StatelessWidget {
-  const _OrderBrandPage({required this.onOpenBrandDetail});
+  const _OrderBrandPage({
+    required this.onOpenBrandDetail,
+    required this.onOpenBrandById,
+    required this.onOpenEnterpriseDetail,
+    required this.onOpenAgencyDetail,
+    required this.onOpenPersonDetail,
+  });
 
   final void Function(OacBrand row) onOpenBrandDetail;
+  /// 4A / 其它视角「关联品牌」按 brandId 打开品牌详情。
+  final void Function(String brandId) onOpenBrandById;
+  final void Function(OacEnterprise row) onOpenEnterpriseDetail;
+  final void Function(OacAgency row) onOpenAgencyDetail;
+  final void Function(OacPerson row) onOpenPersonDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -338,15 +414,11 @@ class _OrderBrandPage extends StatelessWidget {
                     if (tab == 3) {
                       final latestRaw = personO?.latestOrderTime?.trim();
                       final latestDate = _fmtDate(latestRaw);
-                      final latestTime = _fmtTimeOnly(latestRaw);
                       final latestName =
                           personO?.latestOrderContactName?.trim();
-                      final latestSub = [
-                        ?latestTime,
-                        if (latestName != null && latestName.isNotEmpty)
-                          latestName,
-                      ].join(' · ');
                       final avg = personO?.avgBrandPerContact?.trim();
+                      final intl4a =
+                          personO?.internationalAgencyContactCount ?? 0;
                       return Row(
                         children: [
                           Expanded(
@@ -354,28 +426,7 @@ class _OrderBrandPage extends StatelessWidget {
                               label: '联系人总数',
                               value: _fmtInt(personO?.contactCount),
                               subtitle:
-                                  '本周新增 ${personO?.contactNewThisWeek ?? 0} 人',
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _StatCard(
-                              label: '总订单数',
-                              value: _fmtInt(personO?.totalOrderCount),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _StatCard(
-                              label: '总订单金额',
-                              value: _fmtMoney(personO?.totalOrderAmount),
-                              valueStyle: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: _kAmount,
-                                height: 1.1,
-                              ),
-                              subtitle: '金额单位：万元',
+                                  '本周新增 ${personO?.contactNewThisWeek ?? 0}',
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -384,8 +435,8 @@ class _OrderBrandPage extends StatelessWidget {
                               label: '关联品牌数',
                               value: _fmtInt(personO?.relatedBrandCount),
                               subtitle: avg == null || avg.isEmpty
-                                  ? '人均关联品牌'
-                                  : '人均 $avg 个品牌',
+                                  ? '人均关联 —'
+                                  : '人均关联 $avg 个',
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -393,8 +444,24 @@ class _OrderBrandPage extends StatelessWidget {
                             child: _StatCard(
                               label: '关联企业数',
                               value: _fmtInt(personO?.relatedEnterpriseCount),
+                              subtitle: '合作企业',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '关联 4A 数',
+                              value: _fmtInt(personO?.relatedAgencyCount),
+                              subtitle: '国际4A对接 $intl4a',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              label: '累计参与订单',
+                              value: _fmtInt(personO?.totalOrderCount),
                               subtitle:
-                                  '关联4A ${personO?.relatedAgencyCount ?? 0} 家',
+                                  '金额合计 ${_fmtMoney(personO?.totalOrderAmount)}',
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -408,7 +475,9 @@ class _OrderBrandPage extends StatelessWidget {
                                 color: _kPrimary,
                                 height: 1.1,
                               ),
-                              subtitle: latestSub.isEmpty ? null : latestSub,
+                              subtitle: latestName == null || latestName.isEmpty
+                                  ? null
+                                  : '联系人：$latestName',
                             ),
                           ),
                         ],
@@ -1194,13 +1263,56 @@ class _OrderBrandPage extends StatelessWidget {
                         Obx(() {
                           final tab = c.entityTab.value;
                           if (tab == 3) {
-                            return _PersonDataGrid(controller: c);
+                            return _PersonDataGrid(
+                              controller: c,
+                              onOpenPersonDetail: onOpenPersonDetail,
+                              onOpenRelatedBrand: onOpenBrandById,
+                              onOpenEmployerDetail: (row) {
+                                final id = row.customerId?.trim() ??
+                                    row.enterpriseId?.trim() ??
+                                    '';
+                                if (id.isEmpty) {
+                                  showHyperToast(
+                                    context,
+                                    content: const Text('缺少客户 ID，无法打开详情'),
+                                  );
+                                  return;
+                                }
+                                final type = row.enterpriseType ?? '';
+                                final isAgency = type.contains('4A') ||
+                                    type.toLowerCase().contains('agency');
+                                // 列表点企业 → 详情页（非弹窗）。
+                                if (isAgency) {
+                                  onOpenAgencyDetail(
+                                    OacAgency()
+                                      ..id = id
+                                      ..customerId = id
+                                      ..name = row.latestEmployer,
+                                  );
+                                } else {
+                                  onOpenEnterpriseDetail(
+                                    OacEnterprise()
+                                      ..id = id
+                                      ..customerId = id
+                                      ..name = row.latestEmployer,
+                                  );
+                                }
+                              },
+                            );
                           }
                           if (tab == 2) {
-                            return _AgencyDataGrid(controller: c);
+                            return _AgencyDataGrid(
+                              controller: c,
+                              onOpenAgencyDetail: onOpenAgencyDetail,
+                              onOpenRelatedBrand: onOpenBrandById,
+                            );
                           }
                           if (tab == 1) {
-                            return _EnterpriseDataGrid(controller: c);
+                            return _EnterpriseDataGrid(
+                              controller: c,
+                              onOpenEnterpriseDetail: onOpenEnterpriseDetail,
+                              onOpenRelatedBrand: onOpenBrandById,
+                            );
                           }
                           final rows = c.brands.toList();
                           final loading = c.listLoading.value;
@@ -1773,9 +1885,15 @@ class _OrderBrandPage extends StatelessWidget {
 
 /// 企业视角表格（同页私有；与品牌表格列差异：名称 / 城市 / 关联品牌）。
 class _EnterpriseDataGrid extends StatelessWidget {
-  const _EnterpriseDataGrid({required this.controller});
+  const _EnterpriseDataGrid({
+    required this.controller,
+    required this.onOpenEnterpriseDetail,
+    required this.onOpenRelatedBrand,
+  });
 
   final HomeController controller;
+  final void Function(OacEnterprise row) onOpenEnterpriseDetail;
+  final void Function(String brandId) onOpenRelatedBrand;
 
   @override
   Widget build(BuildContext context) {
@@ -1879,17 +1997,20 @@ class _EnterpriseDataGrid extends StatelessWidget {
         value: (row) => row.name ?? '',
         cellBuilder: (context, row, _) {
           final name = row.name?.trim();
-          return FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              name?.isNotEmpty == true ? name! : '-',
-              style: const TextStyle(
-                color: _kPrimary,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+          return _hInk(
+            onPressed: () => onOpenEnterpriseDetail(row),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                name?.isNotEmpty == true ? name! : '-',
+                style: const TextStyle(
+                  color: _kPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+                softWrap: false,
               ),
-              softWrap: false,
             ),
           );
         },
@@ -1978,6 +2099,47 @@ class _EnterpriseDataGrid extends StatelessWidget {
         alignment: Alignment.centerLeft,
         titleAlignment: Alignment.centerLeft,
         value: (row) => _enterpriseBrandNames(row),
+        cellBuilder: (context, row, _) {
+          final pairs = _enterpriseBrandPairs(row);
+          if (pairs.isEmpty) {
+            return const Text('-', style: TextStyle(fontSize: 12));
+          }
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < pairs.length; i++) ...[
+                    if (i > 0)
+                      const Text(
+                        '、',
+                        style: TextStyle(fontSize: 12, color: _kPrimary),
+                      ),
+                    _hInk(
+                      onPressed: pairs[i].id == null
+                          ? () => showHyperToast(
+                                context,
+                                content: const Text('缺少品牌 ID，无法打开详情'),
+                              )
+                          : () => onOpenRelatedBrand(pairs[i].id!),
+                      child: Text(
+                        pairs[i].name,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _kPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        softWrap: false,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
       AppDataGridColumn(
         id: 'agency',
@@ -2141,9 +2303,15 @@ class _EnterpriseDataGrid extends StatelessWidget {
 
 /// 4A 公司视角表格。
 class _AgencyDataGrid extends StatelessWidget {
-  const _AgencyDataGrid({required this.controller});
+  const _AgencyDataGrid({
+    required this.controller,
+    required this.onOpenAgencyDetail,
+    required this.onOpenRelatedBrand,
+  });
 
   final HomeController controller;
+  final void Function(OacAgency row) onOpenAgencyDetail;
+  final void Function(String brandId) onOpenRelatedBrand;
 
   @override
   Widget build(BuildContext context) {
@@ -2247,17 +2415,20 @@ class _AgencyDataGrid extends StatelessWidget {
           value: (row) => row.name ?? '',
           cellBuilder: (context, row, _) {
             final name = row.name?.trim();
-            return FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                name?.isNotEmpty == true ? name! : '-',
-                style: const TextStyle(
-                  color: _kPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
+            return _hInk(
+              onPressed: () => onOpenAgencyDetail(row),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  name?.isNotEmpty == true ? name! : '-',
+                  style: const TextStyle(
+                    color: _kPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                  softWrap: false,
                 ),
-                softWrap: false,
               ),
             );
           },
@@ -2347,19 +2518,44 @@ class _AgencyDataGrid extends StatelessWidget {
           titleAlignment: Alignment.centerLeft,
           value: (row) => _agencyBrandNames(row),
           cellBuilder: (context, row, _) {
-            final text = _agencyBrandNames(row);
-            if (text == '-') {
+            final pairs = _agencyBrandPairs(row);
+            if (pairs.isEmpty) {
               return const Text('-', style: TextStyle(fontSize: 12));
             }
-            return Text(
-              text,
-              style: const TextStyle(
-                fontSize: 12,
-                color: _kPrimary,
-                fontWeight: FontWeight.w500,
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < pairs.length; i++) ...[
+                      if (i > 0)
+                        const Text(
+                          '、',
+                          style: TextStyle(fontSize: 12, color: _kPrimary),
+                        ),
+                      _hInk(
+                        onPressed: pairs[i].id == null
+                            ? () => showHyperToast(
+                                  context,
+                                  content: const Text('缺少品牌 ID，无法打开详情'),
+                                )
+                            : () => onOpenRelatedBrand(pairs[i].id!),
+                        child: Text(
+                          pairs[i].name,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _kPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          softWrap: false,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
             );
           },
         ),
@@ -2501,9 +2697,17 @@ class _AgencyDataGrid extends StatelessWidget {
 
 /// 人视角表格（同页私有）。
 class _PersonDataGrid extends StatelessWidget {
-  const _PersonDataGrid({required this.controller});
+  const _PersonDataGrid({
+    required this.controller,
+    required this.onOpenPersonDetail,
+    required this.onOpenRelatedBrand,
+    required this.onOpenEmployerDetail,
+  });
 
   final HomeController controller;
+  final void Function(OacPerson row) onOpenPersonDetail;
+  final void Function(String brandId) onOpenRelatedBrand;
+  final void Function(OacPerson row) onOpenEmployerDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -2578,31 +2782,34 @@ class _PersonDataGrid extends StatelessWidget {
           cellBuilder: (context, row, _) {
             final name = row.name?.trim();
             final title = row.title?.trim();
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name?.isNotEmpty == true ? name! : '-',
-                  style: const TextStyle(
-                    color: _kPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (title != null && title.isNotEmpty)
+            return _hInk(
+              onPressed: () => onOpenPersonDetail(row),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    title,
+                    name?.isNotEmpty == true ? name! : '-',
                     style: const TextStyle(
-                      color: _kMuted,
-                      fontSize: 11,
+                      color: _kPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
                     ),
                     softWrap: false,
                     overflow: TextOverflow.ellipsis,
                   ),
-              ],
+                  if (title != null && title.isNotEmpty)
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: _kMuted,
+                        fontSize: 11,
+                      ),
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
             );
           },
         ),
@@ -2616,6 +2823,28 @@ class _PersonDataGrid extends StatelessWidget {
           value: (row) => row.latestEmployer?.trim().isNotEmpty == true
               ? row.latestEmployer!.trim()
               : '-',
+          cellBuilder: (context, row, _) {
+            final text = row.latestEmployer?.trim();
+            if (text == null || text.isEmpty) {
+              return const Text('-', style: TextStyle(fontSize: 12));
+            }
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: _hInk(
+                onPressed: () => onOpenEmployerDetail(row),
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: _kPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            );
+          },
         ),
         AppDataGridColumn(
           id: 'enterpriseType',
@@ -2628,17 +2857,21 @@ class _PersonDataGrid extends StatelessWidget {
             if (text == null || text.isEmpty) {
               return const Text('-', style: TextStyle(fontSize: 12));
             }
+            final isAgencyType =
+                text.contains('4A') || text.toLowerCase().contains('agency');
             return Align(
               alignment: Alignment.centerLeft,
               child: HyperTag(
                 label: text,
-                style: const HyperTagStyle(
+                style: HyperTagStyle(
                   colorVariant: HyperTagColorVariant.soft,
-                  baseColor: Color(0xFF1677FF),
+                  baseColor: isAgencyType
+                      ? const Color(0xFF1677FF)
+                      : const Color(0xFFFA8C16),
                   radius: 3,
                   height: 20,
                   horizontalPadding: 6,
-                  textStyle: TextStyle(fontSize: 10),
+                  textStyle: const TextStyle(fontSize: 10),
                 ),
               ),
             );
@@ -2656,22 +2889,65 @@ class _PersonDataGrid extends StatelessWidget {
         AppDataGridColumn(
           id: 'address',
           title: '办公地址',
-          width: 140,
+          width: 180,
           sortable: false,
           alignment: Alignment.centerLeft,
           titleAlignment: Alignment.centerLeft,
           value: (row) => row.address?.trim().isNotEmpty == true
               ? row.address!.trim()
               : '-',
+          cellBuilder: (context, row, _) {
+            final text = row.address?.trim();
+            if (text == null || text.isEmpty) {
+              return const Text('-', style: TextStyle(fontSize: 12));
+            }
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: _hInk(
+                onPressed: () => showOfficeMapDialog(
+                  context,
+                  personName: row.name?.trim() ?? '',
+                  address: text,
+                  companyName: row.latestEmployer?.trim(),
+                  city: row.city?.trim(),
+                ),
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: _kPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            );
+          },
         ),
         AppDataGridColumn(
           id: 'sameContact',
           title: '同企业联系人',
-          width: 108,
+          width: 140,
           sortable: false,
-          value: (row) => row.sameEnterpriseContactCount == null
-              ? '-'
-              : '${row.sameEnterpriseContactCount}人',
+          alignment: Alignment.centerLeft,
+          titleAlignment: Alignment.centerLeft,
+          value: (row) => _personSameContactNames(row),
+          cellBuilder: (context, row, _) {
+            final text = _personSameContactNames(row);
+            if (text == '-') {
+              return const Text('-', style: TextStyle(fontSize: 12));
+            }
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                text,
+                style: const TextStyle(fontSize: 12, color: _kTitle),
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          },
         ),
         AppDataGridColumn(
           id: 'brandCount',
@@ -2701,19 +2977,44 @@ class _PersonDataGrid extends StatelessWidget {
           titleAlignment: Alignment.centerLeft,
           value: (row) => _personBrandNames(row),
           cellBuilder: (context, row, _) {
-            final text = _personBrandNames(row);
-            if (text == '-') {
+            final pairs = _personBrandPairs(row);
+            if (pairs.isEmpty) {
               return const Text('-', style: TextStyle(fontSize: 12));
             }
-            return Text(
-              text,
-              style: const TextStyle(
-                fontSize: 12,
-                color: _kPrimary,
-                fontWeight: FontWeight.w500,
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < pairs.length; i++) ...[
+                      if (i > 0)
+                        const Text(
+                          '、',
+                          style: TextStyle(fontSize: 12, color: _kPrimary),
+                        ),
+                      _hInk(
+                        onPressed: pairs[i].id == null
+                            ? () => showHyperToast(
+                                  context,
+                                  content: const Text('缺少品牌 ID，无法打开详情'),
+                                )
+                            : () => onOpenRelatedBrand(pairs[i].id!),
+                        child: Text(
+                          pairs[i].name,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _kPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          softWrap: false,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
             );
           },
         ),
@@ -2801,7 +3102,22 @@ class _PersonDataGrid extends StatelessWidget {
 }
 
 String _personBrandNames(OacPerson row) {
-  final list = row.brandNameList;
+  final pairs = _personBrandPairs(row);
+  if (pairs.isEmpty) return '-';
+  return [for (final p in pairs) p.name].join('、');
+}
+
+/// 人视角关联品牌：名称与 brandIdList 按序对齐，供点击进品牌详情。
+List<({String name, String? id})> _personBrandPairs(OacPerson row) {
+  return _relatedBrandPairs(
+    nameList: row.brandNameList,
+    namesCsv: row.brandNames,
+    idList: row.brandIdList,
+  );
+}
+
+String _personSameContactNames(OacPerson row) {
+  final list = row.sameEnterpriseContactNames;
   if (list != null && list.isNotEmpty) {
     final names = [
       for (final e in list)
@@ -2809,8 +3125,9 @@ String _personBrandNames(OacPerson row) {
     ];
     if (names.isNotEmpty) return names.join('、');
   }
-  final raw = row.brandNames?.trim();
-  return (raw == null || raw.isEmpty) ? '-' : raw;
+  final n = row.sameEnterpriseContactCount;
+  if (n == null || n <= 0) return '-';
+  return '$n人';
 }
 
 class _CircleLetterAvatar extends StatelessWidget {
@@ -3021,17 +3338,18 @@ List<String> _enterpriseTagLabels(OacEnterprise row) {
 }
 
 String _enterpriseBrandNames(OacEnterprise row) {
-  final list = row.brandNameList;
-  if (list != null && list.isNotEmpty) {
-    final names = [
-      for (final e in list)
-        if (e.trim().isNotEmpty) e.trim(),
-    ];
-    if (names.isNotEmpty) return names.join('、');
-  }
-  final raw = row.brandNames?.trim();
-  if (raw != null && raw.isNotEmpty) return raw;
-  return '-';
+  final pairs = _enterpriseBrandPairs(row);
+  if (pairs.isEmpty) return '-';
+  return [for (final p in pairs) p.name].join('、');
+}
+
+/// 企业视角关联品牌：名称与 brandIdList 按序对齐，供点击进品牌详情。
+List<({String name, String? id})> _enterpriseBrandPairs(OacEnterprise row) {
+  return _relatedBrandPairs(
+    nameList: row.brandNameList,
+    namesCsv: row.brandNames,
+    idList: row.brandIdList,
+  );
 }
 
 List<String> _agencyTagLabels(OacAgency row) {
@@ -3055,17 +3373,54 @@ List<String> _agencyTagLabels(OacAgency row) {
 }
 
 String _agencyBrandNames(OacAgency row) {
-  final list = row.brandNameList;
-  if (list != null && list.isNotEmpty) {
-    final names = [
-      for (final e in list)
-        if (e.trim().isNotEmpty) e.trim(),
-    ];
-    if (names.isNotEmpty) return names.join('、');
+  final pairs = _agencyBrandPairs(row);
+  if (pairs.isEmpty) return '-';
+  return [for (final p in pairs) p.name].join('、');
+}
+
+/// 4A 行关联品牌：名称与 brandIdList 按序对齐，供点击进品牌详情。
+List<({String name, String? id})> _agencyBrandPairs(OacAgency row) {
+  return _relatedBrandPairs(
+    nameList: row.brandNameList,
+    namesCsv: row.brandNames,
+    idList: row.brandIdList,
+  );
+}
+
+List<({String name, String? id})> _relatedBrandPairs({
+  List<String>? nameList,
+  String? namesCsv,
+  List<String>? idList,
+}) {
+  final names = <String>[];
+  if (nameList != null && nameList.isNotEmpty) {
+    for (final e in nameList) {
+      final n = e.trim();
+      if (n.isNotEmpty) names.add(n);
+    }
   }
-  final raw = row.brandNames?.trim();
-  if (raw != null && raw.isNotEmpty) return raw;
-  return '-';
+  if (names.isEmpty) {
+    final raw = namesCsv?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      for (final part in raw.split(RegExp(r'[、,，;；]'))) {
+        final n = part.trim();
+        if (n.isNotEmpty) names.add(n);
+      }
+    }
+  }
+  final ids = <String>[
+    for (final e in idList ?? const <String>[])
+      if (e.trim().isNotEmpty) e.trim(),
+  ];
+  if (names.isEmpty) {
+    return [
+      for (final id in ids) (name: id, id: id),
+    ];
+  }
+  return [
+    for (var i = 0; i < names.length; i++)
+      (name: names[i], id: i < ids.length ? ids[i] : null),
+  ];
 }
 
 Future<void> _openAddBrandTags(
@@ -3494,17 +3849,25 @@ class _SideNavState extends State<_SideNav> {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.searchController,
+    required this.searchHint,
+    required this.onSearch,
     required this.displayName,
     required this.syncing,
+    required this.exporting,
     required this.onAddOrder,
+    required this.onExport,
     required this.onSync,
     required this.onLogout,
   });
 
   final TextEditingController searchController;
+  final String searchHint;
+  final VoidCallback onSearch;
   final String displayName;
   final bool syncing;
+  final bool exporting;
   final VoidCallback onAddOrder;
+  final VoidCallback onExport;
   final VoidCallback onSync;
   final VoidCallback onLogout;
 
@@ -3522,11 +3885,18 @@ class _TopBar extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: searchController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => onSearch(),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: '全局搜索：品牌/企业/4A/联系人/订单号',
+                hintText: searchHint,
                 hintStyle: const TextStyle(fontSize: 13, color: _kMuted),
                 prefixIcon: const Icon(Icons.search, size: 18, color: _kMuted),
+                suffixIcon: IconButton(
+                  tooltip: '搜索',
+                  onPressed: onSearch,
+                  icon: const Icon(Icons.arrow_forward, size: 18, color: _kPrimary),
+                ),
                 filled: true,
                 fillColor: _kPageBg,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -3553,9 +3923,10 @@ class _TopBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           HyperButton.outlined(
-            onPressed: () {},
+            onPressed: exporting ? null : onExport,
+            loading: exporting,
             icon: const Icon(Icons.download_outlined, size: 16),
-            label: const Text('导出'),
+            label: Text(exporting ? '导出中...' : '导出'),
           ),
           const SizedBox(width: 8),
           HyperButton.outlined(

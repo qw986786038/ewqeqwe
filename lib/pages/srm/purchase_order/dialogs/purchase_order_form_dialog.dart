@@ -11,6 +11,8 @@ import 'select_counterpart_dialog.dart';
 
 const _kPrimary = Color(0xFF1677FF);
 const _kMuted = Color(0xFF8C8C8C);
+/// 横向表单统一标签列宽，保证每列输入框左缘对齐。
+const _kPoLabelWidth = 88.0;
 
 const _kContractTypeOptions = [
   AppOption(value: '设备采购', label: '设备采购'),
@@ -339,13 +341,18 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
   }
 
   Widget _twoCol({required Widget left, required Widget right}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: left),
-        const SizedBox(width: 16),
-        Expanded(child: right),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = (constraints.maxWidth - 16) / 2;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: w, child: left),
+            const SizedBox(width: 16),
+            SizedBox(width: w, child: right),
+          ],
+        );
+      },
     );
   }
 
@@ -364,25 +371,20 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
     required bool enabled,
     String? initialText,
   }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: AppTextFormField(
-            name: 'orderAmount',
-            label: '订单金额',
-            hintText: enabled ? '单位：万元' : null,
-            enabled: enabled,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-            ],
-            initialValue: initialText,
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Text('万元', style: TextStyle(fontSize: 12, color: _kMuted)),
+    return AppTextFormField(
+      name: 'orderAmount',
+      label: '订单金额',
+      hintText: enabled ? '单位：万元' : null,
+      enabled: enabled,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
       ],
+      initialValue: initialText,
+      trailing: const Text(
+        '万元',
+        style: TextStyle(fontSize: 13, color: _kMuted),
+      ),
     );
   }
 
@@ -412,16 +414,19 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
           : null,
     );
     if (!enabled) return field;
-    return AppInkWell(
-      onPressed: _pickStaff,
-      child: AbsorbPointer(child: field),
+    return SizedBox(
+      width: double.infinity,
+      child: AppInkWell(
+        onPressed: _pickStaff,
+        child: AbsorbPointer(child: field),
+      ),
     );
   }
 
   /// 详情只读：灰底输入框展示，布局对齐截图（左订单号…联系人 / 右订单名称…对接人）。
   Widget _buildViewBody(SrmPurchaseOrder d) {
     return AppFieldScope.horizontal(
-      labelWidth: 88,
+      labelWidth: _kPoLabelWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 14,
@@ -538,7 +543,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
 
   Widget _buildCreateBody() {
     return AppFieldScope.horizontal(
-      labelWidth: 88,
+      labelWidth: _kPoLabelWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 14,
@@ -575,18 +580,14 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               label: '合同类型',
               hintText: '请选择',
               clearable: true,
+              // Select 默认 IntrinsicWidth，拉满与同列输入框左缘/宽度对齐
+              minWidth: double.infinity,
               options: _kContractTypeOptions,
             ),
             right: _amountField(enabled: true),
           ),
           _twoCol(
-            left: AppDatePickerFormField(
-              name: 'orderTime',
-              label: '订单时间',
-              hintText: '请选择日期',
-              // popover 在 HyperDialog 内无法点「确定」，改 dialog
-              mode: shad.PromptMode.dialog,
-            ),
+            left: const _PoOrderTimeField(),
             right: const _PoSettlementField(),
           ),
           _twoCol(
@@ -595,6 +596,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               label: '发票类型',
               hintText: '请选择',
               clearable: true,
+              minWidth: double.infinity,
               options: _kInvoiceTypeOptions,
             ),
             right: const _PoTaxRateField(),
@@ -606,6 +608,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               clearable: true,
               variant: AppRegionPickerVariant.provinceCity,
               options: _regions,
+              width: double.infinity,
             ),
             right: const AppTextFormField(
               name: 'contactName',
@@ -628,7 +631,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
 
   Widget _buildEditBody(SrmPurchaseOrder d) {
     return AppFieldScope.horizontal(
-      labelWidth: 88,
+      labelWidth: _kPoLabelWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 14,
@@ -673,6 +676,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               label: '合同类型',
               hintText: '请选择',
               clearable: true,
+              minWidth: double.infinity,
               options: _kContractTypeOptions,
               initialValue: d.contractType,
             ),
@@ -682,11 +686,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               enabled: true,
               initialText: _amountText(d),
             ),
-            right: AppDatePickerFormField(
-              name: 'orderTime',
-              label: '订单时间',
-              hintText: '请选择日期',
-              mode: shad.PromptMode.dialog,
+            right: _PoOrderTimeField(
               initialValue: _parseDate(d.orderTime),
             ),
           ),
@@ -697,6 +697,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               label: '发票类型',
               hintText: '请选择',
               clearable: true,
+              minWidth: double.infinity,
               options: _kInvoiceTypeOptions,
               initialValue: d.invoiceType,
             ),
@@ -709,6 +710,7 @@ class _PurchaseOrderFormDialogState extends State<_PurchaseOrderFormDialog> {
               clearable: true,
               variant: AppRegionPickerVariant.provinceCity,
               options: _regions,
+              width: double.infinity,
               initialValue: _cityPath(d.city),
             ),
           ),
@@ -850,6 +852,7 @@ class _PoTaxRateFieldState extends State<_PoTaxRateField> {
           label: '税率',
           hintText: '请选择',
           clearable: true,
+          minWidth: double.infinity,
           options: _kTaxRateOptions,
           initialValue: _selected,
           onChanged: (v) => setState(() => _selected = v),
@@ -857,6 +860,8 @@ class _PoTaxRateFieldState extends State<_PoTaxRateField> {
         if (_selected == '其他')
           AppTextFormField(
             name: 'taxRateCustom',
+            // 空标签占位，与同列其它输入框左缘对齐
+            label: '',
             hintText: '请输入税率',
             initialValue: _custom,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -900,8 +905,41 @@ class _PoSettlementField extends StatelessWidget {
       label: '结算方式',
       hintText: '请选择',
       clearable: true,
+      minWidth: double.infinity,
       options: options,
       initialValue: (raw == null || raw.isEmpty) ? null : raw,
+    );
+  }
+}
+
+/// 订单时间：ObjectFormField 带 trailing 会 IntrinsicWidth 收缩，强制拉满与输入框左缘对齐。
+class _PoOrderTimeField extends StatelessWidget {
+  const _PoOrderTimeField({this.initialValue});
+
+  final DateTime? initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return FormField<DateTime>(
+      initialValue: initialValue,
+      builder: (state) => AppFormFieldBinding<DateTime>(
+        name: 'orderTime',
+        value: state.value,
+        builder: (context, asyncError) => AppField(
+          label: '订单时间',
+          errorText: state.errorText ?? asyncError,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: double.infinity),
+            child: AppDatePicker(
+              value: state.value,
+              hintText: '请选择日期',
+              // popover 在 HyperDialog 内无法点「确定」，改 dialog
+              mode: shad.PromptMode.dialog,
+              onChanged: state.didChange,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -5,8 +5,8 @@ import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_shadcn/shadcn.dart' show CheckboxState;
 import 'package:lemon_x/lemon_x.dart';
 
-import 'customer_contact_detail_page.dart';
 import 'customer_entity_detail_controller.dart';
+import 'dialogs/contact_overview_dialog.dart';
 import 'dialogs/entity_module_edit_dialog.dart';
 import 'dialogs/entity_tax_edit_dialog.dart';
 
@@ -455,8 +455,6 @@ class _BasicInfoCard extends StatelessWidget {
           _KV('企业性质', c.entityNatureLabel),
           _KV('注册地址', c.regAddress),
           _KV('经营范围', c.businessScope),
-          _KV('经营异常记录', c.abnormalRecord),
-          _KV('行政处罚历史', c.penaltyHistory),
           _KV(
             '附件',
             attach,
@@ -950,12 +948,8 @@ class _ContactsCard extends StatelessWidget {
                             );
                             return;
                           }
-                          Navigator.of(context, rootNavigator: true).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  CustomerContactDetailPage(contactId: id),
-                            ),
-                          );
+                          // 详情页内点击联系人 → 弹窗。
+                          showContactOverviewDialog(context, contactId: id);
                         },
                         child: Text(
                           name,

@@ -23,7 +23,7 @@ class _HyperTagPageState extends State<HyperTagPage> {
       child: ListView(
         padding: EdgeInsets.all(sizes.pageHorizontalPadding),
         children: [
-          const HyperText('HyperTag', variant: HyperTextVariant.pageTitle),
+          const HyperText('标签', variant: HyperTextVariant.pageTitle),
           SizedBox(height: sizes.compactSectionSpacing),
           const HyperText('轻量分类与状态展示；点击和选择行为由 Chip 提供。'),
           SizedBox(height: sizes.sectionSpacing),
@@ -62,6 +62,21 @@ class _HyperTagPageState extends State<HyperTagPage> {
                     },
                     style: HyperTagStyle(colorVariant: variant),
                   ),
+              ],
+            ),
+          ),
+          DemoSection(
+            title: '业务语义（默认配色）',
+            child: Wrap(
+              spacing: sizes.compactSectionSpacing,
+              runSpacing: sizes.compactSectionSpacing,
+              children: const [
+                HyperTag.success(label: '已完成'),
+                HyperTag.warning(label: '待处理'),
+                HyperTag.error(label: '失败'),
+                HyperTag.destructive(label: '已删除'),
+                HyperTag.info(label: '进行中'),
+                HyperTag.neutral(label: '草稿'),
               ],
             ),
           ),

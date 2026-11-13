@@ -22,7 +22,7 @@
 | --- | --- | --- | --- |
 | 字体 | 小米称 [MiSans 为 HyperOS 默认系统字体](https://hyperos.mi.com/font/en/)；[官方小部件规范](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1664)推荐 MiSans | [主题](../lib/src/theme/core/hyper_theme_data.dart)按平台使用系统字体，未捆绑 MiSans | 字体一致性取决于目标设备实际解析结果；跨平台截图不能仅凭字号判断。先核对字形、字重、行高，再决定是否引入字体资产 |
 | 字阶 | 第三方 [Miuix TextStyles](https://github.com/compose-miuix-ui/miuix/blob/main/miuix-ui/src/commonMain/kotlin/top/yukonga/miuix/kmp/theme/TextStyles.kt)给出标题 32/24/20/18sp、常规文字 17/16/14sp、按钮 17sp 等 | 页面标题 32、分区 24、次级 20；手机列表标题 17、按钮 16 | 现有层级大体相邻，但按钮字阶与 Miuix 候选值不同。后续按组件对照，不因“必须偶数”把 17 改成 16 或 18 |
-| 卡片 | 第三方 [Miuix CardDefaults](https://github.com/compose-miuix-ui/miuix/blob/main/miuix-ui/src/commonMain/kotlin/top/yukonga/miuix/kmp/basic/Card.kt)给出 16dp 圆角、零默认内边距 | 手机 `HyperCardSize.radius = 16`、自由内容默认零内边距 | 可作为普通卡片基准；带标题卡片、浮窗与嵌套容器按各自职责选择圆角 |
+| 卡片 | 第三方 [Miuix CardDefaults](https://github.com/compose-miuix-ui/miuix/blob/main/miuix-ui/src/commonMain/kotlin/top/yukonga/miuix/kmp/basic/Card.kt)给出 16dp 圆角、零默认内边距 | 手机 `HyperCardSize.radius = 16`、默认内边距 16；列表组内容单独使用零内边距 | 圆角相邻；内边距与第三方候选不同，保留项目现行主题规格。带标题卡片、浮窗与嵌套容器按各自职责解析 |
 | 按钮 | 第三方 [Miuix ButtonDefaults](https://github.com/compose-miuix-ui/miuix/blob/main/miuix-ui/src/commonMain/kotlin/top/yukonga/miuix/kmp/basic/Button.kt)给出最小宽 58dp、高 40dp、圆角 16dp、水平内边距 16dp | 手机按钮最小宽 58、高 48、圆角 16、水平内边距 16 | 宽度与圆角相符；高度差异要结合命中区域和截图验证，不直接批量改回 40 |
 | 色彩 | 第三方 [Miuix 示例](https://github.com/compose-miuix-ui/miuix)用 `#3482FF` 作为可配置种子色示例 | 默认种子色 `#3482FF`，其余语义色由 Flutter `ColorScheme.fromSeed` 生成 | 种子色可作候选参考；生成出的整套颜色不能称作 HyperOS 原色板 |
 | 动效 | [小米 HyperOS 产品页](https://www.mi.com/us/hyperos)描述设计追求舒适、流畅和多样 | 全局 Motion 默认 120/240/360ms | 产品页没有给出这些毫秒值；它们是 Lemon UI 内部节奏，需按状态对照验证并允许替换 |
@@ -78,3 +78,8 @@
 - **桌面 HIUI 版本与组件值：**已确定来源和对照入口；具体颜色、字号、圆角、行高与间距须按选用的 HiUI 版本逐项核实，现有桌面主题尚未整体按 HIUI 重定值。
 
 每次确认一项后，再更新对应强类型主题值和 [尺寸规范](size-specification.md)。未经确认的候选值不批量改动已有组件。
+
+### 弹窗与底部面板标题层级（2026-10-26）
+
+按用户反馈统一采用当前设备的 bodyLarge 字号（desktop 默认 16 逻辑像素）、titleLarge 标题排版与 w500 字重，强化标题与正文的层级；沿用现有主题字阶，不新增设备尺寸常量。来源级别 D（项目推导），不是新增的官方规格。局部及实例 titleStyle 保留覆盖能力。
+

@@ -79,8 +79,21 @@ class SupplierListPage extends StatelessWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+class _Body extends StatefulWidget {
   const _Body();
+
+  @override
+  State<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends State<_Body> {
+  final _pageScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _pageScroll.dispose();
+    super.dispose();
+  }
 
   void _goBack(BuildContext context) {
     try {
@@ -117,8 +130,11 @@ class _Body extends StatelessWidget {
     return ColoredBox(
       color: _kPageBg,
       child: Scrollbar(
+        controller: _pageScroll,
         thumbVisibility: true,
         child: ListView(
+          controller: _pageScroll,
+          primary: false,
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           children: [
             // ── 顶栏：后退/前进 · 当前位置 · 搜索 ─────────────────────
@@ -785,10 +801,42 @@ class _Body extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         titleAlignment: Alignment.centerLeft,
                         value: (row) => row.latestDynamic ?? '-',
-                        cellBuilder: (context, row, _) => _cellText(
-                          _dash(row.latestDynamic),
-                          alignment: Alignment.centerLeft,
-                        ),
+                        cellBuilder: (context, row, _) {
+                          final text = row.latestDynamic?.trim() ?? '';
+                          if (text.isEmpty) {
+                            return _cellText(
+                              '-',
+                              alignment: Alignment.centerLeft,
+                            );
+                          }
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: HyperTooltip(
+                              appearance: HyperTooltipAppearance.dark,
+                              placement: HyperOverlayPlacement.topStart,
+                              waitDuration: const Duration(milliseconds: 200),
+                              message: text,
+                              style:   HyperCardStyle(
+                                constraints: BoxConstraints(maxWidth: 360),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                              ),
+                              child: Text(
+                                text,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: _kPrimary,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: _kPrimary,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       AppDataGridColumn(
                         id: 'actions',

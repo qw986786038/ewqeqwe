@@ -50,25 +50,26 @@ HyperCardStyle resolveHyperMenuSurfaceStyle({
       cardThemeStyle?.material != null ||
       style?.material != null ||
       fallbackMaterial != null;
+  // Match Card's recipe precedence. A material without shadows must not
+  // suppress the overlay's default elevation; explicit shadow lists still win.
+  final effectiveMaterial =
+      style?.material ??
+      fallbackMaterial ??
+      cardThemeStyle?.material ??
+      globalMaterial;
   final shadow =
-      fallbackMaterial != null ||
-          cardThemeStyle?.material != null ||
-          style?.material != null ||
-          (globalMaterial?.boxShadow.isNotEmpty ?? false) ||
+      (effectiveMaterial != null &&
+              !effectiveMaterial.usesDefaultShadows &&
+              (effectiveMaterial.boxShadow.isNotEmpty ||
+                  effectiveMaterial.kind ==
+                      HyperSurfaceMaterialKind.clearFrostedGlass)) ||
           cardThemeStyle?.boxShadow != null ||
           style?.boxShadow != null
       ? null
-      : [
-          BoxShadow(
-            color: colors.scrim.withValues(
-              alpha: globalMaterial == null ? .10 : .12,
-            ),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ];
+      : HyperOverlayMaterial.defaultShadowsFor(colors);
   return HyperCardStyle(
     material: fallbackMaterial,
+    materialEdge: true,
     padding: padding,
     borderRadius: BorderRadius.circular(radius),
     border: hasMaterial

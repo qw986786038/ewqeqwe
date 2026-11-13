@@ -1,3 +1,5 @@
+import '../../foundation/hyper_icons.dart';
+import '../overlay/hyper_overlay.dart';
 import '../../painting/hyper_box_decoration.dart';
 import '../overlay/hyper_navigator_scope.dart';
 import '../overlay/hyper_live_route_themes.dart';
@@ -39,7 +41,10 @@ HyperBottomSheetStyle _resolveStyle(
         ? metrics.landscapeMaxWidth ?? metrics.maxWidth
         : metrics.maxWidth,
     padding: metrics.padding,
-    titleStyle: theme.textTheme.titleMedium ?? const TextStyle(),
+    titleStyle: (theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
+      fontSize: theme.textTheme.bodyLarge?.fontSize,
+      fontWeight: FontWeight.w500,
+    ),
     contentStyle: (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
       color: theme.colors.textSecondary,
     ),
@@ -48,7 +53,7 @@ HyperBottomSheetStyle _resolveStyle(
     actionRunSpacing: metrics.actionRunSpacing,
     actionsAlignment: WrapAlignment.end,
     actionsDirection: Axis.horizontal,
-    closeIcon: Icons.close,
+    closeIcon: HyperIcons.x,
     closeIconColor: theme.colors.textSecondary,
     closeIconSize: metrics.closeIconSize,
     dragHandleColor: theme.colors.textTertiary,
@@ -135,7 +140,7 @@ class HyperBottomSheet extends StatelessWidget {
                       foregroundColor: resolved.closeIconColor,
                       iconSize: resolved.closeIconSize,
                     ),
-                    onPressed: onClose ?? () => Navigator.of(context).pop(),
+                    onPressed: onClose ?? () => HyperOverlay.close(context),
                   )
                 : null,
             content: content,
@@ -171,6 +176,7 @@ class HyperBottomSheet extends StatelessWidget {
         border: resolved.material == null ? resolved.border : null,
         borderRadius: resolved.borderRadius,
         boxShadow: resolved.material == null ? resolved.boxShadow : null,
+        outerShadowsOnly: true,
       ),
       child: ClipRRect(
         borderRadius: resolved.borderRadius!,
@@ -181,6 +187,7 @@ class HyperBottomSheet extends StatelessWidget {
     if (resolved.material != null) {
       surface = HyperMaterialSurface(
         material: resolved.material,
+        materialEdge: false,
         boxShadow: resolved.boxShadow,
         border: resolved.border,
         semanticBackground: resolved.background,
@@ -248,7 +255,10 @@ Future<T?> showHyperBottomSheet<T>({
             ),
             child: Directionality(
               textDirection: direction,
-              child: Builder(builder: builder),
+              child: HyperOverlayScope.route<T>(
+                context: routeContext,
+                child: Builder(builder: builder),
+              ),
             ),
           ),
         );

@@ -130,12 +130,10 @@ class _HyperTablePageState extends State<HyperTableDemoPage> {
   );
   Set<Object> _selected = {};
   HyperTableDataMode _mode = HyperTableDataMode.local;
-  bool _paginate = false,
-      _striped = true,
-      _hoverLift = false,
-      _showDepartment = true,
-      _failNext = false;
-  String _message = '表头可拖动、点击排序、右键打开列菜单；名称与数量使用输入框，部门使用自定义下拉编辑器。';
+  bool? _striped, _hoverLift;
+  bool _solidSelection = false;
+  bool _paginate = false, _showDepartment = true, _failNext = false;
+  String _message = '长按表头后可拖动、点击排序、右键打开列菜单；名称与数量使用输入框，部门使用自定义下拉编辑器。';
   late final List<HyperTableColumn<_Record>> _columns = [
     HyperTableColumn(
       id: 'id',
@@ -247,11 +245,8 @@ class _HyperTablePageState extends State<HyperTableDemoPage> {
     return ListView(
       padding: EdgeInsets.all(s.pageHorizontalPadding),
       children: [
-        const HyperText(
-          'HyperTable · 未确认',
-          variant: HyperTextVariant.pageTitle,
-        ),
-        const HyperText('默认主题审核：本页不覆盖实例样式。旧版只作功能对照，新版没有复制旧封装或补丁。'),
+        const HyperText('数据表格', variant: HyperTextVariant.pageTitle),
+        const HyperText('默认主题审核：普通示例不覆盖实例样式，内嵌示例显式启用 embedded，并由父卡片统一描边。'),
         SizedBox(height: s.compactSectionSpacing),
         Wrap(
           spacing: s.compactSectionSpacing,
@@ -322,12 +317,53 @@ class _HyperTablePageState extends State<HyperTableDemoPage> {
               child: Text(_paginate ? '关闭本地分页' : '开启本地分页'),
             ),
             HyperButton.tonal(
-              onPressed: () => setState(() => _striped = !_striped),
-              child: Text(_striped ? '关闭斑马色' : '开启斑马色'),
+              onPressed: () => setState(
+                () => _striped =
+                    !(_striped ??
+                        HyperTableTheme.of(context).style.striped ??
+                        true),
+              ),
+              child: Text(
+                (_striped ?? HyperTableTheme.of(context).style.striped ?? true)
+                    ? '实例覆盖 · 关闭斑马色'
+                    : '实例覆盖 · 开启斑马色',
+              ),
             ),
             HyperButton.tonal(
-              onPressed: () => setState(() => _hoverLift = !_hoverLift),
-              child: Text(_hoverLift ? '关闭悬停浮起' : '开启悬停浮起'),
+              onPressed: () => setState(
+                () => _hoverLift =
+                    !(_hoverLift ??
+                        HyperTableTheme.of(context).style.hoverLift ??
+                        false),
+              ),
+              child: Text(
+                (_hoverLift ??
+                        HyperTableTheme.of(context).style.hoverLift ??
+                        false)
+                    ? '实例覆盖 · 关闭悬停浮起'
+                    : '实例覆盖 · 开启悬停浮起',
+              ),
+            ),
+            HyperButton.text(
+              onPressed: () => setState(() {
+                _hoverLift = null;
+                _striped = null;
+                _solidSelection = false;
+              }),
+              label: const Text('恢复表格外观继承'),
+            ),
+            HyperButton.tonal(
+              onPressed: () => setState(() {
+                _solidSelection = !_solidSelection;
+                if (_solidSelection &&
+                    _selected.isEmpty &&
+                    _records.isNotEmpty) {
+                  _selected = {_records.first.id};
+                }
+              }),
+              child: Text(
+                _solidSelection ? '实例覆盖 · 恢复主题选中背景' : '实例覆盖 · 实色选中背景',
+              ),
             ),
             HyperButton.tonal(
               onPressed: () =>
@@ -408,6 +444,11 @@ class _HyperTablePageState extends State<HyperTableDemoPage> {
             onSelectionChanged: (keys) => setState(() => _selected = keys),
             striped: _striped,
             hoverLift: _hoverLift,
+            style: _solidSelection
+                ? HyperTableStyle(
+                    selectedBackground: HyperTheme.of(context).colors.primary,
+                  )
+                : null,
             reorderableRows: true,
             onRowsReordered: (rows) => setState(() {
               _records = rows;
@@ -436,6 +477,83 @@ class _HyperTablePageState extends State<HyperTableDemoPage> {
                   );
                   if (_mode != HyperTableDataMode.local) _controller.reload();
                 },
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: s.sectionSpacing),
+        const HyperText(
+          '内嵌模式 · 父卡片统一描边',
+          variant: HyperTextVariant.subsectionTitle,
+        ),
+        const HyperText('组合示例：卡片显式设置描边和裁切，表格仅设置 embedded: true；没有第二层外描边。'),
+        SizedBox(height: s.compactSectionSpacing),
+        HyperCard(
+          style: HyperCardStyle(
+            padding: EdgeInsets.zero,
+            border: s.table.borderWidth <= 0
+                ? const Border()
+                : Border.all(
+                    color: HyperTheme.of(context).colors.outline,
+                    width: s.table.borderWidth,
+                  ),
+            clipBehavior: Clip.antiAlias,
+          ),
+          child: SizedBox(
+            height: 240,
+            child: HyperTable<_Record>(
+              embedded: true,
+              columns: _columns,
+              rows: _records.take(3).toList(),
+              rowKey: (row) => row.id,
+            ),
+          ),
+        ),
+        SizedBox(height: s.sectionSpacing),
+        const HyperText(
+          '逐行高度与内容自适应',
+          variant: HyperTextVariant.subsectionTitle,
+        ),
+        const HyperText(
+          '实例行为示例：第二行单独指定 96 逻辑像素；其他行按文字和自定义多条内容增高。拖动列宽可查看换行，地址最多显示三行。',
+        ),
+        SizedBox(height: s.compactSectionSpacing),
+        SizedBox(
+          height: 320,
+          child: HyperTable<int>(
+            rows: const [1, 2, 3],
+            rowKey: (row) => row,
+            rowHeightMode: HyperTableRowHeightMode.content,
+            rowHeightBuilder: (row) => row == 2 ? 96 : null,
+            columns: [
+              HyperTableColumn(
+                id: 'customer',
+                title: '客户',
+                value: (row) => '客户 $row',
+                width: 120,
+                pin: HyperTableColumnPin.start,
+              ),
+              HyperTableColumn(
+                id: 'entities',
+                title: '关联主体',
+                value: (row) => row,
+                widthMode: HyperTableColumnWidthMode.flex,
+                cellBuilder: (context, row, value) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < row; i++)
+                      HyperText('关联主体 ${i + 1}：客户 $row 的经营主体'),
+                  ],
+                ),
+              ),
+              HyperTableColumn(
+                id: 'address',
+                title: '详细地址',
+                value: (row) =>
+                    row == 1 ? '上海市' : '一段较长的详细地址，根据可用列宽自动换行，并最多显示三行内容。',
+                widthMode: HyperTableColumnWidthMode.flex,
+                maxLines: 3,
               ),
             ],
           ),

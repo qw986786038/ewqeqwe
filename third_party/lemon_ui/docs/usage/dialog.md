@@ -2,6 +2,63 @@
 
 [返回目录](README.md)
 
+## 内容型弹窗的标准写法
+
+订单详情、素材选择、图片预览等非表单内容统一使用 `HyperDialog`，无需套用
+表单弹窗。只有需要表单注册、校验和提交生命周期时才使用表单弹窗。
+
+```dart
+showHyperDialog<void>(
+  context: context,
+  builder: (_) => HyperDialog(
+    title: const HyperText('订单详情'),
+    content: OrderDetails(order: order), // 应用自己的内容组件
+  ),
+);
+```
+
+`style` 是本次调用的实例覆盖，不修改全局主题；也可写在 `HyperDialog(style: ...)`
+上，组件实例显式字段优先。`maxWidth` 控制宽度上限，`width` 指定期望宽度，
+最终均受可用窗口、安全区域、键盘和 insetPadding 约束。未指定时已经继承当前端
+`sizes.dialog.maxWidth`，普通弹窗无需重复设置 width/maxWidth，也无需再包一层对话框。
+
+默认 `scrollable: false`，正文直接获得扣除标题、按钮、内边距和键盘后的有限宽高。
+可直接放入 `Column + Expanded`、`height: double.infinity`、ListView、GridView 或
+自带滚动的预览器，通常无需再指定宽高，也不要叠加两层纵向滚动：
+
+```dart
+showHyperDialog<void>(
+  context: context,
+  builder: (dialogContext) => HyperDialog(
+    title: const HyperText('素材选择'),
+    content: ListView.builder(
+      itemCount: assets.length,
+      itemBuilder: (_, index) => Text(assets[index].name),
+    ),
+    actions: [
+      HyperButton.tonal(
+        label: const Text('关闭'),
+        onPressed: () => HyperOverlay.close(dialogContext),
+      ),
+    ],
+  ),
+);
+```
+
+返回所选内容时改用 `showHyperDialog<Asset>`，在内容内调用
+`HyperOverlay.close<Asset>(dialogContext, selectedAsset)`，打开方 await 接收结果。
+Dialog Demo 的“内容型大弹窗 · 实例宽度覆盖”提供可运行的列表例子。
+
+`Row` 的非 flex 子项会收到无限宽度，这是横排布局的约束规则。横排中的输入框、
+较长文本或 Column 应通过 `Expanded` / `Flexible` 分配剩余宽度，例如
+`Row(children: [Icon(...), Expanded(child: Column(...))])`。给弹窗或正文外层
+再加 maxWidth 不能改变 Row 传给这些子项的约束。
+
+长文字、长表单或自然高度的长 Column 如需弹窗提供滚动，显式设置 `scrollable: true`。
+这时正文高度无界，标题和操作区固定，内部不再使用纵向 Expanded 或非 shrinkWrap 的
+ListView。升级前依赖默认滚动的调用应补上此参数；`HyperMovableDialog` 同样默认有界。
+表单弹窗和选色对话框由其封装显式保留滚动正文，底部弹窗默认行为不变。
+
 ## 打开、关闭和返回结果
 
 ~~~dart
@@ -16,11 +73,11 @@ HyperButton.filled(
         actions: [
           HyperButton.tonal(
             label: const Text('取消'),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
+            onPressed: () => HyperOverlay.close<bool>(dialogContext, false),
           ),
           HyperButton.filled(
             label: const Text('确认'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
+            onPressed: () => HyperOverlay.close<bool>(dialogContext, true),
           ),
         ],
       ),
@@ -33,6 +90,15 @@ HyperButton.filled(
 
 showHyperDialog 返回关闭结果；关闭图标、遮罩或系统返回通常得到 null。
 默认使用根 Navigator，关闭时使用 builder 的 dialogContext，避免关闭错误的页面。
+
+`HyperOverlay.close<T>(context, [result])` 统一关闭最近所属弹层，支持 Dialog、
+MovableDialog、BottomSheet 和锚定浮层。模态结果通过 show 函数返回的 Future 接收。
+作用域内的路由若已被其他路由覆盖，返回 false，不会误关顶层路由；普通页面中也返回 false。
+未提供 Hyper 作用域时仅兼容当前 Flutter PopupRoute，不回退普通页面。
+必须使用弹层内容内的 context，不能使用打开按钮的外部 context。
+
+自定义浮层可用 `HyperOverlayScope<T>(onClose: ..., child: ...)` 接入，
+onClose 返回是否发出了关闭请求。嵌套时只处理最近作用域，失败不向外层继续关闭。
 useRootNavigator: false 可使用最近的嵌套 Navigator。
 
 barrierDismissible 控制遮罩点击和 Escape 关闭，不限制系统返回；业务需要禁止返回时，
@@ -110,9 +176,9 @@ HyperDialogTheme(
 )
 ~~~
 
-默认正文置于 SingleChildScrollView 中，长内容滚动时标题和按钮保留。
-自带 ListView 等滚动内容可设 scrollable: false，使其接受剩余空间的有限高度。
-不要在默认滚动正文内使用需要有限主轴高度的 Expanded；正文内容、标题和任意操作 Widget 由使用方负责。
+默认正文接受剩余空间的有限宽高，支持 Expanded 和自带滚动的内容。
+显式设置 scrollable: true 时正文置于 SingleChildScrollView 中，长内容滚动且标题和按钮保留。
+该模式下不要在正文内使用需要有限主轴高度的纵向 Expanded。
 可隐藏标题或关闭入口；content 始终为自由内容，不预设表单结构。
 
 background 支持纯色、渐变或 HyperFill.none；material 支持统一材质配方。

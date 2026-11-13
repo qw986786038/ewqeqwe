@@ -1,10 +1,14 @@
 # 数据表格
 
-`HyperTable<T>` 基于 TrinaGrid 2.3.0，公开接口只使用 Hyper 与 Flutter 类型。旧版 AppDataGrid 仅用于核对功能；新实现没有复制旧悬停缩放、滚动条覆盖及历史补丁。Gallery 与主题编辑器入口位于「未确认 → HyperTable」，页面 id 为 `hyper-table`。
+`HyperTable<T>` 基于 TrinaGrid 2.3.0，公开接口只使用 Hyper 与 Flutter 类型。旧版 AppDataGrid 仅用于核对功能；新实现没有复制旧悬停缩放、滚动条覆盖及历史补丁。2026-10-22 用户明确确认表格，Gallery 入口移至「文字与内容 → HyperTable」，主题编辑器同步归入「内容」，页面 id 保持 `hyper-table`。此确认不替代四端实机逐项视觉验收。
 
 ## 基本用法
 
 父布局提供有限宽高。列 id 和 `rowKey` 必须稳定且唯一；不要原地修改 columns 或 rows 列表，更新时传入新列表。
+
+普通单元格的激活与失活边框默认不绘制，各种 `selectionMode` 保持一致。
+行选中背景、编辑器自身的聚焦样式和拖放位置提示独立保留；不需要将全局
+`HyperTableStyle.focusColor` 设置为透明来隐藏单元格边框。
 
 ```dart
 Expanded(
@@ -38,7 +42,7 @@ Expanded(
 | 功能 | 当前入口与规则 |
 | --- | --- |
 | 固定列 | 列的 `pin`、表头右键菜单、controller.pinColumn；start/end 随文字方向解析 |
-| 列拖动 | 列默认允许拖动，`reorderable` 可关闭；回调 `onColumnsReordered` |
+| 列拖动 | 长按表头后拖动，`reorderable` 可关闭；回调 `onColumnsReordered` |
 | 行拖动 | `reorderableRows` 和 `onRowsReordered`；限本地、未分页、未排序的平面数据 |
 | 多选 | `selectionMode`、`selectedKeys`、`onSelectionChanged`；复选框受控，全选只作用于当前可见行，跨页已选 key 保留 |
 | 隐藏列 | 表头右键菜单或 controller.setColumnVisible；隐藏后可从其他表头恢复，至少保留一列数据 |
@@ -47,7 +51,7 @@ Expanded(
 | 分页 | 本地使用 `paginateLocalRows`；远程使用 `dataMode: paginated`，loader 返回 total |
 | 就地编辑 | 文本、数字列设置 editable 并提供 onCellChanged；编辑器复用 HyperTextField，键盘提交/取消沿用 Trina 编辑生命周期 |
 | 斑马色 | `striped`；配色由主题管理 |
-| 右键菜单 | 表头内建列操作；行菜单通过 rowContextMenuBuilder 提供 HyperMenuItem，支持长按与菜单键 |
+| 右键菜单 | 表头内建列操作；行菜单通过 rowContextMenuBuilder 提供 HyperMenuItem，支持鼠标右键与菜单键，不通过长按打开 |
 | 调整列宽 | 拖动表头末尾的调整手柄，或 controller.setColumnWidth；用户宽度优先于随后更新的默认列宽 |
 | 同步树形 | childrenBuilder；treeColumnId 指定展开列，默认第一列 |
 | 异步子级 | childrenLoader、hasChildren；逐行加载、缓存、失败重试与请求过期保护 |
@@ -79,7 +83,53 @@ expandedKeys 为 null 时由组件管理展开；传入集合时由调用方结�
 
 ## 主题和尺寸
 
-全局 `tableTheme`、局部 `HyperTableTheme` 与实例 `HyperTableStyle` 逐字段覆盖，文本深合并。尺寸集中在四端 `sizes.table`。单元格编辑器可通过 Style.editorStyle 覆盖，滚动条通过 Style.scrollbarTheme 覆盖。文字跟随系统 TextScaler，行与表头的实际高度至少容纳缩放后的单行文字及内边距；长文字单行省略，自定义单元格负责自己的内容布局。
+选中行的默认单元格文字、树形展开 / 重试 / 加载图标及行拖动手柄使用
+`HyperTableStyle.selectedForeground`。未设置时，在最终选中背景（含浮起背景）上
+复用统一对比度主题自动取色；主色与主色容器优先使用对应的 onPrimary / onPrimaryContainer
+语义颜色，半透明背景先与表格底色合成。显式颜色优先，并支持全局、局部和实例逐字段覆盖。
+前景切换使用表格 Motion 并尊重减少动画。表头、选择框自身状态、自定义 cellBuilder
+和编辑器继续遵守各自主题，不整行强制包一层前景主题。
+
+```dart
+HyperTableStyle(
+  selectedBackground: theme.colors.primary,
+  selectedForeground: theme.colors.onPrimary,
+)
+```
+
+### 内嵌到卡片或面板
+
+`HyperTable(embedded: true, ...)` 将外层轮廓交给父容器：表格不绘制外描边、
+材质边缘或外阴影，外圆角为 0。未显式设置表格材质时使用语义实色底，
+不会继承父级的全局玻璃配方；显式表格材质仍可覆盖背景效果，但不增加外轮廓。
+父容器负责唯一一层描边和需要的圆角裁切，不需要额外的列表壳组件。
+
+```dart
+HyperCard(
+  style: HyperCardStyle(
+    padding: EdgeInsets.zero,
+    border: Border.all(color: theme.colors.outline),
+    clipBehavior: Clip.antiAlias,
+  ),
+  child: SizedBox(
+    height: 320,
+    child: HyperTable<Order>(
+      embedded: true,
+      columns: columns,
+      rows: orders,
+      rowKey: (row) => row.id,
+    ),
+  ),
+)
+```
+
+`embedded` 也可以通过全局 `tableTheme.style`、局部 `HyperTableTheme` 和实例
+`HyperTableStyle` 设置；控件参数优先，`false` 可恢复独立表面的主题配置。
+模式不改写原有圆角、描边和阴影配置，不重建网格状态。`borderWidth` 继续控制
+行分隔线、分页栏分隔线和内部提示线；内嵌模式只移除外层描边，不会连带删除这些线。
+排序、选择、编辑、滚动与分页行为保持一致。
+
+全局 `tableTheme`、局部 `HyperTableTheme` 与实例 `HyperTableStyle` 逐字段覆盖，文本深合并。尺寸集中在四端 `sizes.table`。单元格编辑器可通过 Style.editorStyle 覆盖，滚动条通过 Style.scrollbarTheme 覆盖。文字跟随系统 TextScaler，行与表头的实际高度至少容纳缩放后的单行文字及内边距；长文字默认换行并自动增高行高，自定义单元格负责自己的内容布局。
 
 表面复用 HyperMaterialSurface，材质质量、默认配方和降级继承统一材质主题。行状态过渡使用 Motion，固定列与主体共享同一悬停身份。菜单复用 HyperContextMenu 和公共菜单表面。分页复用 HyperPagination。
 
@@ -132,12 +182,38 @@ HyperTableEditContext 提供行、稳定行标识、列标识、当前值、文�
 
 默认文本编辑器点击外部或失焦后提交并退出，恢复单元格展示；自定义编辑器自行通过 commit/cancel 结束会话，避免下拉浮层打开时被误判为结束编辑。Demo 的“部门 · 下拉编辑”列提供设计、研发、产品三个选项，选择后提交到数据源；名称和数量仍使用默认输入框。
 
-可通过 hoverLift 开启整行悬停浮起（默认关闭），Demo 提供开关。悬停与拖动预览共用 HyperTableStyle.rowBoxShadow，可由全局、局部或实例覆盖，空列表显式关闭阴影。默认阴影复用公共菜单表面的语义阴影配方；浮起仅通过阴影表达层次，不改变行的位置、尺寸或缩放；过渡使用表格 Motion 并遵守减少动画设置。
+可通过 `HyperTableStyle.hoverLift` 配置全局或局部的整行悬停浮起（默认关闭）。`striped`（默认开启）和 `showColumnResizeHandles`（默认关闭）同样支持主题配置。解析顺序为：控件显式参数 → 实例 Style → 局部主题 → 全局主题 → 默认值；这三个控件参数省略或传 null 时继承主题，显式 false 仍优先。Demo 初始继承主题，手动切换会形成实例覆盖，可通过“恢复表格外观继承”清除。
+
+悬停与拖动预览共用 HyperTableStyle.rowBoxShadow，可由全局、局部或实例覆盖，空列表显式关闭阴影。默认阴影复用公共菜单表面的语义阴影配方；浮起仅通过阴影表达层次，不改变行的位置、尺寸或缩放；过渡使用表格 Motion 并遵守减少动画设置。
 
 悬停浮起阴影由表格顶层统一绘制，跨固定列与主体，避免列表相邻行的绘制顺序遮盖阴影。仅绘制行外阴影，不覆盖行内控件、不参与命中；滚动时清理旧位置，拖动期间关闭悬停阴影。
 
 表格设置工作区已按表头、单元格、列布局、树形层级、编辑器、动效、行状态、浮起表面和表格表面重组。浮起圆角按设备保存，浮起颜色、阴影和动画时长按亮暗配置保存；历史 editingBackground 导入保留，但不再显示失效的编辑底色入口。编辑器外观通过统一输入框主题编辑。
 
+
+### 行高
+
+横向与纵向滚动条均采用覆盖式绘制，不为滚动条额外预留内容宽高。横向滚动条绑定主体滚动控制器，绘制和拖动范围避开两侧固定列；内容纵向恰好放下时，即使需要横向滚动，也不会被滚动条挤出额外纵向滚动。表格内部列表不重复继承页面安全区留白。
+
+表头默认自动换行，按当前列宽、标题字体、系统文字缩放、内边距及排序/调宽操作空间计算统一高度；`HyperTableStyle.headerHeight` 为最小高度。固定列与滚动列使用同一高度，调宽后自动缩回。排序图标预留稳定位置，避免排序时突然挤压标题。列可通过 `headerMaxLines` 显式限制表头行数，例如 `headerMaxLines: 1` 使用单行省略；未指定时完整显示标题。表头和正文的 `maxLines` 独立。
+
+`HyperTableStyle.rowHeight` 为统一的最小行高，正文默认换行并按内容自动增高（`rowHeightMode: content`），四端最小尺寸规格不变。需要统一行高及单行省略时显式使用 `rowHeightMode: HyperTableRowHeightMode.uniform`；只限制个别列可设置该列的 `maxLines`。
+
+```dart
+HyperTable<Customer>(
+  rowHeightMode: HyperTableRowHeightMode.content,
+  rowHeightBuilder: (row) => row.isSummary ? 96 : null,
+  // columns、rows、rowKey 等原有参数照常传入
+)
+```
+
+- `rowHeightBuilder` 按行数据指定高度（不含分隔线），必须返回正的有限数；返回 null 继承行高策略。显式高度优先于内容自适应，且不低于主题最小行高及系统文字缩放所需的单行高度。
+- `rowHeightMode: content` 按各列内容取整行最大高度；默认文字按最终列宽换行，列的 `maxLines` 可限制显示行数。`maxLines: 1` 保留该列单行省略；默认 null 不限行。统一行高模式仍使用单行文字。
+- 自定义 `cellBuilder` 使用实际子树在最终宽度下测量，保留交互和状态，不创建隐藏副本。内容需要能在纵向无界约束下给出自然高度，例如 `Column(mainAxisSize: MainAxisSize.min)`、`Wrap` 或有明确高度的图片；纵向 `Expanded` 或无界滚动列表应由调用方改为自然高度或显式约束。
+- 自定义内容在行挂载后回报高度并统一更新固定列与滚动列。保留纵向虚拟滚动；内容模式下，已挂载行的所有非隐藏列均参与布局，包括横向视口外的列，因此不会横向滚动后才发现更高的单元格。大量复杂列可按业务使用显式逐行高度，以减少布局开销。
+- 文本测量和自定义高度缓存随内容、主题、文字缩放及列宽变化更新。隐藏列不参与整行高度；悬停表面、行拖动预览、无限加载末行和 PageUp/PageDown 使用逐行高度。
+
+Demo 提供独立的“逐行高度与内容自适应”示例，明确标注第二行 96 逻辑像素的实例覆盖，其他行保持主题最小高度并按内容增高。
 
 ### 列宽模式
 
@@ -145,7 +221,7 @@ HyperTableEditContext 提供行、稳定行标识、列标识、当前值、文�
 
 - fixed（默认）：使用 width，省略时继承主题默认列宽。
 - content：按表头及当前已加载行的文本测量，计入内边距及表头操作图标；异步加载后重新计算。自定义 cellBuilder 的复杂内容仍按 value 文本估算，需要精确控制时指定固定宽度。
-- flex：按 flex 权重分配固定列、内容列及控制列之外的剩余空间。相同权重平分，空间不足时保持各列最小宽度并横向滚动。
+- flex：按 flex 权重分配固定列、内容列及控制列之外的剩余空间。相同权重平分，空间不足时保持各列最小宽度并横向滚动。未指定 minWidth 时，下限采用 width 或主题默认列宽，且不低于主题最小列宽，避免固定列占满后自适应列被压成一个字；显式 minWidth 可允许更窄的列。
 
 ```dart
 HyperTableColumn(id: 'id', title: '编号', value: (row) => row.id,
@@ -165,3 +241,16 @@ Demo 提供正常数据、暂无数据、持续加载、加载失败/重试和�
 可设置 showPagination: false 隐藏内置分页栏，保留本地/远程分页行为，通过 HyperTableController.goToPage(page) 从外部分页器切页。外部分页器的当前页及业务总数由调用方管理。
 
 外部分页同步可使用 onPageChanged(page)，页码从 1 开始，仅接受有效切页后通知；刷新回到第一页时也通知页码变化。onRefreshRequested 通知 reload 请求（初始化或排序触发 reload 时同样会通知），远程请求仍由 loader(query) 唯一执行；query.refresh 表示从第一页刷新，false 表示普通切页/追加。不要在通知回调和 loader 中重复发起同一请求。
+
+无限加载返回 hasMore: false 且已存在数据时，底部显示“没有更多数据了”。可通过 noMore 参数传入自定义 Widget；传入 SizedBox.shrink() 可替换为无内容。加载中、失败及空数据时不显示该结束提示。
+
+无限模式的加载更多、追加进度、追加失败重试及结束提示附在最后一行之后，随内容滚动，不固定占据表格底栏。空数据/首屏失败仍在内容区居中，分页模式的分页栏保持独立底栏。
+
+列排序从表头拖动，预览包含该列的表头和当前视口内容，复用行拖动的实际渲染截图、浮起圆角、边框与阴影动画。插入线贯穿可见内容高度；松手提交并通知 onColumnsReordered。同一固定区域内可重排，不跨起始固定区、主体和末尾固定区；选择及行拖动控制列不作为重排入口。
+
+
+2026-10-28：竖向滚动条通过 Trina 的公开配置关闭其固定尾部占位，改用绑定 `bodyRowsVertical` 的 Flutter 原生覆盖式滚动条。自适应列宽不再扣除滚动条宽度，短表格也不会留下尾部空槽；长表格仍支持滚动条拖动。滚动条绘制范围避开表头与横向滚动条，外观继续由 `scrollbarTheme` 配置；没有修改 Pub 缓存或引入底层包补丁。
+
+2026-11-03：按用户要求加宽桌面多选区域，desktop 的 `controlColumnWidth` 从 36 调至 48 逻辑像素，复用项目其他端已有控制列宽度作为暂定值，并非官方规格；该字段同时用于行拖动控制列。表格内未选中的 checkbox 默认白底、语义 outline 描边，选中和半选保留主色。全局或局部 checkbox 主题仍可覆盖配色与描边，其他端宽度及独立 checkbox 默认外观保持原值。
+
+2026-11-03：自适应列宽在表格 LayoutBuilder 获得约束后、底层表格绘制前解析，首次挂载及刷新重建不再先绘制默认窄列再铺满。初始列和已加载的 manager 共用同一计算路径，保留手动列宽及内容测量规则；逐帧测试覆盖多选表格的远程刷新、列描述重建、宽度变化和重新挂载。

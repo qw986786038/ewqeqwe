@@ -1,4 +1,98 @@
+## 零宽边框与表格内嵌（2026-11-02）
+
+Hyper 组件的零宽边框表示关闭绘制，不沿用 Flutter 原生的发丝线语义。
+公共绘制层统一处理 Border、BorderDirectional 和标准 OutlinedBorder；
+保留原始配置、正数小数宽度、自定义线条边框及其插值。材质表面仍区分 null（继承）
+和显式空边框（关闭），不能因宽度为零重新继承材质轮廓。选色器等直接绘制路径同样跳过零宽描边。
+
+HyperTable 的 embedded 参数及同名 Style 字段只改变嵌套表面的职责：关闭外描边、
+玻璃边缘、圆角及外阴影，未指定表格材质时使用语义实色背景。统一材质解析路径、
+内部行线、分页栏分隔、行状态与网格状态保持原有归属；父容器负责唯一外描边和裁切。
+独立模式保留原主题尺寸，不引入设备内局部常量或新的列表壳组件。
+
+## 悬停上浮（2026-10-28，未确认）
+
+`HyperMotion.lift` 只处理视觉状态，不接管子控件业务交互或布局。全局配方为 `HyperMotionThemeData.lift`，局部为 `HyperLiftTheme`，实例为 `HyperLiftStyle`；几何默认集中在四端 `HyperSizeScheme.motionLift`，支持 copyWith、插值和值相等。位移与阴影圆角的编辑值按设备保存，缩放、阴影、时长与曲线按亮暗外观保存；通用、悬停/聚焦、按下分别设置和重置，阴影置于设置底部。系统减少动画禁用位移/缩放且取消过渡；子控件字体继续跟随系统 TextScaler。来源与使用方式见 [基础能力](usage/foundation.md#hypermotionlift未确认)。
+
+## 图片编辑裁剪边界（2026-10-28）
+
+HyperImageEditor 默认开启 constrainCropRect，使手柄停止于真实图像边界，越过视口后保留自动适配，自由裁剪不跨轴改变尺寸。该行为属于裁剪几何，不新增主题尺寸常量；通过主包内部 lib/src/vendor/extended_image 源码补丁在底层 crop_layer 处理，保留原生比例模型与其余交互。上游默认仍为 false，其他库的 hosted extended_image 不受影响。补丁说明与移除条件见 [LEMON_PATCHES](../lib/src/vendor/extended_image/LEMON_PATCHES.md)。
+
+## 图片预览与编辑（2026-10-28，用户已确认）
+
+新增 `HyperImagePreview`、`HyperImageEditor` 及各自独立的强类型 ThemeData、局部 Theme 和 Style；`sizes.imagePreview` / `sizes.imageEditor` 从同端 image 与命中区域语义推导默认规格。嵌入控件要求有限高度，弹窗入口复用 HyperDialog。预览通过 HyperImage 复用加载、失败与重试；编辑器通过相同状态绘制路径保留 extended_image 的裁剪子树。PNG 导出使用解码快照并按变换后的裁剪坐标绘制，不依赖原生编辑插件；保存与上传由调用方负责。Demo 归“文字与内容”，主题编辑器归“内容”，页面 id 分别为 `hyper-image-preview` 和 `hyper-image-editor`。默认来源与平台边界见 [图片](usage/image.md)。
+
+## 图片（2026-10-28，用户已确认）
+
+新增 `HyperImage`，基于 extended_image 封装三种外观与加载、成功、失败重试。四端内部尺寸由 `sizes.image` 管理，旧尺寸构造未指定 image 时从同端图标、进度和卡片语义推导；图像宽高由父布局和实例负责。全局 `imageTheme`、局部 `HyperImageTheme` 和实例 `HyperImageStyle` 提供强类型覆盖。材质复用公共表面和全局质量策略，内容淡入不包裹背景滤镜。Demo 归“文字与内容”，编辑器归“内容”，页面 id `hyper-image`。来源、平台边界与接口见 [图片](usage/image.md)。
+
+## 文件选择的默认平台能力（2026-10-27）
+
+用户明确要求文件选择能力直接集成主包。`HyperFilePicker` 与 `HyperFileFormField`
+的 `pick` 改为可选，默认通过 `HyperFileDialog` 打开系统或浏览器文件窗口；默认
+拖放由主包统一接入 desktop_drop，`enableDrop` 可关闭，自定义 `pick` / `dropBuilder`
+仍优先。原生过滤与选择后校验共用扩展名规范化，文件夹及不可读拖入项逐项拒绝。
+拖放命中使用窗口真实 DPR，内容保留预览 DPR。文件内容通过 `HyperFileSelection.readAsBytes`
+按需读取，默认不加载整份文件；上传网络请求仍归业务。Demo 与编辑器移除插件直接调用，
+由主包提供默认适配及文件导入、保存接口，不改变组件样式、主题尺寸或页面分类。
+
+## 主题工厂文字样式解析（2026-10-27）
+
+`fromSeed` 与 `fromMaterial` 在应用 Hyper 字阶前，统一将主题根文字样式的
+`inherit` 设为 false，并补齐 Flutter 文本输入要求的默认 alphabetic 基线，
+避免回退主题与种子主题动画插值时继承属性不一致触发断言。
+保留传入文字样式的行高、字重等字段，不补入额外 Material 几何，不改写控件尺寸。
+保留主题动画，不在 Demo 中禁用过渡。
+
+## 手机菜单贴边选中背景（2026-10-27）
+
+按用户提供的系统菜单参考图，phone 的菜单项背景横向铺满面板，默认
+`sizes.menu.surfacePadding = 0`、`itemRadius = 0`；文字仍保留 `padding`。
+这是参考图明确的贴边关系，不从截图物理像素反推逻辑尺寸。其他端保持原规格。
+新增可选尺寸字段 `surfacePadding`，未指定时兼容回退 `padding`；全局尺寸、
+局部菜单主题及实例 Style 仍可显式覆盖。列表项浮窗自然宽度同步读取此字段。
+
+同日用户进一步指定 phone 选中态仅使用主题主色文字及对勾，选中背景透明；
+desktop 保持原文字色与淡色选中背景。按真实设备类别解析默认配色，
+全局、局部和实例的显式菜单颜色覆盖仍优先。
+
+同日按用户反馈，phone 菜单默认按内容收缩，`sizes.menu.width` 作为宽度上限；
+显式菜单宽度覆盖仍按指定宽度显示。面板左右留白保持零，上下留白由
+`sizes.menu.surfaceVerticalPadding = 8` 提供（用户明确指定，逻辑像素）。
+分隔线上下间距按用户指定为各 4（`groupSpacing = 8`），同组菜单项间距仍为零。
+显式 `surfacePadding` 仍覆盖四边，`surfaceStyle.padding` 最后覆盖。
+
+手机菜单使用有界的真实布局测量各行，再以最宽行统一菜单项宽度；分隔线与
+间隔不参与自然宽度计算。不再手动估算文字或自定义首尾内容的宽度，也不做
+intrinsic 测量，兼容 `LayoutBuilder`，保留主题宽度上限与显式宽度覆盖。
+列表项浮窗按用户明确要求保持 phone 四边留白为零，desktop 保持既有留白；
+其传入的四边留白有意覆盖普通菜单的上下留白，显式主题和实例覆盖仍优先。
+
+## 列表项选项呈现（2026-10-27）
+
+用户明确要求 `HyperPopupListTile` 在手机端也默认显示锚点浮窗，故其 `presentation`
+默认值为 `anchored`；该列表项不套用普通表单选择器的手机底部弹窗默认策略。
+调用方仍可显式指定 `adaptive`、`bottomSheet` 或 `fullScreen`。
+模态路径由公共选择呈现器提供唯一表面，内部 `HyperMenu(showSurface: false)` 仅展示选项，
+菜单主题与实例的 `surfaceStyle` 传给外层呈现器，保留显式阴影、材质和边框覆盖。
+列表项 Demo 使用 `HyperListGroup` 按用途分组，不重复嵌套卡片表面。
+
+## 锚定面板（2026-10-27，已确认）
+
+`HyperPopover` 是带默认表面的公开锚定面板；`HyperAnchoredOverlay` 保留为无表面的
+定位、开合基础设施。面板复用 `resolveHyperMenuSurface`，材质质量、降级和安全过渡
+由公共设施负责。`popoverTheme`、局部 `HyperPopoverTheme` 与实例 `HyperPopoverStyle`
+逐字段合并，表面复用 `HyperCardStyle`，显式空阴影列表优先于配方。
+
+四端默认圆角、内边距和锚点间距直接读取当前端 `sizes.menu` 与 `sizes.overlaySpacing`，
+来源为 D 级同端既有浮层语义，不新增设备常量或跨端倍率。编辑器独立保存 popover 的
+按设备尺寸与按亮暗外观覆盖，支持继承恢复、保存和导入。用户于同日明确要求将
+当前“未确认”控件转为正式，Demo 与编辑器同步归入“交互基础”，页面 ID 保持 `hyper-popover`。
+具体接口与待验证项见 [锚定面板](usage/popover.md)。
+
 ## 通知业务边界与导航表面（2026-10-16）
+
+2026-10-22：抽屉新增四边 margin，由当前端 sizes.drawer.margin 提供默认值，HyperDrawerStyle.margin 支持全局、局部和实例覆盖；默认零边距不变。此留白属于 Scaffold 抽屉表面的滑动几何，表面宽度不包含边距，四边留白参与父约束收缩和关闭手势范围。四角复用 surfaceStyle.borderRadius，不新增重复 Style 字段；四端可用 sizes.drawer.borderRadius 配置，null 保留旧 radius 按抽屉起止方向解析的贴边圆角。普通与高级表面继续共用 HyperNavigationSurface，未新增材质或降级路径。边距过渡跟随 Motion 并遵守减少动画；Demo 使用显式开关展示示例几何，默认仍继承主题。
 
 顶部导航的下拉菜单复用 HyperMenu，编辑器将面板与菜单项分开：面板宽度、最大高度、外层内边距和表面配置保存在 topNavigationPanel，菜单项布局、文字与状态配色保存在 topNavigationMenu；顶部按钮覆盖保持独立。
 菜单新增 itemVerticalPadding，进入 HyperMenuSize 四端规格以及 HyperMenuStyle 的主题、局部和实例覆盖。默认值暂由同端既有 menu.padding 的一半推导（phone/tablet 6、desktop 4、watch 2 逻辑像素），用于在描述内容增高后保留上下留白；这是既有语义尺寸的推导值，待视觉确认，不是新增官方规格。itemHeight 继续表示最小高度，内容随文字缩放增高，不裁切。
@@ -22,6 +116,22 @@ HyperMaterialSurface 的显式 border / boxShadow 优先于材质配方；空阴
 抽屉新增四端 radius 规格，默认 16 逻辑像素用于保留当前 Flutter Material 3 Drawer 的既有圆角（本机 SDK drawer.dart 的 _DrawerDefaultsM3.shape/endShape），不是新的 HyperOS 官方视觉值。旧的只指定 width 的 HyperDrawerSize 仍接受，radius 为空时从统一默认尺寸主题回退。
 
 # Lemon UI 主题与尺寸架构
+
+## 图表（2026-10-23，已确认）
+
+2026-10-23：折线族增加数据坐标视口控制器和原生后台数据准备接口。它们属于数据与交互
+职责，不引入设备尺寸常量或视觉主题字段。当前范围采样及多级缓存使用原始快照下标，
+用户于 2026-10-23 明确确认样式与行为，Demo 与主题编辑器同步归入“文字与内容”，页面 ID 保持 `hyper-charts`。
+
+新增 `sizes.chart` 四端规格与 `chartTheme` 强类型主题；局部 `HyperChartTheme`、实例
+`HyperChartStyle` 只合并显式字段。绘图参考用户指定的 lemon_shadcn，提示表面统一走
+菜单表面解析，未更改已有控件默认值。候选尺寸来源与功能边界见 [图表](usage/charts.md)。
+
+## Result 与空状态合并（2026-10-21）
+
+`HyperResult.empty` 与其他结果状态共用布局、动画和 `HyperMaterialSurface`。空状态主题统一为 `resultTheme.empty`，尺寸统一为 `sizes.result.empty`；未指定变体尺寸时继承 `sizes.result`。全局、局部和实例均使用 Result 的强类型接口。
+
+编辑器保留页面和文档字段 id，输出到合并后的主题与尺寸变体。显式边框和空阴影列表由统一材质表面解析。
 
 ## Cascader（2026-10-20，未确认）
 
@@ -91,8 +201,7 @@ iconButtonTheme 和 sizes.textField 的四端规格，不增加独立重复的�
 
 ## Alert / Banner（2026-10-03）
 
-alertTheme / bannerTheme 及 sizes.alert / sizes.banner 独立存储，
-局部通过 HyperAlertTheme / HyperBannerTheme 覆盖，不读取对方主题。
+Alert 与横幅统一使用 alertTheme / HyperAlertTheme；横幅叠加 bannerStyle 及 bannerInfo 等 severity 覆盖，四端尺寸为 sizes.alert.banner。
 HyperNoticeStyle 仅共用字段结构，支持通用与四种状态覆盖，实例 Style 最后应用。
 共用内部 HyperNoticeBody 的内容、图标、操作与显隐布局；状态和关闭由父级控制。
 材质默认继承 HyperMaterialTheme，渲染与降级复用 HyperMaterialSurface。
@@ -172,14 +281,14 @@ Checkbox 与 Chip 的对勾路径及两阶段描画动画采用 Flutter Checkbox
 默认视觉为 D 级项目推导（基于同端按钮、Tag 与图标密度），暂无同场景官方
 Chip 逻辑尺寸或目标截图的直接验证。
 
-`HyperEmptyState` 只展示空内容，不管理网络、加载、重试或业务状态。默认中性图标
+`HyperResult.empty` 只展示空内容，不管理网络、加载、重试或业务状态。默认中性图标
 与“暂无内容”标题；`illustration` 优先于图标，`showIllustration: false` 可隐藏装饰；
 `titleWidget`、`descriptionWidget` 可替换默认文本，`content` 放置额外内容，
 `actions` 接受现有按钮等 Widget 并自动换行。外层最大内容宽度只约束当前组件，
 父布局仍决定可用区域。装饰插图不创建重复朗读条目，文字与操作保持原有语义。
-全局 `emptyStateTheme`、局部 `HyperEmptyStateTheme`、实例 `HyperEmptyStateStyle`
+全局 `resultTheme.empty`、局部 `HyperResultTheme`、实例 `HyperResultStyle`
 管理图标、颜色、排版、对齐、间距、背景填充、边框、圆角、阴影和过渡。
-四端尺寸集中在 `HyperSizeScheme.emptyState`；文字复用当前端 titleMedium 与
+四端尺寸集中在 `HyperSizeScheme.result.empty`；文字复用当前端 titleMedium 与
 bodySmall，背景默认无填充，容器可由使用方组合。内容变化使用 Motion 标准
 过渡，系统减少动画时关闭；`transitionBuilder` 可替换插图和文字的切换效果。
 无同场景可核实的官方尺寸参数，默认视觉按 D 级项目语义规格推导，待设备对照。
@@ -646,9 +755,9 @@ paginationTheme 与 sizes.pagination 独立强类型存储，支持复制、合�
 
 HyperPaginationModel 负责输入合法性、页码窗口与省略号；组件仅发出 onPageChanged，调用方负责数据加载和页数变化后的当前页修正。Wrap 适应可用宽度，不改变设备分类。数据为空使用 currentPage 0，非空页码从 1 起始。
 
-## StepIndicator / StepperNavigation（2026-10-05）
+## StepIndicator 与 navigation 模式（2026-10-05）
 
-stepIndicatorTheme / stepperNavigationTheme 与 sizes.stepIndicator / sizes.stepperNavigation 各自独立存储。HyperStepStyle、HyperStepSize 共用字段结构，公共 Body 只接收已选主题解析函数与当前尺寸，不自行判断设备类别或读取另一组件主题。
+步骤展示与导航统一使用 stepIndicatorTheme / HyperStepIndicatorTheme。导航叠加 navigationStyle 与对应状态字段；四端尺寸为 sizes.stepIndicator.navigation。公共 Body 接收已解析主题与尺寸，不判断设备类别。
 
 纯 HyperStepModel 校验索引与 id，推导 pending/current/completed，并支持显式 error 和 disabled 状态。页面负责实际导航、流程校验与提交；Indicator 仅呈现，Navigation 仅发出请求。主题通用字段、状态字段、实例字段、单项字段依次合并。
 
@@ -677,7 +786,7 @@ HyperDescriptionList 的全局视觉使用 descriptionListTheme，四端尺寸�
 
 ## Result（2026-10-09）
 
-HyperResult 展示调用方控制的 neutral/success/error/warning/info 状态，不管理加载、请求、重试、导航与自动关闭。全局 resultTheme、局部 HyperResultTheme 和实例 Style 逐字段合并，状态 Style 叠加通用 Style；文字字段深合并。四端 sizes.result 独立存储，不读取 emptyStateTheme 或 sizes.emptyState。材质、质量与降级继承统一 HyperMaterialTheme，表面复用 HyperMaterialSurface；前景边框与外部阴影不会被材质遮盖。默认过渡沿用 Motion 与减少动画策略，transitionBuilder 可替换内容过渡。父级负责页面滚动与安全区。
+HyperResult 展示调用方控制的 neutral/success/error/warning/info 状态，不管理加载、请求、重试、导航与自动关闭。全局 resultTheme、局部 HyperResultTheme 和实例 Style 逐字段合并，状态 Style 叠加通用 Style；文字字段深合并。四端 sizes.result 管理基础尺寸，空内容使用其 empty 变体。材质、质量与降级继承统一 HyperMaterialTheme，表面复用 HyperMaterialSurface；前景边框与外部阴影不会被材质遮盖。默认过渡沿用 Motion 与减少动画策略，transitionBuilder 可替换内容过渡。父级负责页面滚动与安全区。
 
 ## PageIndicator（2026-10-09）
 
@@ -858,3 +967,35 @@ Form 保留原生 FormField 的 save/reset/validate，Controller 维护具名值
 
 Gallery 预留“表单”正式分类；Form Demo 与编辑入口暂位于“未确认”，id hyper-form 保持稳定。编辑器采用独立 EditorFormMetrics/EditorFormVisual 保存四端尺寸与亮暗外观，恢复继承和历史配置导入兼容；像素滑块写入整数，公共操作上限位于 editor_dimension_limits.dart。
 阶段一采用通用 builder 完整接入现有 Select/DatePicker/Checkbox，提供专门 HyperTextFormField 文本适配。其余专用命名 FormField 包装属于第二阶段，不阻塞表单组合使用。
+
+
+## HyperTable（2026-10-21；2026-10-22 用户确认）
+
+对外使用 HyperTable<T>、HyperTableColumn<T>、HyperTableController、HyperTableQuery/Page 与强类型事件；TrinaGrid 状态管理器不公开。全局 tableTheme、局部 HyperTableTheme 和实例 HyperTableStyle 逐字段合并，文本深合并；四端默认规格由 sizes.table 集中管理。公开样式及尺寸支持 copyWith、插值和值相等。
+
+编辑器 tableMetrics 属于四端设备规格，tableVisual 属于亮暗外观；保留统一保存、导入、恢复继承和撤销机制。Gallery 与编辑器登记在未确认，id hyper-table。列布局、行状态和表面分别组织，不将交替行配色混作交互状态。
+
+行底色由同一表面路径绘制，固定列与主体共享悬停身份；Motion 与减少动画设置统一处理状态过渡。表格表面继承统一材质质量及降级，行右键/长按菜单使用 HyperContextMenu，表头菜单与编辑控件使用公共 Hyper 组件。未搬运旧版悬停缩放、覆盖滚动条或补丁。
+
+选中默认文字与内置行图标使用 selectedForeground，未指定时复用统一对比度主题及最终选中背景解析；自定义 cellBuilder 和编辑器保留自身配色。前景动画由表格按 rowKey 持有并跨固定列、普通列及行图标共享，避免底层网格重新挂载单元格时跳色；数据移除或换页时释放对应动画，减少动画设置仍优先。
+
+本地/分页/无限加载分别处理数据，远程排序和刷新使旧请求失效。树形按稳定 key 展开，子级缓存与请求代次防止刷新前结果覆盖新数据；分页以根节点计数，排序保留父子关系。行拖动只用于本地未分页且未排序的平面数据，避免把展示位置误当业务全量顺序。
+
+## InlineEdit（2026-10-26，用户已确认）
+
+行内编辑全局 inlineEditTheme、局部 HyperInlineEditTheme 与实例 HyperInlineEditStyle 逐字段合并，包含文字、输入、操作按钮和动效覆盖；支持 copyWith、插值及值相等。四端最小高度复用 sizes.textField，间距复用 sizes.form，不保存组件端内常量。默认表面由子控件主题及统一材质系统负责，默认过渡只动画尺寸，减少动画优先。设计来源为 D 级既有语义组合，细节见 usage/inline-edit.md。
+
+## 评分、穿梭框、分栏、可移动对话框与导航栏（2026-10-26，未确认）
+
+新增 ratingTheme、transferTheme、resizableTheme、movableDialogTheme、navigationBarTheme 强类型全局主题，局部 Theme 和实例 Style 只覆盖显式字段；复制、插值、值相等和哈希保持完整。默认四端几何复用当前已解析的 icon/button/form/divider/menu/selection/card/dialog 等语义规格，不在组件内分设备保存常量。编辑器设备尺寸与亮暗颜色分开保存。详见 usage/pending-controls.md。
+
+HyperDialog 新增 surfaceBuilder，只包装已完成材质、边框、阴影与圆角解析的表面；可移动对话框以此复用公共路径，仅施加平移。路由继续使用 showHyperDialog 的调用处主题捕获和安全材质过渡，空阴影与显式边框优先。
+## CJK 字体的 leading 默认值（2026-10-30）
+
+主题工厂生成的所有文字字阶，在未显式指定时采用
+`TextLeadingDistribution.even`，保留字体、字号、行高、字重及系统 TextScaler。
+输入框解析使用同样的默认值，使普通输入和数字输入的测量样式与可编辑文字一致。
+显式的 proportional 或自定义行高仍优先；不统一把正文行高压成 1，不用文字偏移
+或关闭缩放处理对齐。实测思源黑体 14 逻辑像素、0.875 缩放时，默认比例 leading
+会令可编辑数字行框低于测量行高；even 消除该差异。真实字体回归入口为
+`test/hyper_input_leading_test.dart` 的 `CJK_REVIEW_FONT` 参数。

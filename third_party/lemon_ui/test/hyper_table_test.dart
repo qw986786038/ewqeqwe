@@ -35,6 +35,245 @@ List<HyperTableColumn<String>> _columns() => [
 ];
 
 void main() {
+  for (final scale in [1.0, 1.3, 2.0]) {
+    testWidgets(
+      'flex keeps a usable width when fixed columns overflow: $scale',
+      (tester) async {
+        Widget table(double viewport, {double? minWidth}) => _host(
+          HyperTable<String>(
+            reorderableRows: true,
+            columns: [
+              HyperTableColumn(
+                id: 'name',
+                title: '节目名称',
+                value: (row) => row,
+                widthMode: HyperTableColumnWidthMode.flex,
+                minWidth: minWidth,
+              ),
+              HyperTableColumn(
+                id: 'detail',
+                title: '行业分类',
+                value: (row) => '公益宣传',
+                width: 400,
+              ),
+            ],
+            rows: const ['节目名称内容'],
+            rowKey: (row) => row,
+            style: const HyperTableStyle(
+              columnWidth: 192,
+              minimumColumnWidth: 36,
+              borderWidth: 0,
+            ),
+          ),
+          width: viewport,
+          scale: scale,
+        );
+        trina.TrinaGrid grid() => tester.widget(find.byType(trina.TrinaGrid));
+        double nameWidth() =>
+            grid().columns.firstWhere((c) => c.field == 'name').width;
+
+        await tester.pumpWidget(table(320));
+        await tester.pumpAndSettle();
+        expect(nameWidth(), 192);
+        expect(grid().configuration.scrollbar.showHorizontal, isFalse);
+        expect(
+          grid().columns.firstWhere((c) => c.field == 'detail').width,
+          400,
+        );
+
+        await tester.pumpWidget(table(760));
+        await tester.pumpAndSettle();
+        expect(nameWidth(), greaterThan(192));
+        expect(grid().configuration.scrollbar.showHorizontal, isFalse);
+
+        await tester.pumpWidget(table(320, minWidth: 64));
+        await tester.pumpAndSettle();
+        expect(nameWidth(), 64);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  testWidgets('flex header has final widths on every painted frame', (
+    tester,
+  ) async {
+    final controller = HyperTableController();
+    Future<HyperTablePage<String>> load(HyperTableQuery query) async =>
+        const HyperTablePage(items: [], total: 0);
+    Widget table({double width = 640, int generation = 0}) => _host(
+      HyperTable<String>(
+        key: ValueKey(generation),
+        controller: controller,
+        dataMode: HyperTableDataMode.paginated,
+        loader: load,
+        selectionMode: HyperTableSelectionMode.multiple,
+        columns: [
+          HyperTableColumn(
+            id: 'name',
+            title: '文件',
+            value: (row) => row,
+            widthMode: HyperTableColumnWidthMode.flex,
+          ),
+          HyperTableColumn(
+            id: 'date',
+            title: '清除日期',
+            value: (row) => '-',
+            width: 100,
+          ),
+        ],
+        rows: const [],
+        rowKey: (row) => row,
+        style: const HyperTableStyle(borderWidth: 0),
+      ),
+      width: width,
+    );
+    Future<void> verifyFrames(Widget widget, double width) async {
+      await tester.pumpWidget(widget);
+      for (var frame = 0; frame < 5; frame++) {
+        final title = find.text('清除日期');
+        if (title.evaluate().isNotEmpty) {
+          final grid = tester.getRect(find.byType(trina.TrinaGrid));
+          // The fixed final column must start at the final flex boundary,
+          // including frames before the grid's onLoaded callback settles.
+          expect(
+            tester.getTopLeft(title.first).dx,
+            greaterThan(grid.left + width - 100),
+            reason: 'Header collapsed on frame $frame at width $width',
+          );
+        }
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    final initial = table();
+    await verifyFrames(initial, 640);
+    await controller.reload();
+    await verifyFrames(initial, 640);
+    // A parent refresh commonly creates new column descriptors.
+    await verifyFrames(table(), 640);
+    await verifyFrames(table(width: 720), 720);
+    await verifyFrames(table(generation: 1), 640);
+  });
+  for (final mode in HyperTableSelectionMode.values) {
+    testWidgets(
+      'ordinary cell activation has no border in selection mode $mode',
+      (tester) async {
+        final theme = HyperThemeData.light().copyWith(
+          tableTheme: const HyperTableThemeData(
+            style: HyperTableStyle(
+              focusColor: Colors.purple,
+              borderColor: Colors.red,
+            ),
+          ),
+        );
+        await tester.pumpWidget(
+          _host(
+            HyperTable<String>(
+              columns: _columns(),
+              rows: const ['row-a', 'row-b'],
+              rowKey: (row) => row,
+              selectionMode: mode,
+            ),
+            theme: theme,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('row-a').first);
+        await tester.pumpAndSettle();
+        final grid = tester.widget<trina.TrinaGrid>(
+          find.byType(trina.TrinaGrid),
+        );
+        expect(
+          grid.configuration.style.activatedBorderColor,
+          Colors.transparent,
+        );
+        expect(
+          grid.configuration.style.inactivatedBorderColor,
+          Colors.transparent,
+        );
+        expect(grid.configuration.style.borderColor, Colors.red);
+        expect(
+          HyperTableTheme.of(tester.element(find.byType(HyperTable<String>)))
+              .style
+              .focusColor,
+          Colors.purple,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  for (final count in [1, 60]) {
+    testWidgets(
+      'flex columns fill the body without a scrollbar gutter: $count rows',
+      (tester) async {
+        await tester.pumpWidget(
+          _host(
+            HyperTable<String>(
+              columns: [
+                HyperTableColumn(
+                  id: 'name',
+                  title: '名称',
+                  value: (row) => row,
+                  widthMode: HyperTableColumnWidthMode.flex,
+                ),
+                HyperTableColumn(
+                  id: 'date',
+                  title: '清除日期',
+                  value: (row) => '-',
+                  widthMode: HyperTableColumnWidthMode.flex,
+                ),
+              ],
+              rows: List.generate(count, (index) => 'row-$index'),
+              rowKey: (row) => row,
+              style: const HyperTableStyle(
+                borderWidth: 0,
+                scrollbarTheme: ScrollbarThemeData(
+                  thumbVisibility: WidgetStatePropertyAll(true),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final grid = tester.widget<trina.TrinaGrid>(
+          find.byType(trina.TrinaGrid),
+        );
+        final gridRect = tester.getRect(find.byType(trina.TrinaGrid));
+        expect(grid.configuration.scrollbar.showVertical, isFalse);
+        expect(grid.configuration.scrollbar.showHorizontal, isFalse);
+        expect(
+          grid.columns.fold<double>(0, (width, column) => width + column.width),
+          closeTo(gridRect.width, .01),
+        );
+        final scrollbar = tester.widget<RawScrollbar>(
+          find.byWidgetPredicate(
+            (w) =>
+                w is RawScrollbar &&
+                w.scrollbarOrientation != ScrollbarOrientation.bottom,
+          ),
+        );
+        final scroll = scrollbar.controller!;
+        if (count == 1) {
+          expect(scroll.position.maxScrollExtent, 0);
+        } else {
+          expect(scroll.position.maxScrollExtent, greaterThan(0));
+          await tester.dragFrom(
+            Offset(gridRect.right - 3, gridRect.top + 75),
+            const Offset(0, 80),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            scroll.offset,
+            greaterThan(0),
+            reason: 'The overlaid native thumb must remain draggable.',
+          );
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
   test('table themes and four-device dimensions support copy, merge and interpolation', () {
     final base = HyperThemeData.light();
     const style = HyperTableStyle(
@@ -181,17 +420,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.tap(find.byIcon(HyperIcons.chevronRight));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.refresh), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.refresh));
+    expect(find.byIcon(HyperIcons.refreshCw), findsOneWidget);
+    await tester.tap(find.byIcon(HyperIcons.refreshCw));
     await tester.pumpAndSettle();
     expect(find.text('Child'), findsOneWidget);
     expect(calls, 2);
-    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.tap(find.byIcon(HyperIcons.chevronRight));
     await tester.pumpAndSettle();
     expect(find.text('Child'), findsNothing);
-    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.tap(find.byIcon(HyperIcons.chevronRight));
     await tester.pumpAndSettle();
     expect(find.text('Child'), findsOneWidget);
     expect(calls, 2);
@@ -279,7 +518,16 @@ void main() {
           .first
           .width;
       await tester.drag(
-        find.byIcon(Icons.drag_indicator).first,
+        find
+            .descendant(
+              of: find.byWidgetPredicate(
+                (widget) =>
+                    widget is MouseRegion &&
+                    widget.cursor == SystemMouseCursors.resizeColumn,
+              ),
+              matching: find.byType(GestureDetector),
+            )
+            .first,
         const Offset(40, 0),
       );
       await tester.pumpAndSettle();
@@ -391,7 +639,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.chevron_right));
+      await tester.tap(find.byIcon(HyperIcons.chevronRight));
       await tester.pump();
       await tester.pump();
       final expand = find.byWidgetPredicate(
@@ -402,7 +650,7 @@ void main() {
       request.complete(['Late child']);
       await tester.pumpAndSettle();
       expect(find.text('Late child'), findsNothing);
-      await tester.tap(find.byIcon(Icons.chevron_right));
+      await tester.tap(find.byIcon(HyperIcons.chevronRight));
       await tester.pumpAndSettle();
       expect(find.text('Late child'), findsOneWidget);
       expect(tester.takeException(), isNull);

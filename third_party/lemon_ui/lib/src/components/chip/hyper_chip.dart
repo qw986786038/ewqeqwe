@@ -1,3 +1,4 @@
+import '../../foundation/hyper_icons.dart';
 import '../../motion/hyper_animated_checkmark.dart';
 
 import 'dart:math' as math;
@@ -8,6 +9,7 @@ import '../../foundation/hyper_control_state.dart';
 import '../../foundation/hyper_fill.dart';
 import '../../interaction/hyper_pressable.dart';
 import '../../painting/hyper_box_decoration.dart';
+import '../../painting/hyper_surface_border.dart';
 import '../../theme/core/hyper_theme.dart';
 import '../tooltip/hyper_tooltip.dart';
 import 'hyper_chip_style.dart';
@@ -199,9 +201,9 @@ class HyperChip extends StatelessWidget {
         deleteTargetWidth: metrics.deleteTargetWidth,
         minimumTapTargetSize: sizes.minimumInteractiveDimension,
         showCheckmark: true,
-        checkmarkIcon: Icons.check,
+        checkmarkIcon: HyperIcons.check,
         checkmarkPlacement: HyperChipCheckmarkPlacement.leading,
-        deleteIcon: Icons.close,
+        deleteIcon: HyperIcons.x,
         duration: theme.motion.fastDuration,
         curve: theme.motion.fastCurve,
       );
@@ -316,17 +318,17 @@ class HyperChip extends StatelessWidget {
                                                     resolved
                                                         .selectedAvatarColor ??
                                                     colors.primary,
-                                                shape:
-                                                    resolved
-                                                        .selectedAvatarShape ??
-                                                    const CircleBorder(),
+                                                shape: normalizeHyperShapeBorder(
+                                                  resolved.selectedAvatarShape ??
+                                                      const CircleBorder(),
+                                                ),
                                               ),
                                             )
                                           else
                                             leading,
                                           if (overlayCheck)
                                             resolved.checkmarkIcon ==
-                                                        Icons.check &&
+                                                        HyperIcons.check &&
                                                     resolved.transitionBuilder ==
                                                         null
                                                 ? Center(
@@ -421,7 +423,7 @@ class HyperChip extends StatelessWidget {
                                       ExcludeSemantics(
                                         child:
                                             resolved.checkmarkIcon ==
-                                                    Icons.check &&
+                                                    HyperIcons.check &&
                                                 resolved.transitionBuilder ==
                                                     null
                                             ? SizedBox.square(
@@ -480,6 +482,12 @@ class HyperChip extends StatelessWidget {
                               style: textStyle,
                               child: Text(
                                 label,
+                                textHeightBehavior: const TextHeightBehavior(
+                                  leadingDistribution:
+                                      TextLeadingDistribution.even,
+                                  applyHeightToFirstAscent: false,
+                                  applyHeightToLastDescent: false,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),

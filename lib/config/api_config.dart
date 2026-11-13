@@ -7,7 +7,10 @@ class ApiConfig {
   //     'http://192.168.5.77:8089/media-market-service';
   // static const String baseUrl =
   //     'http://192.168.5.37:8089/media-market-service';
-   static const String clientId = '099f6954410409ca0b9cc736d9ba1020';
+  /// 内网测试环境
+  // static const String baseUrl =
+  //     'http://192.168.5.45:8089/media-market-service';
+  static const String clientId = '099f6954410409ca0b9cc736d9ba1020';
 
   /// 桌面端固定租户编号（登录 Body 必传）。
   /// 正式环境
@@ -21,6 +24,8 @@ class ApiConfig {
   static const String captchaCode = '/desktop/code';
   static const String brandOverview = '/desktop/oac/brand/overview';
   static const String brandList = '/desktop/oac/brand/list';
+  /// 品牌视角导出 Excel：`POST /desktop/oac/brand/export`。
+  static const String brandExport = '/desktop/oac/brand/export';
   /// 企业视角 KPI：`GET /desktop/oac/enterprise/overview`。
   static const String enterpriseOverview = '/desktop/oac/enterprise/overview';
   /// 企业视角列表：`GET /desktop/oac/enterprise/list`。
@@ -34,6 +39,8 @@ class ApiConfig {
   /// 人视角列表：`GET /desktop/oac/person/list`。
   static const String personList = '/desktop/oac/person/list';
   static const String createOrder = '/admin/oac/order';
+  /// 更新订单：`PUT /desktop/oac/order`。
+  static const String updateOrder = '/desktop/oac/order';
   /// 更新订单关联 4A：`PUT /desktop/oac/order/agency`（body: id + agencyCustomerId，空则清空）。
   static const String updateOrderAgency = '/desktop/oac/order/agency';
   static const String customerList = '/desktop/oac/customer/list';
@@ -264,7 +271,7 @@ class ApiConfig {
   static String hrmEmployeeContracts(String id) =>
       '/desktop/hrm/employees/$id/contracts';
 
-  /// 能力标签：`GET /desktop/hrm/employees/{id}/skills`。
+  /// 能力标签：`GET|PUT /desktop/hrm/employees/{id}/skills`（PUT 全量覆盖）。
   static String hrmEmployeeSkills(String id) =>
       '/desktop/hrm/employees/$id/skills';
 

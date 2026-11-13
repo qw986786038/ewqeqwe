@@ -8,13 +8,19 @@ import 'editor_dimension_limits.dart';
 /// Explicit editor overrides shared by feedback and navigation workspaces.
 /// Dimensions are stored per device, visual values per appearance.
 class EditorReviewFields {
+  double? translationX, translationY, scale, pressDuration;
+  double? radiusTopLeft, radiusTopRight, radiusBottomRight, radiusBottomLeft;
   double? dotRadius, dotBorderWidth;
   double? expandIconSize;
   double? collapsedIconSize;
   double? collapsedRowGap;
   EditorColor? expandIconColor;
   EditorColor? dotBorderColor;
+  String? breadcrumbSeparator;
   String? materialKind;
+  bool? materialEdgeEnabled;
+  bool? liftSurface;
+  bool? liftShowShadow;
   double? materialBlurX, materialBlurY;
   double? surfaceRadius;
   double? borderWidth;
@@ -88,6 +94,9 @@ class EditorReviewFields {
   double? collapsedWidth;
   double? itemHeight;
   double? itemSpacing;
+  double? itemPadding;
+  double? trailingSpacing;
+  double? badgeSpacing;
   double? rowGap;
   double? indent;
   double? sectionSpacing;
@@ -170,6 +179,14 @@ class EditorReviewFields {
   String? textAlign;
   final shadow = EditorComponentShadow();
   Map<String, Object?> toJson() => {
+    if (pressDuration != null) 'pressDuration': pressDuration,
+    if (translationX != null) 'translationX': translationX,
+    if (translationY != null) 'translationY': translationY,
+    if (scale != null) 'scale': scale,
+    if (radiusTopLeft != null) 'radiusTopLeft': radiusTopLeft,
+    if (radiusTopRight != null) 'radiusTopRight': radiusTopRight,
+    if (radiusBottomRight != null) 'radiusBottomRight': radiusBottomRight,
+    if (radiusBottomLeft != null) 'radiusBottomLeft': radiusBottomLeft,
     if (expandIconSize != null) 'expandIconSize': expandIconSize,
     if (collapsedIconSize != null) 'collapsedIconSize': collapsedIconSize,
     if (collapsedRowGap != null) 'collapsedRowGap': collapsedRowGap,
@@ -178,6 +195,9 @@ class EditorReviewFields {
     if (dotBorderWidth != null) 'dotBorderWidth': dotBorderWidth,
     if (dotBorderColor != null) 'dotBorderColor': dotBorderColor!.toJson(),
     if (materialKind != null) 'materialKind': materialKind,
+    if (materialEdgeEnabled != null) 'materialEdgeEnabled': materialEdgeEnabled,
+    if (liftSurface != null) 'liftSurface': liftSurface,
+    if (liftShowShadow != null) 'liftShowShadow': liftShowShadow,
     if (materialBlurX != null) 'materialBlurX': materialBlurX,
     if (materialBlurY != null) 'materialBlurY': materialBlurY,
     if (surfaceRadius != null) 'surfaceRadius': surfaceRadius,
@@ -264,6 +284,9 @@ class EditorReviewFields {
     if (collapsedWidth != null) 'collapsedWidth': collapsedWidth,
     if (itemHeight != null) 'itemHeight': itemHeight,
     if (itemSpacing != null) 'itemSpacing': itemSpacing,
+    if (itemPadding != null) 'itemPadding': itemPadding,
+    if (trailingSpacing != null) 'trailingSpacing': trailingSpacing,
+    if (badgeSpacing != null) 'badgeSpacing': badgeSpacing,
     if (rowGap != null) 'rowGap': rowGap,
     if (indent != null) 'indent': indent,
     if (sectionSpacing != null) 'sectionSpacing': sectionSpacing,
@@ -363,6 +386,7 @@ class EditorReviewFields {
     if (highlightForegroundColor != null)
       'highlightForegroundColor': highlightForegroundColor!.toJson(),
     if (separatorColor != null) 'separatorColor': separatorColor!.toJson(),
+    if (breadcrumbSeparator != null) 'breadcrumbSeparator': breadcrumbSeparator,
     if (curve != null) 'curve': curve,
     if (effect != null) 'effect': effect,
     if (actionsAlignment != null) 'actionsAlignment': actionsAlignment,
@@ -372,6 +396,14 @@ class EditorReviewFields {
   };
   static EditorReviewFields fromJson(Map<String, dynamic> j) {
     const keys = {
+      'pressDuration',
+      'translationX',
+      'translationY',
+      'scale',
+      'radiusTopLeft',
+      'radiusTopRight',
+      'radiusBottomRight',
+      'radiusBottomLeft',
       'dotRadius',
       'expandIconSize',
       'collapsedIconSize',
@@ -380,6 +412,9 @@ class EditorReviewFields {
       'dotBorderWidth',
       'dotBorderColor',
       'materialKind',
+      'materialEdgeEnabled',
+      'liftSurface',
+      'liftShowShadow',
       'materialBlurX',
       'materialBlurY',
       'surfaceRadius',
@@ -454,6 +489,9 @@ class EditorReviewFields {
       'collapsedWidth',
       'itemHeight',
       'itemSpacing',
+      'itemPadding',
+      'trailingSpacing',
+      'badgeSpacing',
       'rowGap',
       'indent',
       'sectionSpacing',
@@ -530,6 +568,7 @@ class EditorReviewFields {
       'disabledBackgroundColor',
       'highlightForegroundColor',
       'separatorColor',
+      'breadcrumbSeparator',
       'curve',
       'effect',
       'actionsAlignment',
@@ -541,6 +580,9 @@ class EditorReviewFields {
     }
     for (final entry in {
       'materialKind': HyperSurfaceMaterialKind.values
+          .map((x) => x.name)
+          .toSet(),
+      'breadcrumbSeparator': HyperBreadcrumbSeparator.values
           .map((x) => x.name)
           .toSet(),
       'curve': {'linear', 'easeInOut', 'fastOutSlowIn'},
@@ -555,6 +597,14 @@ class EditorReviewFields {
     }
     final result = EditorReviewFields()
       ..expandIconSize = number(j['expandIconSize'], min: 0)
+      ..pressDuration = number(j['pressDuration'], min: 0)
+      ..translationX = number(j['translationX'])
+      ..translationY = number(j['translationY'])
+      ..scale = number(j['scale'], min: 0.001)
+      ..radiusTopLeft = number(j['radiusTopLeft'], min: 0)
+      ..radiusTopRight = number(j['radiusTopRight'], min: 0)
+      ..radiusBottomRight = number(j['radiusBottomRight'], min: 0)
+      ..radiusBottomLeft = number(j['radiusBottomLeft'], min: 0)
       ..collapsedIconSize = number(j['collapsedIconSize'], min: 0)
       ..collapsedRowGap = number(j['collapsedRowGap'], min: 0)
       ..expandIconColor = j['expandIconColor'] == null
@@ -566,6 +616,9 @@ class EditorReviewFields {
           ? null
           : EditorColor.fromJson(j['dotBorderColor'] as Map<String, dynamic>)
       ..materialKind = j['materialKind'] as String?
+      ..materialEdgeEnabled = j['materialEdgeEnabled'] as bool?
+      ..liftSurface = j['liftSurface'] as bool?
+      ..liftShowShadow = j['liftShowShadow'] as bool?
       ..materialBlurX = number(j['materialBlurX'], min: 0)
       ..materialBlurY = number(j['materialBlurY'], min: 0)
       ..surfaceRadius = number(j['surfaceRadius'], min: 0)
@@ -646,6 +699,9 @@ class EditorReviewFields {
       ..collapsedWidth = number(j['collapsedWidth'], min: 0)
       ..itemHeight = number(j['itemHeight'], min: 0)
       ..itemSpacing = number(j['itemSpacing'], min: 0)
+      ..itemPadding = number(j['itemPadding'], min: 0)
+      ..trailingSpacing = number(j['trailingSpacing'], min: 0)
+      ..badgeSpacing = number(j['badgeSpacing'], min: 0)
       ..rowGap = number(j['rowGap'], min: 0)
       ..indent = number(j['indent'], min: 0)
       ..sectionSpacing = number(j['sectionSpacing'], min: 0)
@@ -837,6 +893,7 @@ class EditorReviewFields {
       ..separatorColor = j['separatorColor'] == null
           ? null
           : EditorColor.fromJson(j['separatorColor'] as Map<String, dynamic>)
+      ..breadcrumbSeparator = j['breadcrumbSeparator'] as String?
       ..curve = j['curve'] as String?
       ..effect = j['effect'] as String?
       ..actionsAlignment = j['actionsAlignment'] as String?
@@ -874,6 +931,28 @@ class EditorReviewCollection {
   EditorReviewFields paginationNavigation = EditorReviewFields();
   EditorReviewFields paginationSelected = EditorReviewFields();
   EditorReviewFields paginationDefault = EditorReviewFields();
+  EditorReviewFields motionLift = EditorReviewFields();
+  EditorReviewFields motionLiftHover = EditorReviewFields();
+  EditorReviewFields motionLiftPressed = EditorReviewFields();
+  EditorReviewFields imagePreview = EditorReviewFields();
+  EditorReviewFields imageEditor = EditorReviewFields();
+  EditorReviewFields image = EditorReviewFields();
+  EditorReviewFields imageLoading = EditorReviewFields();
+  EditorReviewFields imageCompleted = EditorReviewFields();
+  EditorReviewFields imageFailed = EditorReviewFields();
+  EditorReviewFields imagePlain = EditorReviewFields();
+  EditorReviewFields imagePlainLoading = EditorReviewFields();
+  EditorReviewFields imagePlainCompleted = EditorReviewFields();
+  EditorReviewFields imagePlainFailed = EditorReviewFields();
+  EditorReviewFields imageOutlined = EditorReviewFields();
+  EditorReviewFields imageOutlinedLoading = EditorReviewFields();
+  EditorReviewFields imageOutlinedCompleted = EditorReviewFields();
+  EditorReviewFields imageOutlinedFailed = EditorReviewFields();
+  EditorReviewFields imageElevated = EditorReviewFields();
+  EditorReviewFields imageElevatedLoading = EditorReviewFields();
+  EditorReviewFields imageElevatedCompleted = EditorReviewFields();
+  EditorReviewFields imageElevatedFailed = EditorReviewFields();
+  EditorReviewFields popover = EditorReviewFields();
   EditorReviewFields tooltip = EditorReviewFields();
   EditorReviewFields appBar = EditorReviewFields();
   EditorReviewFields drawer = EditorReviewFields();
@@ -966,6 +1045,28 @@ class EditorReviewCollection {
     'pagination' => pagination,
     'pageIndicator' => pageIndicator,
     'breadcrumb' => breadcrumb,
+    'motionLift' => motionLift,
+    'motionLiftHover' => motionLiftHover,
+    'motionLiftPressed' => motionLiftPressed,
+    'imagePreview' => imagePreview,
+    'imageEditor' => imageEditor,
+    'image' => image,
+    'imageLoading' => imageLoading,
+    'imageCompleted' => imageCompleted,
+    'imageFailed' => imageFailed,
+    'imagePlain' => imagePlain,
+    'imagePlainLoading' => imagePlainLoading,
+    'imagePlainCompleted' => imagePlainCompleted,
+    'imagePlainFailed' => imagePlainFailed,
+    'imageOutlined' => imageOutlined,
+    'imageOutlinedLoading' => imageOutlinedLoading,
+    'imageOutlinedCompleted' => imageOutlinedCompleted,
+    'imageOutlinedFailed' => imageOutlinedFailed,
+    'imageElevated' => imageElevated,
+    'imageElevatedLoading' => imageElevatedLoading,
+    'imageElevatedCompleted' => imageElevatedCompleted,
+    'imageElevatedFailed' => imageElevatedFailed,
+    'popover' => popover,
     'tooltip' => tooltip,
     'paginationDefault' => paginationDefault,
     'paginationSelected' => paginationSelected,
@@ -1085,6 +1186,50 @@ class EditorReviewCollection {
         pageIndicator = EditorReviewFields();
       case 'breadcrumb':
         breadcrumb = EditorReviewFields();
+      case 'motionLift':
+        motionLift = EditorReviewFields();
+      case 'motionLiftHover':
+        motionLiftHover = EditorReviewFields();
+      case 'motionLiftPressed':
+        motionLiftPressed = EditorReviewFields();
+      case 'imagePreview':
+        imagePreview = EditorReviewFields();
+      case 'imageEditor':
+        imageEditor = EditorReviewFields();
+      case 'image':
+        image = EditorReviewFields();
+      case 'imageLoading':
+        imageLoading = EditorReviewFields();
+      case 'imageCompleted':
+        imageCompleted = EditorReviewFields();
+      case 'imageFailed':
+        imageFailed = EditorReviewFields();
+      case 'imagePlain':
+        imagePlain = EditorReviewFields();
+      case 'imagePlainLoading':
+        imagePlainLoading = EditorReviewFields();
+      case 'imagePlainCompleted':
+        imagePlainCompleted = EditorReviewFields();
+      case 'imagePlainFailed':
+        imagePlainFailed = EditorReviewFields();
+      case 'imageOutlined':
+        imageOutlined = EditorReviewFields();
+      case 'imageOutlinedLoading':
+        imageOutlinedLoading = EditorReviewFields();
+      case 'imageOutlinedCompleted':
+        imageOutlinedCompleted = EditorReviewFields();
+      case 'imageOutlinedFailed':
+        imageOutlinedFailed = EditorReviewFields();
+      case 'imageElevated':
+        imageElevated = EditorReviewFields();
+      case 'imageElevatedLoading':
+        imageElevatedLoading = EditorReviewFields();
+      case 'imageElevatedCompleted':
+        imageElevatedCompleted = EditorReviewFields();
+      case 'imageElevatedFailed':
+        imageElevatedFailed = EditorReviewFields();
+      case 'popover':
+        popover = EditorReviewFields();
       case 'tooltip':
         tooltip = EditorReviewFields();
       case 'paginationDefault':
@@ -1212,6 +1357,42 @@ class EditorReviewCollection {
       'paginationSelected': paginationSelected.toJson(),
     if (paginationDefault.toJson().isNotEmpty)
       'paginationDefault': paginationDefault.toJson(),
+    if (motionLift.toJson().isNotEmpty) 'motionLift': motionLift.toJson(),
+    if (motionLiftHover.toJson().isNotEmpty)
+      'motionLiftHover': motionLiftHover.toJson(),
+    if (motionLiftPressed.toJson().isNotEmpty)
+      'motionLiftPressed': motionLiftPressed.toJson(),
+    if (imagePreview.toJson().isNotEmpty) 'imagePreview': imagePreview.toJson(),
+    if (imageEditor.toJson().isNotEmpty) 'imageEditor': imageEditor.toJson(),
+    if (image.toJson().isNotEmpty) 'image': image.toJson(),
+    if (imageLoading.toJson().isNotEmpty) 'imageLoading': imageLoading.toJson(),
+    if (imageCompleted.toJson().isNotEmpty)
+      'imageCompleted': imageCompleted.toJson(),
+    if (imageFailed.toJson().isNotEmpty) 'imageFailed': imageFailed.toJson(),
+    if (imagePlain.toJson().isNotEmpty) 'imagePlain': imagePlain.toJson(),
+    if (imagePlainLoading.toJson().isNotEmpty)
+      'imagePlainLoading': imagePlainLoading.toJson(),
+    if (imagePlainCompleted.toJson().isNotEmpty)
+      'imagePlainCompleted': imagePlainCompleted.toJson(),
+    if (imagePlainFailed.toJson().isNotEmpty)
+      'imagePlainFailed': imagePlainFailed.toJson(),
+    if (imageOutlined.toJson().isNotEmpty)
+      'imageOutlined': imageOutlined.toJson(),
+    if (imageOutlinedLoading.toJson().isNotEmpty)
+      'imageOutlinedLoading': imageOutlinedLoading.toJson(),
+    if (imageOutlinedCompleted.toJson().isNotEmpty)
+      'imageOutlinedCompleted': imageOutlinedCompleted.toJson(),
+    if (imageOutlinedFailed.toJson().isNotEmpty)
+      'imageOutlinedFailed': imageOutlinedFailed.toJson(),
+    if (imageElevated.toJson().isNotEmpty)
+      'imageElevated': imageElevated.toJson(),
+    if (imageElevatedLoading.toJson().isNotEmpty)
+      'imageElevatedLoading': imageElevatedLoading.toJson(),
+    if (imageElevatedCompleted.toJson().isNotEmpty)
+      'imageElevatedCompleted': imageElevatedCompleted.toJson(),
+    if (imageElevatedFailed.toJson().isNotEmpty)
+      'imageElevatedFailed': imageElevatedFailed.toJson(),
+    if (popover.toJson().isNotEmpty) 'popover': popover.toJson(),
     if (tooltip.toJson().isNotEmpty) 'tooltip': tooltip.toJson(),
     if (appBar.toJson().isNotEmpty) 'appBar': appBar.toJson(),
     if (drawer.toJson().isNotEmpty) 'drawer': drawer.toJson(),
@@ -1310,6 +1491,28 @@ class EditorReviewCollection {
       'paginationNavigation',
       'paginationSelected',
       'paginationDefault',
+      'motionLift',
+      'motionLiftHover',
+      'motionLiftPressed',
+      'imagePreview',
+      'imageEditor',
+      'image',
+      'imageLoading',
+      'imageCompleted',
+      'imageFailed',
+      'imagePlain',
+      'imagePlainLoading',
+      'imagePlainCompleted',
+      'imagePlainFailed',
+      'imageOutlined',
+      'imageOutlinedLoading',
+      'imageOutlinedCompleted',
+      'imageOutlinedFailed',
+      'imageElevated',
+      'imageElevatedLoading',
+      'imageElevatedCompleted',
+      'imageElevatedFailed',
+      'popover',
       'tooltip',
       'appBar',
       'drawer',
@@ -1435,6 +1638,72 @@ class EditorReviewCollection {
       )
       ..paginationDefault = EditorReviewFields.fromJson(
         (j['paginationDefault'] as Map<String, dynamic>?) ?? {},
+      )
+      ..motionLift = EditorReviewFields.fromJson(
+        (j['motionLift'] as Map<String, dynamic>?) ?? {},
+      )
+      ..motionLiftHover = EditorReviewFields.fromJson(
+        (j['motionLiftHover'] as Map<String, dynamic>?) ?? {},
+      )
+      ..motionLiftPressed = EditorReviewFields.fromJson(
+        (j['motionLiftPressed'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imagePreview = EditorReviewFields.fromJson(
+        (j['imagePreview'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageEditor = EditorReviewFields.fromJson(
+        (j['imageEditor'] as Map<String, dynamic>?) ?? {},
+      )
+      ..image = EditorReviewFields.fromJson(
+        (j['image'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageLoading = EditorReviewFields.fromJson(
+        (j['imageLoading'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageCompleted = EditorReviewFields.fromJson(
+        (j['imageCompleted'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageFailed = EditorReviewFields.fromJson(
+        (j['imageFailed'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imagePlain = EditorReviewFields.fromJson(
+        (j['imagePlain'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imagePlainLoading = EditorReviewFields.fromJson(
+        (j['imagePlainLoading'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imagePlainCompleted = EditorReviewFields.fromJson(
+        (j['imagePlainCompleted'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imagePlainFailed = EditorReviewFields.fromJson(
+        (j['imagePlainFailed'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageOutlined = EditorReviewFields.fromJson(
+        (j['imageOutlined'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageOutlinedLoading = EditorReviewFields.fromJson(
+        (j['imageOutlinedLoading'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageOutlinedCompleted = EditorReviewFields.fromJson(
+        (j['imageOutlinedCompleted'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageOutlinedFailed = EditorReviewFields.fromJson(
+        (j['imageOutlinedFailed'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageElevated = EditorReviewFields.fromJson(
+        (j['imageElevated'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageElevatedLoading = EditorReviewFields.fromJson(
+        (j['imageElevatedLoading'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageElevatedCompleted = EditorReviewFields.fromJson(
+        (j['imageElevatedCompleted'] as Map<String, dynamic>?) ?? {},
+      )
+      ..imageElevatedFailed = EditorReviewFields.fromJson(
+        (j['imageElevatedFailed'] as Map<String, dynamic>?) ?? {},
+      )
+      ..popover = EditorReviewFields.fromJson(
+        (j['popover'] as Map<String, dynamic>?) ?? {},
       )
       ..tooltip = EditorReviewFields.fromJson(
         (j['tooltip'] as Map<String, dynamic>?) ?? {},
@@ -1621,13 +1890,58 @@ HyperThemeData applyEditorReviews(
     final s = theme.sizes.resolve(type);
     final d = document.device(type).reviews;
     return s.copyWith(
+      motionLift: s.motionLift.copyWith(
+        hoverOffset: Offset(
+          d.motionLiftHover.translationX ?? s.motionLift.hoverOffset.dx,
+          d.motionLiftHover.translationY ?? s.motionLift.hoverOffset.dy,
+        ),
+        pressedOffset: Offset(
+          d.motionLiftPressed.translationX ?? s.motionLift.pressedOffset.dx,
+          d.motionLiftPressed.translationY ?? s.motionLift.pressedOffset.dy,
+        ),
+        shadowRadius: d.motionLift.surfaceRadius,
+      ),
+      imagePreview: s.imagePreview.copyWith(
+        iconSize: d.imagePreview.iconSize,
+        spacing: d.imagePreview.spacing,
+        padding: d.imagePreview.paddingLeft,
+      ),
+      imageEditor: s.imageEditor.copyWith(
+        cropPadding: d.imageEditor.paddingTop,
+        iconSize: d.imageEditor.iconSize,
+        spacing: d.imageEditor.spacing,
+        padding: d.imageEditor.paddingLeft,
+        handleLength: d.imageEditor.nodeSize,
+        handleThickness: d.imageEditor.lineWidth,
+        lineWidth: d.imageEditor.lineHeight,
+        handleHitSize: d.imageEditor.interactionRadius,
+      ),
+      image: s.image.copyWith(
+        iconSize: d.image.iconSize,
+        progressSize: d.image.circleSize,
+        progressThickness: d.image.lineWidth,
+        spacing: d.image.spacing,
+        padding: d.image.paddingLeft,
+        radius: d.image.surfaceRadius,
+      ),
       appBar: s.appBar.copyWith(
         collapsedHeight: d.appBar.collapsedHeight,
         mediumExpandedHeight: d.appBar.mediumExpandedHeight,
         expandedHeight: d.appBar.expandedHeight,
         titleHorizontalPadding: d.appBar.titleHorizontalPadding,
       ),
-      drawer: s.drawer.copyWith(width: d.drawer.width, radius: d.drawer.radius),
+      drawer: s.drawer.copyWith(
+        width: d.drawer.width,
+        radius: d.drawer.radius,
+        margin: _reviewInsets(
+          d.drawer.insetPaddingLeft,
+          d.drawer.insetPaddingTop,
+          d.drawer.insetPaddingRight,
+          d.drawer.insetPaddingBottom,
+          s.drawer.margin,
+        ),
+        borderRadius: resolveEditorDrawerCorners(d.drawer, s.drawer),
+      ),
 
       notification: s.notification.copyWith(
         radius: d.notification.radius,
@@ -1801,6 +2115,9 @@ HyperThemeData applyEditorReviews(
         collapsedIconSize: d.sidebar.collapsedIconSize,
         collapsedRowGap: d.sidebar.collapsedRowGap,
         itemSpacing: d.sidebar.itemSpacing,
+        itemPadding: d.sidebar.itemPadding,
+        trailingSpacing: d.sidebar.trailingSpacing,
+        badgeSpacing: d.sidebar.badgeSpacing,
         rowGap: d.sidebar.rowGap,
         indent: d.sidebar.indent,
         sectionSpacing: d.sidebar.sectionSpacing,
@@ -1820,6 +2137,7 @@ HyperThemeData applyEditorReviews(
         segmentedRadius: d.tabBar.segmentedRadius,
         separatedRadius: d.tabBar.separatedRadius,
         itemSpacing: d.tabBar.itemSpacing,
+        itemHorizontalPadding: d.tabBar.itemHorizontalPadding,
         underlineThickness: d.tabBar.underlineThickness,
       ),
       stepIndicator: s.stepIndicator.copyWith(
@@ -2607,6 +2925,9 @@ HyperThemeData applyEditorReviews(
   HyperBreadcrumbStyle breadcrumb(EditorReviewFields v) {
     final m = d.breadcrumb;
     return HyperBreadcrumbStyle(
+      separator: v.breadcrumbSeparator == null
+          ? null
+          : HyperBreadcrumbSeparator.values.byName(v.breadcrumbSeparator!),
       itemStyle: surface(v, d.breadcrumb, fallback: colors.surfaceMuted),
       highlightStyle: surface(
         mode.reviews.breadcrumbHighlight,
@@ -2714,13 +3035,192 @@ HyperThemeData applyEditorReviews(
     );
   }
 
+  HyperImageStyle imageStyle(String slot) {
+    final v = mode.reviews.object(slot), m = d.object(slot);
+    return HyperImageStyle(
+      surfaceStyle: (surface(v, m) ?? HyperCardStyle()).merge(
+        HyperCardStyle(
+          border: m.borderWidth == null && v.borderColor == null
+              ? null
+              : Border.all(
+                  width: m.borderWidth ?? 1,
+                  color: v.borderColor?.resolve(colors) ?? colors.outline,
+                ),
+        ),
+      ),
+      placeholderColor: v.contentBackground?.resolve(colors),
+      progressColor: v.foregroundColor?.resolve(colors),
+      progressTrackColor: v.overlayColor?.resolve(colors),
+      iconColor: v.iconColor?.resolve(colors),
+      textStyle: _reviewText(
+        d.image.textStyleSize,
+        v.textStyleWeight,
+        v.textStyleColor,
+        colors,
+      ),
+      animationCurve: editorControlCurve(v.curve),
+      animationDuration: v.duration == null
+          ? null
+          : Duration(milliseconds: v.duration!.round()),
+    );
+  }
+
+  HyperImageAppearance imageAppearance(String slot) => HyperImageAppearance(
+    style: imageStyle(slot),
+    loading: imageStyle('${slot}Loading'),
+    completed: imageStyle('${slot}Completed'),
+    failed: imageStyle('${slot}Failed'),
+  );
+  HyperCardStyle? imageToolsSurface(String name) {
+    final v = mode.reviews.object(name), m = d.object(name);
+    final base = surface(v, m);
+    if (m.borderWidth == null) return base;
+    return (base ?? HyperCardStyle()).merge(
+      HyperCardStyle(
+        border: Border.all(
+          width: m.borderWidth!,
+          color: v.borderColor?.resolve(colors) ?? colors.outline,
+        ),
+      ),
+    );
+  }
+
   return theme.copyWith(
+    motion: theme.motion.copyWith(
+      lift: theme.motion.lift.merge(
+        HyperLiftThemeData(
+          style: HyperLiftStyle(
+            surface: mode.reviews.motionLift.liftSurface,
+            showShadow: mode.reviews.motionLift.liftShowShadow,
+            hoverScale: mode.reviews.motionLiftHover.scale,
+            pressedScale: mode.reviews.motionLiftPressed.scale,
+            hoverShadows: mode.reviews.motionLiftHover.shadow.shadows
+                ?.map((shadow) => shadow.resolve(colors))
+                .toList(),
+            pressedShadows: mode.reviews.motionLiftPressed.shadow.shadows
+                ?.map((shadow) => shadow.resolve(colors))
+                .toList(),
+            duration: mode.reviews.motionLift.duration == null
+                ? null
+                : Duration(
+                    milliseconds: mode.reviews.motionLift.duration!.round(),
+                  ),
+            pressDuration: mode.reviews.motionLift.pressDuration == null
+                ? null
+                : Duration(
+                    milliseconds: mode.reviews.motionLift.pressDuration!
+                        .round(),
+                  ),
+            curve: editorControlCurve(mode.reviews.motionLift.curve),
+          ),
+        ),
+      ),
+    ),
+    imagePreviewTheme: theme.imagePreviewTheme.merge(
+      HyperImagePreviewThemeData(
+        style: HyperImagePreviewStyle(
+          surfaceStyle: imageToolsSurface('imagePreview'),
+          toolbarBackground: mode.reviews.imagePreview.contentBackground
+              ?.resolve(colors),
+          foregroundColor: mode.reviews.imagePreview.iconColor?.resolve(colors),
+          textStyle: _reviewText(
+            d.imagePreview.textStyleSize,
+            mode.reviews.imagePreview.textStyleWeight,
+            mode.reviews.imagePreview.textStyleColor,
+            colors,
+          ),
+          animationDuration: mode.reviews.imagePreview.duration == null
+              ? null
+              : Duration(
+                  milliseconds: mode.reviews.imagePreview.duration!.round(),
+                ),
+          animationCurve: editorControlCurve(mode.reviews.imagePreview.curve),
+        ),
+      ),
+    ),
+    imageEditorTheme: theme.imageEditorTheme.merge(
+      HyperImageEditorThemeData(
+        style: HyperImageEditorStyle(
+          surfaceStyle: imageToolsSurface('imageEditor'),
+          toolbarBackground: mode.reviews.imageEditor.contentBackground
+              ?.resolve(colors),
+          foregroundColor: mode.reviews.imageEditor.iconColor?.resolve(colors),
+          textStyle: _reviewText(
+            d.imageEditor.textStyleSize,
+            mode.reviews.imageEditor.textStyleWeight,
+            mode.reviews.imageEditor.textStyleColor,
+            colors,
+          ),
+          cropColor: mode.reviews.imageEditor.foregroundColor?.resolve(colors),
+          cropLineColor: mode.reviews.imageEditor.separatorColor?.resolve(
+            colors,
+          ),
+          maskColor: mode.reviews.imageEditor.overlayColor?.resolve(colors),
+          animationDuration: mode.reviews.imageEditor.duration == null
+              ? null
+              : Duration(
+                  milliseconds: mode.reviews.imageEditor.duration!.round(),
+                ),
+        ),
+      ),
+    ),
+    imageTheme: theme.imageTheme.merge(
+      HyperImageThemeData(
+        appearance: imageAppearance('image'),
+        plain: imageAppearance('imagePlain'),
+        outlined: imageAppearance('imageOutlined'),
+        elevated: imageAppearance('imageElevated'),
+      ),
+    ),
     tabBarTheme: theme.tabBarTheme.merge(
       HyperTabBarThemeData(
         style: tabs('tabBar'),
         segmented: tabs('tabBarSegmented'),
         separated: tabs('tabBarSeparated'),
         underline: tabs('tabBarUnderline'),
+      ),
+    ),
+    popoverTheme: theme.popoverTheme.merge(
+      HyperPopoverThemeData(
+        style: HyperPopoverStyle(
+          spacing: d.popover.spacing,
+          surfaceStyle: HyperCardStyle(
+            materialEdge: mode.reviews.popover.materialEdgeEnabled,
+            foregroundColor: mode.reviews.popover.foregroundColor?.resolve(
+              colors,
+            ),
+            material: resolveEditorReviewMaterial(mode.reviews.popover, theme),
+            padding: _reviewInsets(
+              d.popover.paddingLeft,
+              d.popover.paddingTop,
+              d.popover.paddingRight,
+              d.popover.paddingBottom,
+              theme.popoverTheme.style.surfaceStyle?.padding ??
+                  EdgeInsets.all(theme.sizes.resolve(device).menu.padding),
+            ),
+            borderRadius: d.popover.surfaceRadius == null
+                ? null
+                : BorderRadius.circular(d.popover.surfaceRadius!),
+            background: mode.reviews.popover.background == null
+                ? null
+                : HyperFill.color(
+                    mode.reviews.popover.background!.resolve(colors),
+                  ),
+            border:
+                mode.reviews.popover.borderWidth == null &&
+                    mode.reviews.popover.borderColor == null
+                ? null
+                : Border.all(
+                    width: mode.reviews.popover.borderWidth ?? 1,
+                    color:
+                        mode.reviews.popover.borderColor?.resolve(colors) ??
+                        colors.outline,
+                  ),
+            boxShadow: mode.reviews.popover.shadow.shadows
+                ?.map((s) => s.resolve(colors))
+                .toList(),
+          ),
+        ),
       ),
     ),
     tooltipTheme: theme.tooltipTheme.merge(
@@ -2871,15 +3371,71 @@ HyperThemeData applyEditorReviews(
   );
 }
 
+/// 四角未显式编辑时保留方向性默认值；显式编辑后两侧共用物理四角。
+BorderRadiusGeometry? resolveEditorDrawerCorners(
+  EditorReviewFields m,
+  HyperDrawerSize base,
+) {
+  if (m.radiusTopLeft == null &&
+      m.radiusTopRight == null &&
+      m.radiusBottomLeft == null &&
+      m.radiusBottomRight == null) {
+    return base.borderRadius;
+  }
+  final fallback =
+      (base.borderRadius ??
+              BorderRadiusDirectional.horizontal(
+                end: Radius.circular(m.radius ?? base.radius ?? 0),
+              ))
+          .resolve(TextDirection.ltr);
+  return BorderRadius.only(
+    topLeft: m.radiusTopLeft == null
+        ? fallback.topLeft
+        : Radius.circular(m.radiusTopLeft!),
+    topRight: m.radiusTopRight == null
+        ? fallback.topRight
+        : Radius.circular(m.radiusTopRight!),
+    bottomRight: m.radiusBottomRight == null
+        ? fallback.bottomRight
+        : Radius.circular(m.radiusBottomRight!),
+    bottomLeft: m.radiusBottomLeft == null
+        ? fallback.bottomLeft
+        : Radius.circular(m.radiusBottomLeft!),
+  );
+}
+
 /// Keep linked dimensions legal when their containing geometry is reduced.
 void constrainEditorReviewDimensions(
   String object,
   EditorReviewFields m,
-  HyperSizeScheme s,
-) {
+  HyperSizeScheme s, {
+  Size? viewport,
+}) {
   double? cap(double? value, double limit) =>
       value?.clamp(0, limit.floorToDouble()).toDouble();
   switch (object) {
+    case 'drawer':
+      if (viewport == null) break;
+      final margin =
+          (_reviewInsets(
+                    m.insetPaddingLeft,
+                    m.insetPaddingTop,
+                    m.insetPaddingRight,
+                    m.insetPaddingBottom,
+                    s.drawer.margin,
+                  ) ??
+                  s.drawer.margin)
+              .resolve(TextDirection.ltr);
+      final limit = editorDrawerRadiusLimit(
+        m.width ?? s.drawer.width,
+        viewport,
+        margin,
+      );
+      m.radiusTopLeft = cap(m.radiusTopLeft, limit);
+      m.radiusTopRight = cap(m.radiusTopRight, limit);
+      m.radiusBottomRight = cap(m.radiusBottomRight, limit);
+      m.radiusBottomLeft = cap(m.radiusBottomLeft, limit);
+      break;
     case 'topNavigationMenu':
       m.itemRadius = cap(m.itemRadius, (m.itemHeight ?? s.menu.itemHeight) / 2);
       break;
@@ -2944,6 +3500,22 @@ void constrainEditorReviewDimensions(
       m.underlineThickness = cap(m.underlineThickness, height / 2);
       break;
     case 'sidebar':
+      final sidebar = s.sidebar.copyWith(
+        width: m.width,
+        horizontalPadding: m.horizontalPadding,
+        itemPadding: m.itemPadding,
+        iconSize: m.iconSize,
+      );
+      m.itemPadding = cap(
+        m.itemPadding,
+        editorSidebarItemPaddingLimit(sidebar),
+      );
+      final spacingLimit = editorSidebarContentSpacingLimit(
+        sidebar.copyWith(itemPadding: m.itemPadding),
+      );
+      m.itemSpacing = cap(m.itemSpacing, spacingLimit);
+      m.trailingSpacing = cap(m.trailingSpacing, spacingLimit);
+      m.badgeSpacing = cap(m.badgeSpacing, spacingLimit);
       final iconLimit = editorSidebarIconSizeLimit(
         s,
         itemHeight: m.itemHeight,
@@ -3009,20 +3581,20 @@ HyperSurfaceMaterial? resolveEditorReviewMaterial(
 ) {
   if (v.materialKind == null) return null;
   final kind = HyperSurfaceMaterialKind.values.byName(v.materialKind!);
-  final inherited = theme.materialTheme.material;
-  final recipe = inherited?.kind == kind
-      ? inherited!
-      : switch (kind) {
-          HyperSurfaceMaterialKind.solid => const HyperSurfaceMaterial.solid(),
-          HyperSurfaceMaterialKind.translucent =>
-            const HyperSurfaceMaterial.translucent(),
-          HyperSurfaceMaterialKind.frostedGlass =>
-            const HyperSurfaceMaterial.frostedGlass(),
-          HyperSurfaceMaterialKind.softLightGlass =>
-            const HyperSurfaceMaterial.softLightGlass(),
-        };
+  final recipe = switch (kind) {
+    HyperSurfaceMaterialKind.solid => const HyperSurfaceMaterial.solid(),
+    HyperSurfaceMaterialKind.translucent =>
+      const HyperSurfaceMaterial.translucent(),
+    HyperSurfaceMaterialKind.frostedGlass =>
+      const HyperSurfaceMaterial.frostedGlass(),
+    HyperSurfaceMaterialKind.clearFrostedGlass =>
+      const HyperSurfaceMaterial.clearFrostedGlass(),
+    HyperSurfaceMaterialKind.softLightGlass =>
+      const HyperSurfaceMaterial.softLightGlass(),
+  };
   final color = v.background ?? v.backgroundColor ?? v.nodeFill;
   return recipe.copyWith(
+    edgeEnabled: v.materialEdgeEnabled,
     background: color == null
         ? recipe.background
         : HyperFill.color(color.resolve(theme.colors)),

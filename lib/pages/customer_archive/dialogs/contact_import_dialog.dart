@@ -14,12 +14,13 @@ const _kMuted = Color(0xFF8C8C8C);
 const _kLabel = Color(0xFF4E5969);
 const _kTitle = Color(0xFF1D2129);
 const _kBorder = Color(0xFFE5E6EB);
+const _kDanger = Color(0xFFFF4D4F);
 
 const _kContactFields = <(String key, String title, double width)>[
   ('name', '姓名', 100),
   ('nameEn', 'Name', 100),
-  ('gender', '性别', 64),
-  ('ageDesc', '年龄段', 80),
+  ('gender', '性别', 88),
+  ('ageDesc', '年龄段', 88),
   ('relatedEnterprise', '关联企业', 140),
   ('city', '所在城市', 100),
   ('address', '详细地址', 140),
@@ -34,6 +35,26 @@ const _kContactFields = <(String key, String title, double width)>[
   ('remark', '备注', 120),
 ];
 
+/// 确认导入 contacts 字段（不含嵌套 superiors/subordinates）。
+const _kContactConfirmKeys = <String>[
+  'name',
+  'nameEn',
+  'gender',
+  'ageDesc',
+  'relatedEnterprise',
+  'city',
+  'address',
+  'deptTitle',
+  'jobDesc',
+  'marketScope',
+  'responsibleBrands',
+  'tenure',
+  'phones',
+  'tel',
+  'emails',
+  'remark',
+];
+
 const _kRelFields = <(String key, String title, double width)>[
   ('contactName', '主联系人姓名', 110),
   ..._kContactFields,
@@ -46,7 +67,13 @@ Future<bool> showContactImportDialog(BuildContext context) {
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => AppShadcnScope(
-      config: AppThemeConfig.standard(primary: _kPrimary),
+      config: AppThemeConfig.standard(
+        primary: _kPrimary,
+        dataGrid: const AppDataGridMetrics(
+          rowHeight: 52,
+          horizontalPadding: 4,
+        ),
+      ),
       child: _ContactImportDialog(
         hostContext: hostContext,
         onClose: (ok) => Navigator.of(dialogContext).pop(ok),
@@ -76,13 +103,21 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
   var _downloadingTemplate = false;
   var _parsing = false;
   var _confirming = false;
+  var _previewTab = 0;
   var _contacts = <Map<String, dynamic>>[];
-  var _selectedIndex = 0;
+  var _superiors = <Map<String, dynamic>>[];
+  var _subordinates = <Map<String, dynamic>>[];
+  var _rowSeq = 0;
 
   void _toast(String title, {bool afterClose = false}) {
     final ctx = afterClose ? widget.hostContext : context;
     if (!ctx.mounted) return;
     showHyperToast(ctx, content: Text(title));
+  }
+
+  String _nextRowId(String prefix) {
+    _rowSeq += 1;
+    return '${prefix}_$_rowSeq';
   }
 
   Future<Uint8List> _readBytes(AppFileSelection file) async {
@@ -101,27 +136,88 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
     throw CustomerApiException('无法读取所选文件');
   }
 
-  List<Map<String, dynamic>> _normalizeContacts(
-    List<Map<String, dynamic>> raw,
-  ) {
-    return [
-      for (var i = 0; i < raw.length; i++)
-        {
-          ...raw[i],
-          '_rowId': 'c_$i',
-          '_prevName': raw[i]['name']?.toString() ?? '',
-          'superiors': _asMaps(raw[i]['superiors']),
-          'subordinates': _asMaps(raw[i]['subordinates']),
-        },
-    ];
-  }
-
   List<Map<String, dynamic>> _asMaps(dynamic raw) {
     if (raw is! List) return <Map<String, dynamic>>[];
     return [
       for (final e in raw)
         if (e is Map) Map<String, dynamic>.from(e),
     ];
+  }
+
+  String _cellText(dynamic raw) {
+    if (raw == null) return '';
+    if (raw is String) return raw.trim();
+    if (raw is Iterable) {
+      return [
+        for (final e in raw)
+          if (e != null && '$e'.trim().isNotEmpty) '$e'.trim(),
+      ].join(',');
+    }
+    return '$raw'.trim();
+  }
+
+  String _displayGender(dynamic raw) {
+    var s = _cellText(raw);
+    if (s.isEmpty && raw is Map) {
+      s = _cellText(raw['label'] ?? raw['genderLabel'] ?? raw['name']);
+    }
+    // Excel 数字常为 1.0 / 2.0
+    if (raw is num) {
+      final n = raw.toInt();
+      if (n == raw || (raw - n).abs() < 1e-9) {
+        if (n == 1) return '男';
+        if (n == 2) return '女';
+        if (n == 0) return '未知';
+      }
+    }
+    final lower = s.toLowerCase();
+    if (s == '1' || s == '1.0' || s == '男' || lower == 'male' || lower == 'm') {
+      return '男';
+    }
+    if (s == '2' || s == '2.0' || s == '女' || lower == 'female' || lower == 'f') {
+      return '女';
+    }
+    if (s == '0' || s == '0.0' || s == '未知') return '未知';
+    return s;
+  }
+
+  dynamic _genderRaw(Map<String, dynamic> row) =>
+      row['gender'] ?? row['genderLabel'] ?? row['sex'] ?? row['性别'];
+
+  void _applyPreview(List<Map<String, dynamic>> nested) {
+    final contacts = <Map<String, dynamic>>[];
+    final superiors = <Map<String, dynamic>>[];
+    final subordinates = <Map<String, dynamic>>[];
+    for (var i = 0; i < nested.length; i++) {
+      final raw = nested[i];
+      final name = _cellText(raw['name']);
+      contacts.add({
+        for (final f in _kContactFields)
+          f.$1: f.$1 == 'gender'
+              ? _displayGender(_genderRaw(raw))
+              : raw[f.$1],
+        '_rowId': _nextRowId('c'),
+        '_prevName': name,
+      });
+      for (final rel in _asMaps(raw['superiors'])) {
+        superiors.add({
+          ...rel,
+          if (_cellText(rel['contactName']).isEmpty) 'contactName': name,
+          '_rowId': _nextRowId('s'),
+        });
+      }
+      for (final rel in _asMaps(raw['subordinates'])) {
+        subordinates.add({
+          ...rel,
+          if (_cellText(rel['contactName']).isEmpty) 'contactName': name,
+          '_rowId': _nextRowId('b'),
+        });
+      }
+    }
+    _contacts = contacts;
+    _superiors = superiors;
+    _subordinates = subordinates;
+    _previewTab = 0;
   }
 
   Future<void> _downloadTemplate() async {
@@ -153,8 +249,9 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
     setState(() => _parsing = true);
     try {
       final bytes = await _readBytes(file);
-      final list = _normalizeContacts(
-        await _api.previewContactImport(bytes: bytes, fileName: file.name),
+      final list = await _api.previewContactImport(
+        bytes: bytes,
+        fileName: file.name,
       );
       if (!mounted) return;
       if (list.isEmpty) {
@@ -166,8 +263,7 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
         return;
       }
       setState(() {
-        _contacts = list;
-        _selectedIndex = 0;
+        _applyPreview(list);
         _stage = _ImportStage.preview;
         _parsing = false;
       });
@@ -181,48 +277,21 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
     }
   }
 
-  Map<String, dynamic>? get _selected {
-    if (_contacts.isEmpty) return null;
-    final i = _selectedIndex.clamp(0, _contacts.length - 1);
-    return _contacts[i];
-  }
-
-  List<Map<String, dynamic>> _relList(String key) {
-    final row = _selected;
-    if (row == null) return const [];
-    final list = row[key];
-    if (list is List<Map<String, dynamic>>) return list;
-    if (list is List) {
-      final mapped = _asMaps(list);
-      row[key] = mapped;
-      return mapped;
-    }
-    final empty = <Map<String, dynamic>>[];
-    row[key] = empty;
-    return empty;
-  }
-
   Future<void> _confirm() async {
     if (_confirming || _contacts.isEmpty) return;
     setState(() => _confirming = true);
     try {
-      final payload = [
-        for (final c in _contacts)
-          {
-            for (final entry in c.entries)
-              if (entry.key != '_prevName' && entry.key != '_rowId')
-                entry.key: entry.value is List
-                    ? [
-                        for (final rel in _asMaps(entry.value))
-                          {
-                            for (final e in rel.entries)
-                              if (e.key != '_rowId') e.key: e.value,
-                          },
-                      ]
-                    : entry.value,
-          },
-      ];
-      await _api.confirmContactImport(payload);
+      await _api.confirmContactImport(
+        contacts: [
+          for (final c in _contacts) _contactConfirmRow(c),
+        ],
+        superiors: [
+          for (final rel in _superiors) _relationConfirmRow(rel),
+        ],
+        subordinates: [
+          for (final rel in _subordinates) _relationConfirmRow(rel),
+        ],
+      );
       if (!mounted) return;
       widget.onClose(true);
       _toast('联系人导入成功（${_contacts.length} 条）', afterClose: true);
@@ -233,13 +302,121 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
     }
   }
 
-  void _backToUpload() {
-    if (_confirming) return;
+  Map<String, dynamic> _contactConfirmRow(Map<String, dynamic> row) {
+    return {
+      for (final key in _kContactConfirmKeys)
+        key: key == 'gender'
+            ? _genderForConfirm(row[key])
+            : _nullIfEmpty(row[key]),
+    };
+  }
+
+  Map<String, dynamic> _relationConfirmRow(Map<String, dynamic> row) {
+    return {
+      'contactName': _nullIfEmpty(row['contactName']),
+      for (final key in _kContactConfirmKeys)
+        key: key == 'gender'
+            ? _genderForConfirm(row[key])
+            : _nullIfEmpty(row[key]),
+    };
+  }
+
+  Object? _nullIfEmpty(Object? raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      final s = raw.trim();
+      return s.isEmpty ? null : s;
+    }
+    if (raw is Iterable) {
+      final parts = <String>[
+        for (final e in raw)
+          if (e != null && '$e'.trim().isNotEmpty) '$e'.trim(),
+      ];
+      return parts.isEmpty ? null : parts.join(',');
+    }
+    final s = '$raw'.trim();
+    return s.isEmpty ? null : s;
+  }
+
+  String? _genderForConfirm(Object? raw) {
+    final s = _displayGender(raw).trim();
+    if (s.isEmpty) return null;
+    return s;
+  }
+
+  void _syncRelContactName({required String oldName, required String newName}) {
+    final from = oldName.trim();
+    if (from.isEmpty || from == newName) return;
+    for (final rel in [..._superiors, ..._subordinates]) {
+      if (_cellText(rel['contactName']) == from) {
+        rel['contactName'] = newName;
+      }
+    }
+  }
+
+  void _addContactRow() {
+    // AppDataGrid 仅在 rows 引用变化时刷新，必须换新 List。
     setState(() {
-      _stage = _ImportStage.upload;
-      _files = const [];
-      _contacts = [];
-      _selectedIndex = 0;
+      _contacts = [
+        ..._contacts,
+        <String, dynamic>{
+          '_rowId': _nextRowId('c'),
+          '_prevName': '',
+        },
+      ];
+    });
+  }
+
+  void _addSuperiorRow() {
+    final fallback = _contacts.isEmpty ? '' : _cellText(_contacts.first['name']);
+    setState(() {
+      _superiors = [
+        ..._superiors,
+        <String, dynamic>{
+          '_rowId': _nextRowId('s'),
+          if (fallback.isNotEmpty) 'contactName': fallback,
+        },
+      ];
+    });
+  }
+
+  void _addSubordinateRow() {
+    final fallback = _contacts.isEmpty ? '' : _cellText(_contacts.first['name']);
+    setState(() {
+      _subordinates = [
+        ..._subordinates,
+        <String, dynamic>{
+          '_rowId': _nextRowId('b'),
+          if (fallback.isNotEmpty) 'contactName': fallback,
+        },
+      ];
+    });
+  }
+
+  void _removeContactRow(Map<String, dynamic> row) {
+    setState(() {
+      _contacts = [
+        for (final e in _contacts)
+          if (!identical(e, row)) e,
+      ];
+    });
+  }
+
+  void _removeSuperiorRow(Map<String, dynamic> row) {
+    setState(() {
+      _superiors = [
+        for (final e in _superiors)
+          if (!identical(e, row)) e,
+      ];
+    });
+  }
+
+  void _removeSubordinateRow(Map<String, dynamic> row) {
+    setState(() {
+      _subordinates = [
+        for (final e in _subordinates)
+          if (!identical(e, row)) e,
+      ];
     });
   }
 
@@ -247,7 +424,7 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
   Widget build(BuildContext context) {
     if (_stage == _ImportStage.preview) {
       return HyperDialog(
-        title: Text('导入联系人 · 预览确认（${_contacts.length}）'),
+        title: const Text('导入联系人预览'),
         scrollable: false,
         style: const HyperDialogStyle(maxWidth: 1120),
         content: SizedBox(
@@ -255,52 +432,49 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                '请核对并修改预览数据，确认无误后再导入。上级 / 下级随选中联系人编辑。',
-                style: TextStyle(fontSize: 13, color: _kLabel),
+              _PreviewTabs(
+                selected: _previewTab,
+                contactCount: _contacts.length,
+                superiorCount: _superiors.length,
+                subordinateCount: _subordinates.length,
+                onSelect: (i) => setState(() => _previewTab = i),
               ),
-              const SizedBox(height: 10),
-              Expanded(flex: 3, child: _buildContactsGrid()),
-              const SizedBox(height: 10),
-              Text(
-                '上级（${_relList('superiors').length}）',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _kTitle,
-                ),
-              ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 12),
               Expanded(
-                child: _buildRelGrid(
-                  listKey: 'superiors',
-                  rows: _relList('superiors'),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                '下级（${_relList('subordinates').length}）',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _kTitle,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: _buildRelGrid(
-                  listKey: 'subordinates',
-                  rows: _relList('subordinates'),
-                ),
+                child: switch (_previewTab) {
+                  1 => _buildSheet(
+                      rows: _superiors,
+                      fields: _kRelFields,
+                      emptyHint: '暂无上级，可点击下方添加',
+                      onAdd: _confirming ? null : _addSuperiorRow,
+                      onDelete: _removeSuperiorRow,
+                    ),
+                  2 => _buildSheet(
+                      rows: _subordinates,
+                      fields: _kRelFields,
+                      emptyHint: '暂无下级，可点击下方添加',
+                      onAdd: _confirming ? null : _addSubordinateRow,
+                      onDelete: _removeSubordinateRow,
+                    ),
+                  _ => _buildSheet(
+                      rows: _contacts,
+                      fields: _kContactFields,
+                      emptyHint: '暂无联系人，可点击下方添加',
+                      onAdd: _confirming ? null : _addContactRow,
+                      onDelete: _removeContactRow,
+                      onNameChanged: (row, name) {
+                        final oldName = _cellText(row['_prevName']);
+                        row['name'] = name;
+                        _syncRelContactName(oldName: oldName, newName: name.trim());
+                        row['_prevName'] = name.trim();
+                      },
+                    ),
+                },
               ),
             ],
           ),
         ),
         actions: [
-          HyperButton.outlined(
-            onPressed: _confirming ? null : _backToUpload,
-            label: const Text('重新上传'),
-          ),
           HyperButton.outlined(
             onPressed: _confirming ? null : () => widget.onClose(false),
             label: const Text('取消'),
@@ -395,196 +569,105 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
     );
   }
 
-  Widget _buildContactsGrid() {
-    final selectedKey = _contacts.isEmpty
-        ? null
-        : _contacts[_selectedIndex.clamp(0, _contacts.length - 1)]['_rowId'];
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: AppDataGrid<Map<String, dynamic>>.local(
-          rows: _contacts,
-          rowKey: (row) => row['_rowId'] ?? identityHashCode(row),
-          height: null,
-          shrinkWrap: false,
-          sortable: false,
-          showFilters: false,
-          selectionMode: AppDataGridSelectionMode.single,
-          selectedKeys: {?selectedKey},
-          onSelectionChanged: (rows) {
-            if (rows.isEmpty) return;
-            final i = _contacts.indexOf(rows.first);
-            if (i >= 0) setState(() => _selectedIndex = i);
-          },
-          empty: const Center(
-            child: Text('暂无预览数据', style: TextStyle(color: _kMuted)),
-          ),
-          columns: [
-            AppDataGridColumn(
-              id: 'no',
-              title: '序号',
-              width: 52,
-              value: (row) => _contacts.indexOf(row) + 1,
-            ),
-            for (final f in _kContactFields)
-              AppDataGridColumn(
-                id: f.$1,
-                title: f.$2,
-                width: f.$3,
-                alignment: Alignment.centerLeft,
-                titleAlignment: Alignment.centerLeft,
-                value: (row) => '${row[f.$1] ?? ''}',
-                cellBuilder: (context, row, _) => _editCell(
-                  value: row[f.$1]?.toString(),
-                  onChanged: (v) {
-                    if (f.$1 == 'name') {
-                      final oldName = row['_prevName']?.toString() ?? '';
-                      final name = v.trim();
-                      row[f.$1] = v;
-                      _syncRelContactName(oldName: oldName, newName: name);
-                      row['_prevName'] = name;
-                    } else {
-                      row[f.$1] = v;
-                    }
-                  },
-                ),
-              ),
-            AppDataGridColumn(
-              id: 'supCount',
-              title: '上级',
-              width: 56,
-              value: (row) => _asMaps(row['superiors']).length,
-            ),
-            AppDataGridColumn(
-              id: 'subCount',
-              title: '下级',
-              width: 56,
-              value: (row) => _asMaps(row['subordinates']).length,
-            ),
-            AppDataGridColumn(
-              id: 'actions',
-              title: '操作',
-              width: 72,
-              value: (_) => '',
-              cellBuilder: (context, row, _) => HyperButton.text(
-                onPressed: _confirming
-                    ? null
-                    : () {
-                        setState(() {
-                          _contacts.remove(row);
-                          _selectedIndex = _contacts.isEmpty
-                              ? 0
-                              : _selectedIndex.clamp(0, _contacts.length - 1);
-                        });
-                      },
-                label: const Text('删除'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _syncRelContactName({required String oldName, required String newName}) {
-    final from = oldName.trim();
-    if (from.isEmpty || from == newName) return;
-    for (final c in _contacts) {
-      for (final key in const ['superiors', 'subordinates']) {
-        for (final rel in _asMaps(c[key])) {
-          if ((rel['contactName']?.toString().trim() ?? '') == from) {
-            rel['contactName'] = newName;
-          }
-        }
-      }
-    }
-  }
-
-  Widget _buildRelGrid({
-    required String listKey,
+  Widget _buildSheet({
     required List<Map<String, dynamic>> rows,
+    required List<(String key, String title, double width)> fields,
+    required String emptyHint,
+    required VoidCallback? onAdd,
+    required void Function(Map<String, dynamic> row) onDelete,
+    void Function(Map<String, dynamic> row, String name)? onNameChanged,
   }) {
-    final owner = _selected;
-    final ownerName = owner?['name']?.toString().trim() ?? '';
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Column(
-          children: [
-            Expanded(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: _kBorder),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
               child: AppDataGrid<Map<String, dynamic>>.local(
                 rows: rows,
-                rowKey: (row) =>
-                    row['_rowId'] ??
-                    '${listKey}_${rows.indexOf(row)}_${identityHashCode(row)}',
+                rowKey: (row) => row['_rowId'] ?? identityHashCode(row),
                 height: null,
                 shrinkWrap: false,
                 sortable: false,
                 showFilters: false,
                 empty: Center(
                   child: Text(
-                    owner == null ? '请先选择联系人' : '暂无数据',
+                    emptyHint,
                     style: const TextStyle(color: _kMuted),
                   ),
                 ),
                 columns: [
-                  for (final f in _kRelFields)
+                  for (final f in fields)
                     AppDataGridColumn(
                       id: f.$1,
                       title: f.$2,
                       width: f.$3,
+                      // 默认 minWidth=80，窄列（如原性别 64）会被撑开/裁切输入框
+                      minWidth: f.$3,
                       alignment: Alignment.centerLeft,
                       titleAlignment: Alignment.centerLeft,
-                      value: (row) => '${row[f.$1] ?? ''}',
+                      value: (row) => f.$1 == 'gender'
+                          ? _displayGender(_genderRaw(row))
+                          : _cellText(row[f.$1]),
                       cellBuilder: (context, row, _) => _editCell(
-                        value: row[f.$1]?.toString(),
-                        onChanged: (v) => row[f.$1] = v,
+                        value: f.$1 == 'gender'
+                            ? _displayGender(_genderRaw(row))
+                            : _cellText(row[f.$1]),
+                        onChanged: (v) {
+                          if (f.$1 == 'name' && onNameChanged != null) {
+                            onNameChanged(row, v);
+                            return;
+                          }
+                          if (f.$1 == 'gender') {
+                            final t = v.trim();
+                            if (t == '男' || t == '女' || t == '未知') {
+                              row[f.$1] = t;
+                            } else {
+                              row[f.$1] = v;
+                            }
+                          } else {
+                            row[f.$1] = v;
+                          }
+                        },
                       ),
                     ),
                   AppDataGridColumn(
                     id: 'actions',
                     title: '操作',
                     width: 72,
+                    minWidth: 72,
                     value: (_) => '',
                     cellBuilder: (context, row, _) => HyperButton.text(
-                      onPressed: _confirming
-                          ? null
-                          : () => setState(() => rows.remove(row)),
-                      label: const Text('删除'),
+                      onPressed:
+                          _confirming ? null : () => onDelete(row),
+                      label: const Text(
+                        '删除',
+                        style: TextStyle(color: _kDanger),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            Container(
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: HyperButton.text(
-                onPressed: _confirming || owner == null
-                    ? null
-                    : () {
-                        setState(() {
-                          rows.add(<String, dynamic>{
-                            '_rowId':
-                                '${listKey}_${DateTime.now().microsecondsSinceEpoch}',
-                            'contactName': ownerName,
-                          });
-                        });
-                      },
-                label: const Text('+ 添加一行'),
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: HyperButton.text(
+            onPressed: onAdd,
+            label: const Text(
+              '+ 添加一行',
+              style: TextStyle(color: _kPrimary, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -592,15 +675,88 @@ class _ContactImportDialogState extends State<_ContactImportDialog> {
     required String? value,
     required ValueChanged<String> onChanged,
   }) {
-    return TextFormField(
-      initialValue: value ?? '',
-      style: const TextStyle(fontSize: 12, color: _kTitle),
-      decoration: const InputDecoration(
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        border: InputBorder.none,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: TextFormField(
+        initialValue: value ?? '',
+        style: const TextStyle(fontSize: 13, height: 1.25, color: _kTitle),
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 10,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: _kBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: _kBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: _kPrimary),
+          ),
+        ),
+        onChanged: onChanged,
       ),
-      onChanged: onChanged,
+    );
+  }
+}
+
+class _PreviewTabs extends StatelessWidget {
+  const _PreviewTabs({
+    required this.selected,
+    required this.contactCount,
+    required this.superiorCount,
+    required this.subordinateCount,
+    required this.onSelect,
+  });
+
+  final int selected;
+  final int contactCount;
+  final int superiorCount;
+  final int subordinateCount;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <(String, int)>[
+      ('联系人', contactCount),
+      ('联系人上级', superiorCount),
+      ('联系人下级', subordinateCount),
+    ];
+    return Row(
+      children: [
+        for (var i = 0; i < items.length; i++)
+          Padding(
+            padding: EdgeInsets.only(right: i == items.length - 1 ? 0 : 20),
+            child: AppInkWell(
+              onPressed: () => onSelect(i),
+              child: Container(
+                padding: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: selected == i ? _kPrimary : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  '${items[i].$1}（${items[i].$2}）',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight:
+                        selected == i ? FontWeight.w600 : FontWeight.w400,
+                    color: selected == i ? _kPrimary : _kLabel,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

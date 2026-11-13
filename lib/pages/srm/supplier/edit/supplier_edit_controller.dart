@@ -359,8 +359,6 @@ class SupplierEditController extends LxController {
     putInitial('region', regionPath);
     putInitial('businessAddress', d.businessAddress);
     putInitial('website', d.website);
-    putInitial('abnormalRecord', d.abnormalRecord);
-    putInitial('penaltyHistory', d.penaltyHistory);
     putInitial('creditCode', d.creditCode);
     putInitial('legalPerson', d.legalPerson);
     putInitial('registeredCapital', d.registeredCapital?.round());
@@ -671,27 +669,122 @@ class SupplierEditController extends LxController {
     }
   }
 
-  /// 营业执照注册资本统一成「万元」。`1000万元` 取 1000，`5000000元` 折成 500。
+  /// 营业执照注册资本统一成「万元」。
+  /// 支持阿拉伯数字（`1000万元` / `5000000元`）与中文大写（`人民币壹佰万元整`）。
   double? _parseCapitalWan(String? raw) {
     final source = raw?.trim();
     if (source == null || source.isEmpty) return null;
-    final cleaned = _normalizeOcrDigits(source).replaceAll(',', '');
-    final m = RegExp(r'([\d.]+)').firstMatch(cleaned);
-    if (m == null) return null;
-    var n = double.tryParse(m.group(1)!);
-    if (n == null) return null;
-    final hasYi = cleaned.contains('亿');
-    final hasWan = cleaned.contains('万');
-    final hasYuan = cleaned.contains('元') || cleaned.contains('圆');
-    if (hasYi) {
-      n *= 10000;
-    } else if (hasYuan && !hasWan) {
-      n /= 10000;
-    } else if (!hasWan && !hasYi && n >= 100000) {
-      // 未标单位的大数按「元」折成万元。
-      n /= 10000;
+    final cleaned = _normalizeOcrDigits(source)
+        .replaceAll(',', '')
+        .replaceAll('，', '')
+        .replaceAll(RegExp(r'人民币|人民幣|RMB|￥|¥'), '')
+        .replaceAll(RegExp(r'[整正]\s*$'), '')
+        .trim();
+    if (cleaned.isEmpty) return null;
+
+    final arabic = RegExp(r'([\d.]+)').firstMatch(cleaned);
+    if (arabic != null) {
+      var n = double.tryParse(arabic.group(1)!);
+      if (n == null) return null;
+      final hasYi = cleaned.contains('亿') || cleaned.contains('億');
+      final hasWan = cleaned.contains('万') || cleaned.contains('萬');
+      final hasYuan =
+          cleaned.contains('元') || cleaned.contains('圆') || cleaned.contains('圓');
+      if (hasYi) {
+        n *= 10000;
+      } else if (hasYuan && !hasWan) {
+        n /= 10000;
+      } else if (!hasWan && !hasYi && n >= 100000) {
+        // 未标单位的大数按「元」折成万元。
+        n /= 10000;
+      }
+      return n;
     }
-    return n;
+
+    // 中文大写 / 小写：先还原为「元」，再折成「万元」。
+    final chinese = cleaned.replaceAll(RegExp(r'[元圆圓]'), '');
+    final yuan = _chineseAmountToYuan(chinese);
+    if (yuan == null || yuan <= 0) return null;
+    return yuan / 10000;
+  }
+
+  /// 中文金额 → 元。如 `壹佰万` → 1000000，`伍仟` → 5000。
+  double? _chineseAmountToYuan(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return null;
+    const digits = <String, int>{
+      '零': 0,
+      '〇': 0,
+      '壹': 1,
+      '贰': 2,
+      '貳': 2,
+      '叁': 3,
+      '肆': 4,
+      '伍': 5,
+      '陆': 6,
+      '陸': 6,
+      '柒': 7,
+      '捌': 8,
+      '玖': 9,
+      '一': 1,
+      '二': 2,
+      '两': 2,
+      '兩': 2,
+      '三': 3,
+      '四': 4,
+      '五': 5,
+      '六': 6,
+      '七': 7,
+      '八': 8,
+      '九': 9,
+    };
+    const smallUnits = <String, int>{
+      '拾': 10,
+      '十': 10,
+      '佰': 100,
+      '百': 100,
+      '仟': 1000,
+      '千': 1000,
+    };
+    const bigUnits = <String, int>{
+      '万': 10000,
+      '萬': 10000,
+      '亿': 100000000,
+      '億': 100000000,
+    };
+
+    var result = 0.0;
+    var section = 0.0;
+    var number = 0.0;
+    var saw = false;
+
+    for (final rune in text.runes) {
+      final ch = String.fromCharCode(rune);
+      final digit = digits[ch];
+      if (digit != null) {
+        number = digit.toDouble();
+        saw = true;
+        continue;
+      }
+      final small = smallUnits[ch];
+      if (small != null) {
+        section += (number == 0 ? 1 : number) * small;
+        number = 0;
+        saw = true;
+        continue;
+      }
+      final big = bigUnits[ch];
+      if (big != null) {
+        section = (section + number) * big;
+        result += section;
+        section = 0;
+        number = 0;
+        saw = true;
+        continue;
+      }
+    }
+    if (!saw) return null;
+    return result + section + number;
   }
 
   void _hydrateLogo(String? raw) {
@@ -1227,10 +1320,6 @@ class SupplierEditController extends LxController {
         'businessAddress': str('businessAddress'),
       if (logoPath.value != null) 'logoFile': logoPath.value,
       if (str('website') != null) 'website': str('website'),
-      if (str('abnormalRecord') != null)
-        'abnormalRecord': str('abnormalRecord'),
-      if (str('penaltyHistory') != null)
-        'penaltyHistory': str('penaltyHistory'),
       if (licensePath.value != null) 'licenseFile': licensePath.value,
       if (str('creditCode') != null) 'creditCode': str('creditCode'),
       if (str('legalPerson') != null) 'legalPerson': str('legalPerson'),

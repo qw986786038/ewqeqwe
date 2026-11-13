@@ -2,6 +2,10 @@
 
 本页按 `lib/lemon_ui.dart` 的公开导出与 `lib/src/components` 实际实现核对，更新时间：2026-10-21。只列用户可直接使用的 UI 控件；主题、Style、尺寸、数据模型、Form 适配器和内部绘制辅助类不作为重复控件计数。目录状态仍需结合 Demo、测试、使用文档和设备审核台账判断。
 
+## 动效包装（未确认）
+
+`HyperMotion.lift`：悬停/聚焦上浮、微缩放、阴影及按下回压；包装子控件，不增加激活语义。
+
 ## 基础与布局
 
 `HyperContainer`、`HyperMaterialSurface`、`HyperCard`、`HyperTitledCard`、`HyperDivider`、`HyperScaffold`、`HyperAppBar`、`HyperSliverAppBar`、`HyperDrawer`、`HyperSidebar`、`HyperWidgetGroup`、`HyperListTile`、`HyperNavigationListTile`、`HyperCheckboxListTile`、`HyperRadioListTile`、`HyperSwitchListTile`、`HyperPopupListTile`。
@@ -94,3 +98,11 @@ HyperAccordion 负责多项展开集合及互斥规则，属于 HyperCollapsible
 ## 核对边界
 
 本索引表示 API 有实现且从主库公开导出，不代表每个组件都满足全目录 `[x]` 的 Demo、主题、测试和文档完成标准，也不表示用户已确认样式。逐设备视觉状态见 [设备预览与 UI 审核台账](device-preview-and-review.md)，逐项进度见 [全量控件目录](component-catalog.md)。
+
+## 行内编辑（2026-10-26，用户已确认）
+
+新增公开 HyperInlineEdit<T>，提供通用编辑器与 text(multiline: true/false) 入口；全局 inlineEditTheme、局部 HyperInlineEditTheme、HyperInlineEditStyle。复用文本输入、按钮和表单四端规格，不新增重复设备常量。Demo 与主题编辑器经用户确认移入输入控件分类，使用说明见 [行内编辑](usage/inline-edit.md)。
+
+## 基础组件补齐（2026-10-26，未确认）
+
+新增 HyperRating、HyperTransfer<T>、HyperResizable、HyperMovableDialog / showHyperMovableDialog、HyperNavigationBar<T>，以及 HyperRatingFormField / HyperTransferFormField<T>。五个 Demo 与主题编辑器均登记未确认；完整接口和验证边界见 [新增基础控件](usage/pending-controls.md)。

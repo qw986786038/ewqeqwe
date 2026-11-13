@@ -27,7 +27,6 @@ import 'editor_button_fields.dart';
 import 'dart:convert';
 import 'dart:ui' show AppExitResponse;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lemon_ui/lemon_ui.dart';
@@ -45,8 +44,12 @@ part 'editor_basic_control_workspace.dart';
 part 'editor_surface_workspace.dart';
 part 'editor_content_workspace.dart';
 part 'editor_table_workspace.dart';
+part 'editor_chart_workspace.dart';
 part 'editor_input_workspace.dart';
 part 'editor_review_workspace.dart';
+part 'editor_image_workspace.dart';
+part 'editor_motion_workspace.dart';
+part 'editor_extended_workspace.dart';
 
 /// 编辑器外壳使用启动主题，草稿只进入独立预览 Navigator。
 class ThemeEditor extends StatefulWidget {
@@ -70,6 +73,7 @@ class _ThemeEditorState extends State<ThemeEditor> {
   set _page(String value) => _selection.page.value = value;
   double _textScale = 1;
   String? _gestureStart;
+  String _extendedState = 'common';
   String _radioState = 'common',
       _checkboxState = 'common',
       _switchState = 'common';
@@ -173,6 +177,11 @@ class _ThemeEditorState extends State<ThemeEditor> {
   static const _components = {
     'appBarReview': '应用顶栏',
     'drawerReview': '抽屉',
+    'imagePreviewReview': '图片预览',
+    'imageEditorReview': '图片编辑',
+    'imageReview': '图片',
+    'motionLiftReview': '悬停上浮',
+    'popoverReview': '锚定面板',
     'tooltipReview': '文字提示',
     'notificationReview': '通知卡片',
     'loadingOverlayReview': '加载遮罩',
@@ -189,40 +198,45 @@ class _ThemeEditorState extends State<ThemeEditor> {
     'pageIndicatorReview': '页面指示器',
     'breadcrumbReview': '面包屑',
     'topNavigationReview': '顶部导航',
-    'button': 'Button',
-    'tag': 'Tag',
-    'chip': 'Chip',
+    'button': '按钮',
+    'tag': '标签',
+    'chip': '选择标签',
     'sliderInput': '滑块',
     'segmentedInput': '分段按钮',
     'iconButtonInput': '图标按钮',
     'table': '数据表格',
-    'tree': 'tree-view',
-    'treeSelect': 'tree-select',
-    'result': 'result',
-    'description': 'description-list',
-    'timeline': 'timeline',
-    'avatar': 'avatar',
-    'listTile': 'list-tile',
-    'text': 'text',
-    'icon': 'icon',
-    'container': 'Container',
-    'collapsible': 'Collapsible / Accordion',
-    'group': 'WidgetGroup',
-    'surface': 'MaterialSurface',
-    'card': 'Card',
-    'field': 'TextField',
-    'select': 'Select',
-    'badge': 'Badge',
-    'divider': 'Divider',
-    'progress': 'Progress',
-    'radio': 'Radio',
-    'checkbox': 'Checkbox',
-    'switch': 'Switch',
-    'menu': 'Menu',
+    'tree': '树形列表',
+    'treeSelect': '树形选择',
+    'result': '结果页',
+    'description': '描述列表',
+    'timeline': '时间线',
+    'avatar': '头像',
+    'listTile': '列表项',
+    'text': '文字',
+    'icon': '图标',
+    'container': '容器',
+    'collapsible': '折叠面板',
+    'group': '控件组',
+    'surface': '材质表面',
+    'card': '卡片',
+    'field': '文本输入',
+    'select': '选择与自动补全',
+    'badge': '徽标',
+    'divider': '分隔线',
+    'progress': '进度',
+    'radio': '单选框',
+    'checkbox': '复选框',
+    'switch': '开关',
+    'menu': '菜单',
   };
   static const _pages = {
     'appBarReview': 'hyper-app-bar',
     'drawerReview': 'hyper-drawer',
+    'imagePreviewReview': 'hyper-image-preview',
+    'imageEditorReview': 'hyper-image-editor',
+    'imageReview': 'hyper-image',
+    'motionLiftReview': 'hyper-motion-lift',
+    'popoverReview': 'hyper-popover',
     'tooltipReview': 'hyper-tooltip',
     'notificationReview': 'hyper-notification',
     'loadingOverlayReview': 'hyper-loading-overlay',
@@ -526,13 +540,13 @@ class _ThemeEditorState extends State<ThemeEditor> {
   Future<void> _import() async {
     if (!await _canReplace()) return;
     try {
-      final file = await FilePicker.pickFile(
-        type: FileType.custom,
+      final files = await HyperFileDialog.pickFiles(
+        multiple: false,
         allowedExtensions: ['json'],
       );
-      if (file == null) return;
+      if (files.isEmpty) return;
       final document = EditorThemeDocument.decode(
-        utf8.decode(await file.readAsBytes()),
+        utf8.decode(await files.single.readAsBytes()),
       );
       if (mounted) {
         _replace(document);
@@ -545,11 +559,10 @@ class _ThemeEditorState extends State<ThemeEditor> {
 
   Future<void> _export() async {
     try {
-      await FilePicker.saveFile(
+      await HyperFileDialog.saveFile(
         dialogTitle: '导出主题 JSON',
         fileName: 'theme.json',
-        type: FileType.custom,
-        allowedExtensions: ['json'],
+        mimeType: 'application/json',
         bytes: Uint8List.fromList(utf8.encode(_document.encode())),
       );
     } catch (e) {
@@ -1059,6 +1072,13 @@ class _ThemeEditorState extends State<ThemeEditor> {
         () => m.selectionRadius = null,
         m.selectionRadius != null,
       ),
+      _heading('范围中间日期边框'),
+      _color(
+        '边框颜色',
+        v.borderColor,
+        (c) => v.borderColor = c,
+        inheritedColor: theme.colors.outline,
+      ),
     ]);
   }
 
@@ -1336,6 +1356,7 @@ class _ThemeEditorState extends State<ThemeEditor> {
     VoidCallback reset,
     bool overridden, {
     bool wholeNumbers = true,
+    int decimalPlaces = 2,
   }) {
     final lower = wholeNumbers ? min.ceilToDouble() : min;
     final upper = wholeNumbers ? max.floorToDouble() : max;
@@ -1359,7 +1380,7 @@ class _ThemeEditorState extends State<ThemeEditor> {
                     children: [
                       Expanded(
                         child: HyperText(
-                          '$label  ${sliderValue.toStringAsFixed(wholeNumbers ? 0 : 2)}',
+                          '$label  ${sliderValue.toStringAsFixed(wholeNumbers ? 0 : decimalPlaces)}',
                         ),
                       ),
                       const Icon(Icons.info_outline, size: 14),
@@ -2340,6 +2361,17 @@ class _ThemeEditorState extends State<ThemeEditor> {
       ),
       _heading('背景材质'),
       _select(
+        '高光描边',
+        _mode.materialAppearance.material.materialEdgeEnabled?.toString() ??
+            'inherit',
+        const {'inherit': '按表面用途默认', 'true': '全部开启', 'false': '全部关闭'},
+        (value) => _change(
+          () => _mode.materialAppearance.material.materialEdgeEnabled =
+              value == 'inherit' ? null : value == 'true',
+        ),
+      ),
+
+      _select(
         '配方',
         _mode.material?.name ?? 'inherit',
         {
@@ -2350,6 +2382,7 @@ class _ThemeEditorState extends State<ThemeEditor> {
               HyperSurfaceMaterialKind.translucent => '半透明',
               HyperSurfaceMaterialKind.frostedGlass => '毛玻璃',
               HyperSurfaceMaterialKind.softLightGlass => '柔光玻璃',
+              HyperSurfaceMaterialKind.clearFrostedGlass => '高透毛玻璃',
             },
         },
         (value) => _change(() {
@@ -2365,6 +2398,7 @@ class _ThemeEditorState extends State<ThemeEditor> {
             _mode.materialBorderWidth = null;
             _mode.materialAppearance.background = null;
             _mode.materialAppearance.shadows = null;
+            _mode.materialAppearance.material.materialEdgeEnabled = null;
           }
         }),
       ),
@@ -2372,7 +2406,18 @@ class _ThemeEditorState extends State<ThemeEditor> {
         _number(
           '背景不透明度',
           _mode.opacity ??
-              (_mode.material == HyperSurfaceMaterialKind.solid ? 1 : .75),
+              (_mode.material == HyperSurfaceMaterialKind.solid
+                  ? 1
+                  : _mode.material == HyperSurfaceMaterialKind.clearFrostedGlass
+                  ? const HyperSurfaceMaterial.clearFrostedGlass()
+                        .background!
+                        .gradient!
+                        .colors
+                        .first
+                        .a
+                  : _mode.material == HyperSurfaceMaterialKind.translucent
+                  ? HyperSurfaceMaterial.semanticTranslucentOpacity
+                  : HyperSurfaceMaterial.semanticGlassOpacity),
           0,
           1,
           (value) {
@@ -2388,6 +2433,8 @@ class _ThemeEditorState extends State<ThemeEditor> {
           _mode.blur ??
               (_mode.material == HyperSurfaceMaterialKind.softLightGlass
                   ? 28
+                  : _mode.material == HyperSurfaceMaterialKind.clearFrostedGlass
+                  ? const HyperSurfaceMaterial.clearFrostedGlass().blurSigmaX
                   : 20),
           0,
           80,
@@ -2504,6 +2551,13 @@ class _ThemeEditorState extends State<ThemeEditor> {
   Widget _componentPanel() => Obx(_buildComponentPanel);
 
   Widget _buildComponentPanel() {
+    if (_page == 'hyper-image-gradient') {
+      return _panel('图片取色渐变 · 未确认', [
+        const HyperText(
+          '图片来源与上方颜色在 Demo 中设置。此变体复用 HyperContainer 主题；圆角、内边距、边框、阴影及过渡在容器工作区配置。',
+        ),
+      ]);
+    }
     final sections = switch (_page) {
       'hyper-color-scheme' => {
         '主题与强调色',
@@ -2525,6 +2579,7 @@ class _ThemeEditorState extends State<ThemeEditor> {
       'hyper-typography-scheme' => {'文字缩放', '字体', '语义字阶', '文字语义颜色'},
       'hyper-motion-theme' => {'快速动效', '标准动效', '强调动效', '弹簧动效'},
       'hyper-material-surface' => {'材质质量与降级', '背景材质', '材质阴影'},
+      'hyper-clear-glass' => {'材质质量与降级'},
       _ => null,
     };
     if (sections != null) {
@@ -2629,8 +2684,64 @@ class _ThemeEditorState extends State<ThemeEditor> {
         ),
       ]);
     }
+    if (_isExtendedPage) return _extendedPanel();
+    if (_page == 'hyper-inline-edit') {
+      return _panel('行内编辑', [
+        const HyperText('样式与行为已由用户确认。四端尺寸继承文本输入、按钮和表单主题；切换继承 Motion。'),
+        _heading('展示内容'),
+        _color(
+          '展示文字颜色',
+          _mode.inlineEdit.displayColor,
+          (v) => _mode.inlineEdit.displayColor = v,
+          inheritedColor: _resolveTheme(_dark).colors.textPrimary,
+        ),
+        _heading('编辑器'),
+        HyperButton.text(
+          onPressed: () => rxBatch(() {
+            _page = 'hyper-text-field';
+            _component = 'field';
+          }),
+          label: const Text('编辑文本输入主题'),
+        ),
+        _heading('校验与保存错误'),
+        _color(
+          '错误文字颜色',
+          _mode.inlineEdit.errorColor,
+          (v) => _mode.inlineEdit.errorColor = v,
+          inheritedColor: _resolveTheme(_dark).colors.error,
+        ),
+        _heading('操作按钮'),
+        HyperButton.text(
+          onPressed: () => rxBatch(() {
+            _page = 'hyper-button';
+            _component = 'button';
+          }),
+          label: const Text('编辑按钮主题'),
+        ),
+        _heading('布局与过渡'),
+        const HyperText(
+          '间距在表单主题中配置，过渡在全局 Motion 中配置。组件不额外绘制表面，输入和按钮表面在各自主题中编辑。',
+        ),
+      ]);
+    }
     if (_page == 'hyper-number-input') {
-      return _panel('数字输入 · 继承现有主题', [
+      return _panel('数字输入', [
+        _select(
+          '按钮布局',
+          _spec.numberInputLayout?.name ?? 'inherit',
+          const {
+            'inherit': '继承主题',
+            'trailingVertical': '尾部上下箭头',
+            'leadingTrailing': '前减后加',
+          },
+          (value) => _change(
+            () => _spec.numberInputLayout = value == 'inherit'
+                ? null
+                : HyperNumberInputLayout.values.singleWhere(
+                    (v) => v.name == value,
+                  ),
+          ),
+        ),
         const HyperText(
           '输入框外观与四端尺寸继承文本输入框；步进图标继承图标按钮。实例可通过 style 和 stepperStyle 分别覆盖。',
         ),
@@ -2641,8 +2752,15 @@ class _ThemeEditorState extends State<ThemeEditor> {
     if (_page == 'hyper-color-picker') {
       return _panel('颜色选择器', [const HyperText('本页仅提供 Demo 预览，外观跟随主题。')]);
     }
+    if (_component == 'imagePreviewReview' ||
+        _component == 'imageEditorReview') {
+      return _imageToolsPanel();
+    }
+    if (_component == 'motionLiftReview') return _motionLiftPanel();
+    if (_component == 'imageReview') return _imagePanel();
     if (_isReviewControl) return _reviewPanel();
     if (_isInputControl) return _inputPanel();
+    if (_page == 'hyper-charts') return _chartPanel();
     if (_component == 'table') return _tablePanel();
     if (_isContentControl) return _contentPanel();
     if (_isBasicControl) return _basicControlPanel();
@@ -5487,6 +5605,7 @@ class _ThemeEditorState extends State<ThemeEditor> {
               _inputState = 'default';
               _iconInputVariant = 'common';
               if (value == 'hyper-scrolling-text') _component = 'text';
+              if (value == 'hyper-list-group') _component = 'card';
               for (final entry in _pages.entries) {
                 if (entry.value == value) _component = entry.key;
               }

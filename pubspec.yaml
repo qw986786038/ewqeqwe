@@ -62,7 +62,7 @@ dependencies:
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
   extended_image: ^10.1.0
-  file_picker: ^12.2.0
+  file_picker: ^13.3.0
   desktop_drop: ^0.8.4
   shadcn_flutter:
     path: third_party/shadcn_flutter
@@ -79,6 +79,11 @@ dependency_overrides:
   intl: ^0.20.3
   meta: ^1.19.0
   archive: ^4.2.0
+  # lemon_ui 需 ^13；lemon_shadcn 仍声明 ^12，强制统一到 13。
+  file_picker: ^13.3.0
+  # 2.3.x 改用 jni 生成绑定；本机 Windows 构建会误编进 android 包并报 Pointer/Void。
+  # 钉回 MethodChannel 实现，待升级 Flutter 后再解除。
+  path_provider_android: 2.2.23
   shadcn_flutter:
     path: third_party/shadcn_flutter
 

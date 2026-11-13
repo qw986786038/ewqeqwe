@@ -24,6 +24,7 @@ class _HyperDialogPageState extends State<HyperDialogPage> {
       style: style,
       barrierDismissible: dismissible,
       builder: (dialogContext) => HyperDialog(
+        scrollable: longContent,
         title: const Text('确认操作'),
         content: Text(
           longContent
@@ -211,6 +212,7 @@ class _HyperDialogPageState extends State<HyperDialogPage> {
                 onPressed: () => showHyperDialog<void>(
                   context: context,
                   builder: (dialogContext) => HyperDialog(
+                    scrollable: true,
                     title: const Text('自由组合'),
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -225,6 +227,40 @@ class _HyperDialogPageState extends State<HyperDialogPage> {
                       HyperButton.filled(
                         label: const Text('完成'),
                         onPressed: () => Navigator.of(dialogContext).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            section(
+              '内容型大弹窗 · 实例宽度覆盖',
+              HyperButton.tonal(
+                label: const Text('打开订单详情'),
+                onPressed: () => showHyperDialog<void>(
+                  context: context,
+                  style: const HyperDialogStyle(maxWidth: 960),
+                  builder: (dialogContext) => HyperDialog(
+                    title: const HyperText('订单详情'),
+                    content: Column(
+                      children: [
+                        const HyperText('默认有界正文：列表使用剩余空间，无需指定宽高。'),
+                        Expanded(
+                          child: ListView.separated(
+                            itemCount: 30,
+                            separatorBuilder: (_, _) => const HyperDivider(),
+                            itemBuilder: (_, index) => HyperListTile(
+                              title: HyperText('商品 ${index + 1}'),
+                              subtitle: const HyperText('订单内容预览，无表单校验或提交状态。'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      HyperButton.tonal(
+                        label: const Text('关闭详情'),
+                        onPressed: () => HyperOverlay.close(dialogContext),
                       ),
                     ],
                   ),

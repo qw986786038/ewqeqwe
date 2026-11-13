@@ -1,3 +1,5 @@
+import '../../foundation/hyper_icons.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -6,12 +8,18 @@ import 'package:flutter/rendering.dart';
 
 import 'package:flutter/material.dart';
 import 'package:trina_grid/trina_grid.dart' as trina;
+// ignore: implementation_imports
+import 'package:trina_grid/src/ui/trina_base_row.dart' as trina_ui;
 
 import '../../foundation/hyper_fill.dart';
+import '../../foundation/hyper_surface_material.dart';
+import '../../painting/hyper_box_decoration.dart';
 import '../../theme/core/hyper_theme.dart';
+import '../../theme/color/hyper_contrast_theme.dart';
 import '../button/hyper_button.dart';
 import '../checkbox/hyper_checkbox.dart';
 import '../checkbox/hyper_checkbox_style.dart';
+import '../checkbox/hyper_checkbox_theme.dart';
 import '../icon_button/hyper_icon_button.dart';
 import '../menu/hyper_context_menu.dart';
 import '../menu/hyper_menu_model.dart';
@@ -28,6 +36,7 @@ import 'hyper_table_defaults.dart';
 import 'hyper_table_style.dart';
 import 'hyper_table_theme.dart';
 part 'hyper_table_model.dart';
+part 'hyper_table_row_height.dart';
 
 /// A data grid with controlled selection and local or remote data loading.
 ///
@@ -46,6 +55,7 @@ class HyperTable<T> extends StatefulWidget {
     this.pageSize = 20,
     this.paginateLocalRows = false,
     this.showPagination = true,
+    this.showColumnResizeHandles,
     this.controller,
     this.selectionMode = HyperTableSelectionMode.none,
     this.selectedKeys = const {},
@@ -65,14 +75,27 @@ class HyperTable<T> extends StatefulWidget {
     this.treeColumnId,
     this.expandedKeys,
     this.onExpandedChanged,
-    this.striped = true,
-    this.hoverLift = false,
+    this.striped,
+    this.hoverLift,
+    this.embedded,
     this.style,
     this.empty,
+    this.noMore,
+    this.rowHeightMode = HyperTableRowHeightMode.content,
+    this.rowHeightBuilder,
   }) : assert(pageSize > 0),
        assert(dataMode == HyperTableDataMode.local || loader != null);
   final List<HyperTableColumn<T>> columns;
   final List<T> rows;
+
+  /// Rows grow to fit their cell content by default. Uniform mode explicitly
+  /// keeps built-in text on one line with ellipsis.
+  final HyperTableRowHeightMode rowHeightMode;
+
+  /// Explicit height for an individual row, before horizontal separators.
+  /// Null falls back to [rowHeightMode]. Positive finite values are required;
+  /// the accessible single-line minimum is always preserved.
+  final double? Function(T row)? rowHeightBuilder;
   final Object Function(T row) rowKey;
   final HyperTableLoader<T>? loader;
 
@@ -83,14 +106,27 @@ class HyperTable<T> extends StatefulWidget {
   final VoidCallback? onRefreshRequested;
   final HyperTableDataMode dataMode;
   final int pageSize;
-  final bool paginateLocalRows, striped, reorderableRows;
+  final bool paginateLocalRows, reorderableRows;
+  final bool? striped;
 
   /// Whether to show the built-in pager; pagination and controller commands
   /// remain available when an external pager is used.
   final bool showPagination;
 
+  /// Keeps column resize lines visible; otherwise they appear on hover.
+  /// The resize hit region remains stable while the handle fades.
+  final bool? showColumnResizeHandles;
+
   /// Gives hovered rows the same lifted surface treatment as drag feedback.
-  final bool hoverLift;
+  final bool? hoverLift;
+
+  /// Whether the parent owns the table's outer border, corners and shadow.
+  ///
+  /// Defaults to the style and theme, then `false`. Embedded tables have square
+  /// corners and no outer contour or material edge. Without an explicit table
+  /// material they use a solid semantic background instead of global glass.
+  /// Row separators, selection, editors and pagination retain their behavior.
+  final bool? embedded;
   final HyperTableController? controller;
   final HyperTableSelectionMode selectionMode;
   final Set<Object> selectedKeys;
@@ -115,11 +151,16 @@ class HyperTable<T> extends StatefulWidget {
   final ValueChanged<Set<Object>>? onExpandedChanged;
   final HyperTableStyle? style;
   final Widget? empty;
+
+  /// Footer shown when infinite loading completes with nonempty data.
+  /// Defaults to "没有更多数据了"; an empty widget explicitly hides it.
+  final Widget? noMore;
   @override
   State<HyperTable<T>> createState() => _HyperTableState<T>();
 }
 
 class _HyperTableState<T> extends State<HyperTable<T>>
+    with TickerProviderStateMixin
     implements _HyperTableCommands {
   final Map<Object, List<T>> _children = {};
   final Set<Object> _expanded = {}, _childLoading = {};
@@ -134,7 +175,12 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   List<trina.TrinaRow> _gridRows = [];
   List<T> _remote = [];
   final ValueNotifier<Object?> _hoveredRow = ValueNotifier(null);
+  final _rowForegrounds = <Object, _TableRowForeground>{};
+  final _hoveredHeader = ValueNotifier<String?>(null);
   final Map<String, double> _knownWidths = {};
+  final Map<Object, Map<String, double>> _cellHeights = {};
+  final Map<_HyperTableTextMeasureKey, double> _textHeights = {};
+  bool _rowHeightsScheduled = false;
   final Set<String> _userSized = {};
   bool _applyingMetrics = false, _metricsScheduled = false;
   HyperTableSort? _sort;
@@ -145,7 +191,21 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   bool _loading = false, _hasMore = false;
   Object? _error;
   bool _failedReset = false;
+  bool _loadingReset = false;
+  bool get _appending =>
+      _loading &&
+      !_loadingReset &&
+      widget.dataMode == HyperTableDataMode.infinite &&
+      _data.isNotEmpty;
   HyperTableStyle? _resolved;
+  bool get _embedded => widget.embedded ?? _resolved?.embedded ?? false;
+  double get _surfaceBorderWidth => _embedded ? 0 : _resolved!.borderWidth!;
+  bool get _hoverLift => widget.hoverLift ?? _resolved?.hoverLift ?? false;
+  bool get _striped => widget.striped ?? _resolved?.striped ?? true;
+  bool get _showColumnResizeHandles =>
+      widget.showColumnResizeHandles ??
+      _resolved?.showColumnResizeHandles ??
+      false;
   final _captureKey = GlobalKey();
   final _rowsStackKey = GlobalKey();
   final _hoverLiftRect = ValueNotifier<Rect?>(null);
@@ -154,6 +214,47 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   double? _columnViewportWidth;
   bool _columnLayoutScheduled = false;
   bool _horizontalOverflow = true;
+  double? _measuredHeaderHeight;
+
+  double _headerActionWidth(trina.TrinaColumn column) {
+    final count =
+        (column.enableSorting ? 1 : 0) + (column.enableDropToResize ? 1 : 0);
+    return math.min(
+      _resolved!.iconSize!,
+      math.max(0, column.width - 2 * _resolved!.horizontalPadding!) /
+          (count + 1),
+    );
+  }
+
+  double _resolveHeaderHeight() {
+    final s = _resolved!;
+    var height = s.headerHeight!;
+    for (final column in (_manager?.columns ?? _columns).where(
+      (c) => !c.hide && !c.field.startsWith('__hyper_'),
+    )) {
+      final definition = widget.columns.firstWhere((c) => c.id == column.field);
+      final slots =
+          (column.enableSorting ? 1 : 0) + (column.enableDropToResize ? 1 : 0);
+      final painter =
+          TextPainter(
+            text: TextSpan(text: column.title, style: s.headerTextStyle),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+            maxLines: definition.headerMaxLines,
+            ellipsis: definition.headerMaxLines == null ? null : '\u2026',
+          )..layout(
+            maxWidth: math.max(
+              0,
+              column.width -
+                  2 * s.horizontalPadding! -
+                  slots * _headerActionWidth(column),
+            ),
+          );
+      height = math.max(height, painter.height + 2 * s.verticalPadding!);
+      painter.dispose();
+    }
+    return height.ceilToDouble();
+  }
 
   void _scheduleColumnLayout(double width) {
     _columnViewportWidth = width;
@@ -163,21 +264,21 @@ class _HyperTableState<T> extends State<HyperTable<T>>
       _columnLayoutScheduled = false;
       if (!mounted || _manager == null) return;
       _layoutColumnWidths();
+      _scheduleRowHeights();
+      final height = _resolveHeaderHeight();
+      if (_measuredHeaderHeight != height) {
+        setState(() => _measuredHeaderHeight = height);
+      }
     });
   }
 
-  void _layoutColumnWidths() {
-    final manager = _manager!, s = _resolved!;
+  void _layoutColumnWidths({bool duringBuild = false}) {
+    final manager = _manager, s = _resolved!;
+    final columns = manager?.columns ?? _columns;
+    final rows = manager?.rows ?? _gridRows;
     final available = _columnViewportWidth!;
-    // Trina reserves thickness + 4 logical pixels after body columns for
-    // the overlaid vertical scrollbar; match that layout footprint.
-    final scrollbarFootprint = manager.configuration.scrollbar.showVertical
-        ? manager.configuration.scrollbar.thickness + 4
-        : 0.0;
-    var remaining = math.max(
-      0.0,
-      available - s.borderWidth! * 2 - scrollbarFootprint,
-    );
+    // The native vertical scrollbar overlays the body without reserving columns.
+    var remaining = math.max(0.0, available - _surfaceBorderWidth * 2);
     final targets = <trina.TrinaColumn, double>{};
     final flexible = <trina.TrinaColumn, HyperTableColumn<T>>{};
     double measure(String text, TextStyle style) {
@@ -191,7 +292,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
       return width;
     }
 
-    for (final column in manager.columns.where((c) => !c.hide)) {
+    for (final column in columns.where((c) => !c.hide)) {
       if (column.field.startsWith('__hyper_')) {
         remaining -= column.width;
         continue;
@@ -208,7 +309,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
             s.horizontalPadding! * 2 +
             (definition.resizable ? s.iconSize! : 0) +
             (definition.sortable ? s.iconSize! : 0);
-        for (final row in manager.rows) {
+        for (final row in rows) {
           final value = row.cells[column.field]?.value;
           width = math.max(
             width,
@@ -251,19 +352,26 @@ class _HyperTableState<T> extends State<HyperTable<T>>
         changed = true;
       }
     }
-    if (changed) {
+    if (changed && !duringBuild) {
       _hoverLiftRect.value = null;
-      manager.notifyResizingListeners();
-      manager.notifyListeners();
+      manager?.notifyResizingListeners();
+      manager?.notifyListeners();
     }
     _applyingMetrics = false;
-    final width = manager.columns
+    if (changed) {
+      _cellHeights.clear();
+      _textHeights.clear();
+    }
+    final width = columns
         .where((c) => !c.hide)
         .fold<double>(0, (sum, column) => sum + column.width);
-    final overflow =
-        width + scrollbarFootprint > available - s.borderWidth! * 2 + .5;
+    final overflow = width > available - _surfaceBorderWidth * 2 + .5;
     if (_horizontalOverflow != overflow) {
-      setState(() => _horizontalOverflow = overflow);
+      if (duringBuild) {
+        _horizontalOverflow = overflow;
+      } else {
+        setState(() => _horizontalOverflow = overflow);
+      }
     }
   }
 
@@ -280,7 +388,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
       : 0;
 
   void _showHoverLift(BuildContext rowContext) {
-    if (!widget.hoverLift || _draggingRow) return;
+    if (!_hoverLift || _draggingRow) return;
     final stack =
         _rowsStackKey.currentContext?.findRenderObject() as RenderBox?;
     final rowBox = rowContext.findRenderObject() as RenderBox?;
@@ -299,6 +407,8 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   final _dragSnapshot = ValueNotifier<ui.Image?>(null);
   int _captureEpoch = 0;
   bool _draggingRow = false;
+  Rect? _columnDragRect;
+  final _columnDropRect = ValueNotifier<Rect?>(null);
 
   void _clearDragSnapshot() {
     _captureEpoch++;
@@ -309,7 +419,10 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     }
   }
 
-  Future<void> _captureDragRow(BuildContext handleContext) async {
+  Future<void> _captureDragRow(
+    BuildContext handleContext,
+    trina.TrinaRow row,
+  ) async {
     _clearDragSnapshot();
     final epoch = _captureEpoch;
     final boundary =
@@ -318,13 +431,42 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     final center = boundary.globalToLocal(
       handle.localToGlobal(handle.size.center(Offset.zero)),
     );
-    final height = _manager!.rowTotalHeight;
+    final height = _rowExtent(row);
     final source = Rect.fromLTWH(
       _rowLeadingInset(boundary.size.width),
       center.dy - height / 2,
       _visibleRowWidth(boundary.size.width),
       height,
     );
+    await _captureDragRegion(source, epoch);
+  }
+
+  Future<void> _captureDragColumn(BuildContext handleContext) async {
+    _clearDragSnapshot();
+    final epoch = _captureEpoch;
+    final boundary =
+        _captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final handle = handleContext.findRenderObject() as RenderBox;
+    final stack = _rowsStackKey.currentContext!.findRenderObject() as RenderBox;
+    final headerOrigin = boundary.globalToLocal(
+      handle.localToGlobal(Offset.zero),
+    );
+    final stackOrigin = boundary.globalToLocal(
+      stack.localToGlobal(Offset.zero),
+    );
+    final source = Rect.fromLTWH(
+      headerOrigin.dx,
+      stackOrigin.dy,
+      handle.size.width,
+      stack.size.height,
+    ).intersect(Offset.zero & boundary.size);
+    _columnDragRect = source;
+    await _captureDragRegion(source, epoch);
+  }
+
+  Future<void> _captureDragRegion(Rect source, int epoch) async {
+    final boundary =
+        _captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
     final ratio = MediaQuery.devicePixelRatioOf(context);
     final full = await boundary.toImage(pixelRatio: ratio);
     final recorder = ui.PictureRecorder();
@@ -369,12 +511,15 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   @override
   void initState() {
     super.initState();
+    _hoveredRow.addListener(_updateRowForegrounds);
     if (_remoteMode) scheduleMicrotask(reload);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _cellHeights.clear();
+    _textHeights.clear();
     _resolve();
     if (_columns.isEmpty) _createGrid();
   }
@@ -382,6 +527,8 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   @override
   void didUpdateWidget(HyperTable<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _cellHeights.clear();
+    _textHeights.clear();
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller?._detach(this);
       if (_manager != null) widget.controller?._attach(this);
@@ -400,6 +547,8 @@ class _HyperTableState<T> extends State<HyperTable<T>>
         oldWidget.paginateLocalRows != widget.paginateLocalRows ||
         oldWidget.expandedKeys != widget.expandedKeys ||
         oldWidget.dataMode != widget.dataMode ||
+        oldWidget.rowHeightMode != widget.rowHeightMode ||
+        oldWidget.rowHeightBuilder != widget.rowHeightBuilder ||
         oldWidget.childrenBuilder != widget.childrenBuilder ||
         oldWidget.childrenLoader != widget.childrenLoader) {
       _replaceRows();
@@ -423,6 +572,10 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     final previous = _resolved;
     final t = HyperTheme.of(context), m = HyperTheme.sizesOf(context).table;
     _resolved = HyperTableStyle(
+      embedded: false,
+      hoverLift: false,
+      striped: true,
+      showColumnResizeHandles: false,
       scrollbarTheme: ScrollbarTheme.of(context),
       footerPadding: EdgeInsets.all(m.horizontalPadding),
       rowBoxShadow:
@@ -466,6 +619,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
       liftDuration: t.motion.standardDuration,
       curve: t.motion.standardCurve,
     ).merge(HyperTableTheme.of(context).style).merge(widget.style);
+    _updateRowForegrounds();
     if (previous != null &&
         _manager != null &&
         !_metricsScheduled &&
@@ -651,6 +805,57 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     widget.onExpandedChanged?.call(Set.unmodifiable(next));
   }
 
+  Color _rowForeground(Object key) {
+    final s = _resolved!;
+    final normal = s.textStyle!.color!;
+    if (!widget.selectedKeys.contains(key)) return normal;
+    if (s.selectedForeground != null) return s.selectedForeground!;
+    final theme = HyperTheme.of(context);
+    return tableSelectedForeground(
+      theme.colors,
+      HyperContrastTheme.of(context),
+      background: _hoverLift && _hoveredRow.value == key
+          ? s.liftBackground ?? s.selectedBackground!
+          : s.selectedBackground!,
+      canvasColor: s.background!,
+      foreground: normal,
+    );
+  }
+
+  void _updateRowForegrounds() {
+    if (_resolved == null || !mounted) return;
+    final duration = MediaQuery.of(context).disableAnimations
+        ? Duration.zero
+        : (_hoverLift ? _resolved!.liftDuration! : _resolved!.duration!);
+    for (final entry in _rowForegrounds.entries) {
+      entry.value.update(
+        _rowForeground(entry.key),
+        duration,
+        _resolved!.curve!,
+      );
+    }
+  }
+
+  Widget _withRowForeground(T row, Widget Function(Color) builder) {
+    final key = widget.rowKey(row);
+    final foreground = _rowForegrounds.putIfAbsent(
+      key,
+      () => _TableRowForeground(_rowForeground(key), this),
+    );
+    return AnimatedBuilder(
+      animation: foreground,
+      builder: (context, _) => builder(foreground.color),
+    );
+  }
+
+  void _pruneRowForegrounds() {
+    final keys = _gridRows.map((row) => widget.rowKey(row.data as T)).toSet();
+    for (final key
+        in _rowForegrounds.keys.where((key) => !keys.contains(key)).toList()) {
+      _rowForegrounds.remove(key)!.dispose();
+    }
+  }
+
   Widget _treeCell(BuildContext context, T row, Widget child) {
     final key = widget.rowKey(row),
         s = _resolved!,
@@ -671,33 +876,41 @@ class _HyperTableState<T> extends State<HyperTable<T>>
           SizedBox(
             width: math.min(s.controlColumnWidth!, constraints.maxWidth),
             child: expandable
-                ? HyperIconButton.ghost(
-                    style: HyperIconButtonStyle(
-                      size: s.controlColumnWidth,
-                      minimumTapTargetSize: s.controlColumnWidth,
-                      iconSize: s.iconSize,
-                    ),
-                    tooltip: _childErrors.containsKey(key)
-                        ? '子级加载失败，点击重试'
-                        : expanded
-                        ? '收起子级'
-                        : '展开子级',
-                    icon: _childLoading.contains(key)
-                        ? HyperProgress.circular(size: s.iconSize)
-                        : AnimatedRotation(
-                            turns: expanded ? .25 : 0,
-                            duration: MediaQuery.of(context).disableAnimations
-                                ? Duration.zero
-                                : s.duration!,
-                            curve: s.curve!,
-                            child: Icon(
-                              _childErrors.containsKey(key)
-                                  ? Icons.refresh
-                                  : Icons.chevron_right,
+                ? _withRowForeground(
+                    row,
+                    (foreground) => HyperIconButton.ghost(
+                      style: HyperIconButtonStyle(
+                        foregroundColor: foreground,
+                        contrastMode: HyperContrastMode.standard,
+                        size: s.controlColumnWidth,
+                        minimumTapTargetSize: s.controlColumnWidth,
+                        iconSize: s.iconSize,
+                      ),
+                      tooltip: _childErrors.containsKey(key)
+                          ? '子级加载失败，点击重试'
+                          : expanded
+                          ? '收起子级'
+                          : '展开子级',
+                      icon: _childLoading.contains(key)
+                          ? HyperProgress.circular(
                               size: s.iconSize,
+                              color: foreground,
+                            )
+                          : AnimatedRotation(
+                              turns: expanded ? .25 : 0,
+                              duration: MediaQuery.of(context).disableAnimations
+                                  ? Duration.zero
+                                  : s.duration!,
+                              curve: s.curve!,
+                              child: Icon(
+                                _childErrors.containsKey(key)
+                                    ? HyperIcons.refreshCw
+                                    : HyperIcons.chevronRight,
+                                size: s.iconSize,
+                              ),
                             ),
-                          ),
-                    onPressed: () => _toggleTree(row),
+                      onPressed: () => _toggleTree(row),
+                    ),
                   )
                 : null,
           ),
@@ -709,11 +922,12 @@ class _HyperTableState<T> extends State<HyperTable<T>>
 
   List<trina.TrinaRow> _rows() {
     final keys = <Object>{};
-    return _visibleData().map((r) {
+    return _visibleData().map<trina.TrinaRow>((r) {
       final key = widget.rowKey(r);
       if (!keys.add(key)) throw ArgumentError('Duplicate table row key: $key');
       return trina.TrinaRow(
         data: r,
+        height: _initialRowHeight(r),
         key: ValueKey(key),
         cells: {
           for (final c in widget.columns)
@@ -739,7 +953,10 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   double _minimumWidth(HyperTableColumn<T> c) {
     final s = _resolved!;
     return math.max(
-      c.minWidth ?? s.minimumColumnWidth!,
+      c.minWidth ??
+          (c.widthMode == HyperTableColumnWidthMode.flex
+              ? math.max(s.minimumColumnWidth!, c.width ?? s.columnWidth!)
+              : s.minimumColumnWidth!),
       _tree && c.id == (widget.treeColumnId ?? widget.columns.first.id)
           ? s.controlColumnWidth! + 2 * s.horizontalPadding! + s.iconSize!
           : 0,
@@ -856,31 +1073,48 @@ class _HyperTableState<T> extends State<HyperTable<T>>
           hide: c.hidden,
           readOnly: !c.editable || widget.onCellChanged == null,
           enableSorting: c.sortable,
-          enableColumnDrag: c.reorderable,
+          enableColumnDrag: false,
           enableContextMenu: false,
           enableDropToResize: c.resizable,
           textAlign: _align(c.textAlign),
           titleTextAlign: _align(c.headerTextAlign),
-          titleRenderer: (r) => _header(r.column),
+          titleRenderer: (r) => _columnDragHeader(r.column),
           renderer: (r) {
             final row = r.row.data as T;
             final content =
                 c.cellBuilder?.call(context, row, r.cell.value) ??
-                Text(
-                  '${r.cell.value ?? ''}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: c.textAlign,
-                  style: _resolved!.textStyle,
+                _withRowForeground(
+                  row,
+                  // Reset the grid's inherited single-line limit. Text's null
+                  // maxLines otherwise inherits it even in content mode.
+                  (foreground) => DefaultTextStyle(
+                    style: _resolved!.textStyle!.copyWith(color: foreground),
+                    child: Text(
+                      '${r.cell.value ?? ''}',
+                      style: _resolved!.textStyle!.copyWith(color: foreground),
+                      maxLines: _contentHeight(row) ? c.maxLines : 1,
+                      overflow: _contentHeight(row) && c.maxLines == null
+                          ? TextOverflow.clip
+                          : TextOverflow.ellipsis,
+                      textAlign: c.textAlign,
+                    ),
+                  ),
                 );
-            return _tree &&
+            final cell =
+                _tree &&
                     c.id == (widget.treeColumnId ?? widget.columns.first.id)
                 ? _treeCell(context, row, content)
                 : content;
+            if (!_contentHeight(row) || c.cellBuilder == null) return cell;
+            return _HyperTableMeasureCell(
+              onHeight: (height) => _recordCellHeight(row, c.id, height),
+              child: cell,
+            );
           },
         ),
     ];
     _gridRows = _rows();
+    _pruneRowForegrounds();
     _knownWidths
       ..clear()
       ..addEntries(_columns.map((c) => MapEntry(c.field, c.width)));
@@ -893,15 +1127,24 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   };
   Widget _rowDragHandle(trina.TrinaRow row) {
     final s = _resolved!;
-    final icon = Icon(
-      Icons.drag_indicator,
-      size: s.iconSize,
-      color: _canReorderRows ? s.textStyle!.color : s.borderColor,
+    final icon = _withRowForeground(
+      row.data as T,
+      (foreground) => Icon(
+        HyperIcons.gripVertical,
+        size: s.iconSize,
+        color:
+            _canReorderRows ||
+                widget.selectedKeys.contains(widget.rowKey(row.data as T))
+            ? foreground
+            : s.borderColor,
+      ),
     );
     if (!_canReorderRows) return icon;
     return Builder(
       builder: (handleContext) => Listener(
-        onPointerDown: (_) => unawaited(_captureDragRow(handleContext)),
+        onPointerDown: (_) {
+          unawaited(_captureDragRow(handleContext, row));
+        },
         child: Draggable<trina.TrinaRow>(
           data: row,
           onDragStarted: () {
@@ -923,11 +1166,11 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                 _rowLeadingInset(
                   (this.context.findRenderObject() as RenderBox).size.width,
                 ),
-            _manager!.rowTotalHeight / 2,
+            _rowExtent(row) / 2,
           ),
           feedback: Builder(builder: (_) => _rowDragFeedback(row)),
           childWhenDragging: Icon(
-            Icons.drag_indicator,
+            HyperIcons.gripVertical,
             size: s.iconSize,
             color: s.borderColor,
           ),
@@ -937,12 +1180,14 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     );
   }
 
-  Widget _rowDragFeedback(trina.TrinaRow row) {
+  Widget _rowDragFeedback(trina.TrinaRow? row, {Size? previewSize}) {
     final s = _resolved!;
-    final height = _manager!.rowTotalHeight;
-    final width = _visibleRowWidth(
-      (context.findRenderObject() as RenderBox).size.width,
-    );
+    final height =
+        previewSize?.height ??
+        (row == null ? _minimumRowHeight : _rowExtent(row));
+    final width =
+        previewSize?.width ??
+        _visibleRowWidth((context.findRenderObject() as RenderBox).size.width);
     return IgnorePointer(
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0, end: 1),
@@ -958,7 +1203,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
           ),
           child: DecoratedBox(
             position: DecorationPosition.foreground,
-            decoration: BoxDecoration(
+            decoration: HyperBoxDecoration(
               borderRadius: BorderRadius.circular(s.liftRadius!),
               border: Border.fromBorderSide(
                 BorderSide.lerp(BorderSide.none, s.liftBorder!, value),
@@ -991,15 +1236,28 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   HyperCheckboxStyle _selectionStyle() {
     final s = _resolved!;
     final checkbox = HyperTheme.sizesOf(context).checkbox;
+    final colors = HyperTheme.of(context).colors;
     final size = math.min(s.iconSize!, s.controlColumnWidth!);
     final ratio = size / checkbox.size;
     return HyperCheckboxStyle(
-      size: size,
-      markSize: checkbox.markSize == null ? null : checkbox.markSize! * ratio,
-      markStrokeWidth: checkbox.markStrokeWidth * ratio,
-      borderRadius: BorderRadius.circular(checkbox.roundedRadius * ratio),
-      minimumTapTargetSize: s.controlColumnWidth,
-    );
+          inactiveColor: Colors.white,
+          border: BorderSide(color: colors.outline),
+          selectedBorder: BorderSide.none,
+        )
+        .merge(
+          HyperCheckboxTheme.of(context).resolve(HyperCheckboxVariant.rounded),
+        )
+        .merge(
+          HyperCheckboxStyle(
+            size: size,
+            markSize: checkbox.markSize == null
+                ? null
+                : checkbox.markSize! * ratio,
+            markStrokeWidth: checkbox.markStrokeWidth * ratio,
+            borderRadius: BorderRadius.circular(checkbox.roundedRadius * ratio),
+            minimumTapTargetSize: s.controlColumnWidth,
+          ),
+        );
   }
 
   Widget _selectionCell(T row) => Center(
@@ -1101,109 +1359,241 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     m.notifyListeners();
   }
 
-  Widget _header(trina.TrinaColumn c) => HyperContextMenu(
-    items: [
-      if (c.enableSorting) const HyperMenuItem(id: 'asc', label: '升序'),
-      if (c.enableSorting) const HyperMenuItem(id: 'desc', label: '降序'),
-      const HyperMenuItem(id: 'clear', label: '清除排序'),
-      const HyperMenuItem(id: 'start', label: '固定到起始侧'),
-      const HyperMenuItem(id: 'end', label: '固定到末尾侧'),
-      const HyperMenuItem(id: 'unpin', label: '取消固定'),
-      HyperMenuItem(
-        id: 'hide',
-        label: '隐藏此列',
-        enabled:
-            _columns
-                .where((c) => !c.hide && !c.field.startsWith('__hyper_'))
-                .length >
-            1,
-      ),
-      HyperMenuItem(
-        id: 'show',
-        label: '显示隐藏列',
-        children: [
-          for (final x in _columns.where((c) => c.hide))
-            HyperMenuItem(id: 'show:${x.field}', label: x.title),
-        ],
-      ),
-    ],
-    onSelected: (id) {
-      switch (id) {
-        case 'asc':
-          sort(HyperTableSort(c.field, HyperTableSortDirection.ascending));
-        case 'desc':
-          sort(HyperTableSort(c.field, HyperTableSortDirection.descending));
-        case 'clear':
-          sort(null);
-        case 'start':
-          pinColumn(c.field, HyperTableColumnPin.start);
-        case 'end':
-          pinColumn(c.field, HyperTableColumnPin.end);
-        case 'unpin':
-          pinColumn(c.field, HyperTableColumnPin.none);
-        case 'hide':
-          setColumnVisible(c.field, false);
-        default:
-          if (id.startsWith('show:')) setColumnVisible(id.substring(5), true);
-      }
-    },
-    child: Padding(
-      padding: EdgeInsets.symmetric(horizontal: _resolved!.horizontalPadding!),
-      child: Row(
-        children: [
-          Expanded(
-            child: Align(
-              alignment: switch (c.titleTextAlign) {
-                trina.TrinaColumnTextAlign.left => Alignment.centerLeft,
-                trina.TrinaColumnTextAlign.right => Alignment.centerRight,
-                trina.TrinaColumnTextAlign.center => Alignment.center,
-                trina.TrinaColumnTextAlign.end =>
-                  AlignmentDirectional.centerEnd,
-                trina.TrinaColumnTextAlign.start =>
-                  AlignmentDirectional.centerStart,
-              },
-              child: Text(
-                c.title,
-                style: _resolved!.headerTextStyle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+  Widget _columnDragHeader(trina.TrinaColumn column) {
+    final definition = widget.columns.firstWhere((c) => c.id == column.field);
+    if (!definition.reorderable) return _header(column);
+    return Builder(
+      builder: (headerContext) => DragTarget<trina.TrinaColumn>(
+        onWillAcceptWithDetails: (details) =>
+            details.data != column && details.data.frozen == column.frozen,
+        onMove: (details) {
+          if (details.data == column || details.data.frozen != column.frozen) {
+            _columnDropRect.value = null;
+            return;
+          }
+          final stack =
+              _rowsStackKey.currentContext!.findRenderObject() as RenderBox;
+          final header = headerContext.findRenderObject() as RenderBox;
+          final origin = stack.globalToLocal(header.localToGlobal(Offset.zero));
+          final movingForward =
+              _manager!.columns.indexOf(details.data) <
+              _manager!.columns.indexOf(column);
+          final rightEdge =
+              movingForward !=
+              (Directionality.of(context) == TextDirection.rtl);
+          final x = origin.dx + (rightEdge ? header.size.width : 0);
+          _columnDropRect.value = Rect.fromLTWH(
+            x,
+            0,
+            _resolved!.borderWidth!,
+            stack.size.height,
+          );
+        },
+        onLeave: (_) => _columnDropRect.value = null,
+        onAcceptWithDetails: (details) {
+          _columnDropRect.value = null;
+          _manager!.moveColumn(column: details.data, targetColumn: column);
+        },
+        builder: (context, candidates, rejected) => Listener(
+          onPointerDown: (_) => unawaited(_captureDragColumn(headerContext)),
+          child: LongPressDraggable<trina.TrinaColumn>(
+            data: column,
+            axis: Axis.horizontal,
+            maxSimultaneousDrags: 1,
+            dragAnchorStrategy: (_, context, position) {
+              final boundary =
+                  _captureKey.currentContext!.findRenderObject() as RenderBox;
+              final origin = boundary.localToGlobal(
+                _columnDragRect?.topLeft ?? Offset.zero,
+              );
+              return position - origin;
+            },
+            onDragStarted: () {
+              _draggingRow = true;
+              _hoveredRow.value = null;
+              _hoverLiftRect.value = null;
+            },
+            onDragEnd: (_) {
+              _draggingRow = false;
+              _columnDropRect.value = null;
+              _clearDragSnapshot();
+            },
+            feedback: Builder(
+              builder: (_) => _rowDragFeedback(
+                null,
+                previewSize:
+                    _columnDragRect?.size ??
+                    Size(column.width, _resolved!.headerHeight!),
               ),
+            ),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.grab,
+              child: _header(column),
             ),
           ),
-          if (c.sort != trina.TrinaColumnSort.none)
-            Icon(
-              c.sort == trina.TrinaColumnSort.ascending
-                  ? Icons.arrow_upward
-                  : Icons.arrow_downward,
-              size: _resolved!.iconSize,
+        ),
+      ),
+    );
+  }
+
+  Widget _header(trina.TrinaColumn c) {
+    final maxLines = widget.columns
+        .firstWhere((column) => column.id == c.field)
+        .headerMaxLines;
+    return MouseRegion(
+      onEnter: (_) => _hoveredHeader.value = c.field,
+      onExit: (_) {
+        if (_hoveredHeader.value == c.field) _hoveredHeader.value = null;
+      },
+      child: ValueListenableBuilder<String?>(
+        valueListenable: _hoveredHeader,
+        builder: (context, hovered, _) => HyperContextMenu(
+          enableLongPress: false,
+          items: [
+            if (c.enableSorting) const HyperMenuItem(id: 'asc', label: '升序'),
+            if (c.enableSorting) const HyperMenuItem(id: 'desc', label: '降序'),
+            const HyperMenuItem(id: 'clear', label: '清除排序'),
+            const HyperMenuItem(id: 'start', label: '固定到起始侧'),
+            const HyperMenuItem(id: 'end', label: '固定到末尾侧'),
+            const HyperMenuItem(id: 'unpin', label: '取消固定'),
+            HyperMenuItem(
+              id: 'hide',
+              label: '隐藏此列',
+              enabled:
+                  _columns
+                      .where((c) => !c.hide && !c.field.startsWith('__hyper_'))
+                      .length >
+                  1,
             ),
-          if (c.enableDropToResize)
-            MouseRegion(
-              cursor: SystemMouseCursors.resizeColumn,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragUpdate: (details) => _manager?.resizeColumn(
-                  c,
-                  details.delta.dx *
-                      (Directionality.of(context) == TextDirection.rtl
-                          ? -1
-                          : 1),
-                ),
-                child: SizedBox(
-                  width: _resolved!.iconSize,
-                  height: double.infinity,
-                  child: Icon(
-                    Icons.drag_indicator,
-                    size: _resolved!.iconSize,
-                    color: _resolved!.borderColor,
+            HyperMenuItem(
+              id: 'show',
+              label: '显示隐藏列',
+              children: [
+                for (final x in _columns.where((c) => c.hide))
+                  HyperMenuItem(id: 'show:${x.field}', label: x.title),
+              ],
+            ),
+          ],
+          onSelected: (id) {
+            switch (id) {
+              case 'asc':
+                sort(
+                  HyperTableSort(c.field, HyperTableSortDirection.ascending),
+                );
+              case 'desc':
+                sort(
+                  HyperTableSort(c.field, HyperTableSortDirection.descending),
+                );
+              case 'clear':
+                sort(null);
+              case 'start':
+                pinColumn(c.field, HyperTableColumnPin.start);
+              case 'end':
+                pinColumn(c.field, HyperTableColumnPin.end);
+              case 'unpin':
+                pinColumn(c.field, HyperTableColumnPin.none);
+              case 'hide':
+                setColumnVisible(c.field, false);
+              default:
+                if (id.startsWith('show:')) {
+                  setColumnVisible(id.substring(5), true);
+                }
+            }
+          },
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(
+              start: _resolved!.horizontalPadding!,
+              end: c.enableDropToResize ? 0 : _resolved!.horizontalPadding!,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: switch (c.titleTextAlign) {
+                      trina.TrinaColumnTextAlign.left => Alignment.centerLeft,
+                      trina.TrinaColumnTextAlign.right => Alignment.centerRight,
+                      trina.TrinaColumnTextAlign.center => Alignment.center,
+                      trina.TrinaColumnTextAlign.end =>
+                        AlignmentDirectional.centerEnd,
+                      trina.TrinaColumnTextAlign.start =>
+                        AlignmentDirectional.centerStart,
+                    },
+                    child: Text(
+                      c.title,
+                      style: _resolved!.headerTextStyle,
+                      textAlign: switch (c.titleTextAlign) {
+                        trina.TrinaColumnTextAlign.left => TextAlign.left,
+                        trina.TrinaColumnTextAlign.right => TextAlign.right,
+                        trina.TrinaColumnTextAlign.center => TextAlign.center,
+                        trina.TrinaColumnTextAlign.start => TextAlign.start,
+                        trina.TrinaColumnTextAlign.end => TextAlign.end,
+                      },
+                      maxLines: maxLines,
+                      overflow: maxLines == null
+                          ? TextOverflow.clip
+                          : TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
-              ),
+                if (c.enableSorting)
+                  SizedBox(
+                    width: _headerActionWidth(c),
+                    child: c.sort == trina.TrinaColumnSort.none
+                        ? null
+                        : Icon(
+                            c.sort == trina.TrinaColumnSort.ascending
+                                ? HyperIcons.arrowUp
+                                : HyperIcons.arrowDown,
+                            size: _headerActionWidth(c),
+                          ),
+                  ),
+                if (c.enableDropToResize)
+                  MouseRegion(
+                    cursor: SystemMouseCursors.resizeColumn,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragUpdate: (details) =>
+                          _manager?.resizeColumn(
+                            c,
+                            details.delta.dx *
+                                (Directionality.of(context) == TextDirection.rtl
+                                    ? -1
+                                    : 1),
+                          ),
+                      child: SizedBox(
+                        width:
+                            _headerActionWidth(c) +
+                            _resolved!.horizontalPadding!,
+                        height: double.infinity,
+                        child: AnimatedOpacity(
+                          opacity:
+                              _showColumnResizeHandles || hovered == c.field
+                              ? 1
+                              : 0,
+                          duration: MediaQuery.of(context).disableAnimations
+                              ? Duration.zero
+                              : _resolved!.duration!,
+                          curve: _resolved!.curve!,
+                          child: Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: SizedBox(
+                              width: _resolved!.borderWidth,
+                              height: _resolved!.iconSize,
+                              child: ColoredBox(color: _resolved!.borderColor!),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
+
   BorderRadius _liftSegmentRadius(BuildContext segmentContext) {
     final stack =
         _rowsStackKey.currentContext?.findRenderObject() as RenderBox?;
@@ -1234,6 +1624,21 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     trina.TrinaGridStateManager manager,
   ) {
     final data = row.data as T, key = widget.rowKey(data);
+    // Every visible column contributes to content height, including columns
+    // outside the horizontal viewport. Keep vertical row virtualization, but
+    // lay out all cells of mounted content-height rows in the same subtree.
+    final rowChild =
+        _contentHeight(data) &&
+            child is trina_ui.TrinaBaseRow &&
+            child.visibilityLayout
+        ? trina_ui.TrinaBaseRow(
+            key: child.key,
+            rowIdx: child.rowIdx,
+            row: child.row,
+            columns: child.columns,
+            stateManager: child.stateManager,
+          )
+        : child;
     final surface = ValueListenableBuilder<Object?>(
       key: ValueKey(key),
       valueListenable: _hoveredRow,
@@ -1242,7 +1647,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
         // Each separator belongs to the preceding row. Hide both edges of
         // the lifted row, including the separator painted by its neighbour.
         final hideSeparator =
-            widget.hoverLift &&
+            _hoverLift &&
             !_draggingRow &&
             hovered != null &&
             (hovered == key ||
@@ -1265,19 +1670,19 @@ class _HyperTableState<T> extends State<HyperTable<T>>
           child: AnimatedContainer(
             duration: MediaQuery.of(context).disableAnimations
                 ? Duration.zero
-                : (widget.hoverLift ? s.liftDuration! : s.duration!),
+                : (_hoverLift ? s.liftDuration! : s.duration!),
             curve: s.curve!,
             decoration: BoxDecoration(color: s.background),
             child: ColoredBox(
-              color: widget.striped && index.isOdd
+              color: _striped && index.isOdd
                   ? s.stripeBackground!
                   : Colors.transparent,
               child: AnimatedContainer(
                 duration: MediaQuery.of(context).disableAnimations
                     ? Duration.zero
-                    : (widget.hoverLift ? s.liftDuration! : s.duration!),
+                    : (_hoverLift ? s.liftDuration! : s.duration!),
                 curve: s.curve!,
-                foregroundDecoration: BoxDecoration(
+                foregroundDecoration: HyperBoxDecoration(
                   border: Border(
                     bottom: BorderSide(
                       color: hideSeparator
@@ -1291,24 +1696,24 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                 // interpolating its RGB channels from transparent black.
                 decoration: widget.selectedKeys.contains(key)
                     ? BoxDecoration(
-                        color: widget.hoverLift && hovered == key
+                        color: _hoverLift && hovered == key
                             ? s.liftBackground ?? s.selectedBackground
                             : s.selectedBackground,
-                        borderRadius: widget.hoverLift && hovered == key
+                        borderRadius: _hoverLift && hovered == key
                             ? _liftSegmentRadius(context)
                             : null,
                       )
                     : hovered == key
                     ? BoxDecoration(
-                        color: widget.hoverLift
+                        color: _hoverLift
                             ? s.liftBackground
                             : s.hoverBackground,
-                        borderRadius: widget.hoverLift
+                        borderRadius: _hoverLift
                             ? _liftSegmentRadius(context)
                             : null,
                       )
                     : null,
-                child: child,
+                child: rowChild,
               ),
             ),
           ),
@@ -1320,14 +1725,19 @@ class _HyperTableState<T> extends State<HyperTable<T>>
             onWillAcceptWithDetails: (details) => details.data.key != row.key,
             onAcceptWithDetails: (details) {
               final index = manager.rows.indexOf(row);
-              if (index >= 0) manager.moveRowsByIndex([details.data], index);
+              final source = manager.rows
+                  .where((r) => r.key == details.data.key)
+                  .firstOrNull;
+              if (index >= 0 && source != null) {
+                manager.moveRowsByIndex([source], index);
+              }
             },
             builder: (context, candidates, rejected) => AnimatedContainer(
               duration: MediaQuery.of(context).disableAnimations
                   ? Duration.zero
                   : _resolved!.duration!,
               curve: _resolved!.curve!,
-              foregroundDecoration: BoxDecoration(
+              foregroundDecoration: HyperBoxDecoration(
                 border: Border(
                   top: BorderSide(
                     color: candidates.isEmpty
@@ -1341,18 +1751,82 @@ class _HyperTableState<T> extends State<HyperTable<T>>
             ),
           )
         : surface;
-    return widget.rowContextMenuBuilder == null
+    final rowContent = widget.rowContextMenuBuilder == null
         ? content
         : HyperContextMenu(
+            enableLongPress: false,
             key: ValueKey(key),
             items: widget.rowContextMenuBuilder!(context, data),
             child: content,
           );
+    if (widget.dataMode != HyperTableDataMode.infinite ||
+        manager.rows.isEmpty ||
+        row.key != manager.rows.last.key) {
+      return rowContent;
+    }
+    final s = _resolved!;
+    final padding = s.footerPadding!.resolve(Directionality.of(context));
+    final textHeight =
+        MediaQuery.textScalerOf(context).scale(s.textStyle!.fontSize!) *
+        (s.textStyle!.height ?? 1.5);
+    final tailHeight =
+        math.max(manager.rowTotalHeight, textHeight) + padding.vertical;
+    final isBody = child is trina_ui.TrinaBaseRow && child.visibilityLayout;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(height: _rowExtent(row), child: rowContent),
+        SizedBox(
+          height: tailHeight,
+          child: isBody
+              ? Padding(
+                  padding: padding,
+                  child: Center(child: _infiniteTail()),
+                )
+              : const SizedBox.expand(),
+        ),
+      ],
+    );
+  }
+
+  Widget _infiniteTail() {
+    final s = _resolved!;
+    if (_appending) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const HyperProgress.infinite(semanticsLabel: '加载更多'),
+          SizedBox(width: s.horizontalPadding!),
+          Text('正在加载更多…', style: s.textStyle),
+        ],
+      );
+    }
+    if (_error != null) {
+      return HyperButton.text(
+        onPressed: () => _load(reset: _failedReset),
+        child: const Text('加载失败，点击重试'),
+      );
+    }
+    if (_loading) return const SizedBox.shrink();
+    if (_hasMore) {
+      return HyperButton.text(
+        onPressed: _requestMore,
+        child: const Text('加载更多'),
+      );
+    }
+    return widget.noMore ??
+        Text(
+          '没有更多数据了',
+          style: s.textStyle?.copyWith(
+            color: HyperTheme.of(context).colors.textSecondary,
+          ),
+        );
   }
 
   void _releaseManager() {
     widget.controller?._detach(this);
     _manager?.removeListener(_managerChanged);
+    _manager?.resizingChangeNotifier.removeListener(_managerChanged);
     _manager = null;
   }
 
@@ -1364,6 +1838,8 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     if (m == null) return;
     for (final c in m.refColumns.originalList) {
       if (_knownWidths[c.field] != c.width) {
+        _cellHeights.clear();
+        _textHeights.clear();
         _knownWidths[c.field] = c.width;
         if (!_applyingMetrics) _userSized.add(c.field);
         if (!c.field.startsWith('__hyper_')) {
@@ -1374,7 +1850,10 @@ class _HyperTableState<T> extends State<HyperTable<T>>
   }
 
   void _replaceRows() {
+    _cellHeights.clear();
+    _textHeights.clear();
     _gridRows = _rows();
+    _pruneRowForegrounds();
     final m = _manager;
     if (m != null) {
       m.removeAllRows(notify: false);
@@ -1416,6 +1895,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     }
     setState(() {
       _loading = true;
+      _loadingReset = reset;
       _error = null;
     });
     try {
@@ -1604,6 +2084,98 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     return false;
   }
 
+  Widget _verticalScrollbar({
+    required double headerHeight,
+    required Widget child,
+  }) {
+    final s = _resolved!;
+    final theme = s.scrollbarTheme ?? const ScrollbarThemeData();
+    final controller = _manager?.scroll.bodyRowsVertical;
+    final horizontal = _horizontalOverflow
+        ? (_manager?.configuration.scrollbar.thickness ??
+                  const trina.TrinaGridScrollbarConfig().thickness) +
+              4
+        : 0.0;
+    return RawScrollbar(
+      controller: controller,
+      notificationPredicate: (notification) =>
+          notification.metrics.axis == Axis.vertical,
+      interactive: controller != null && (theme.interactive ?? true),
+      thumbVisibility: controller == null
+          ? false
+          : theme.thumbVisibility?.resolve({}),
+      trackVisibility: theme.trackVisibility?.resolve({}),
+      thickness:
+          theme.thickness?.resolve({}) ??
+          const trina.TrinaGridScrollbarConfig().thickness,
+      minThumbLength:
+          theme.minThumbLength ??
+          const trina.TrinaGridScrollbarConfig().minThumbLength,
+      radius: theme.radius,
+      thumbColor: theme.thumbColor?.resolve({}) ?? s.borderColor,
+      trackColor: theme.trackColor?.resolve({}) ?? Colors.transparent,
+      trackBorderColor:
+          theme.trackBorderColor?.resolve({}) ?? Colors.transparent,
+      padding: EdgeInsets.only(top: headerHeight, bottom: horizontal),
+      scrollbarOrientation: Directionality.of(context) == TextDirection.rtl
+          ? ScrollbarOrientation.left
+          : ScrollbarOrientation.right,
+      // The table is already placed inside the caller's layout/safe area.
+      // Native row ListViews omit explicit padding and would otherwise add
+      // page safe-area insets to their scroll extents (also in frozen columns).
+      child: MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        removeBottom: true,
+        removeLeft: true,
+        removeRight: true,
+        child: _horizontalScrollbar(child),
+      ),
+    );
+  }
+
+  Widget _horizontalScrollbar(Widget child) {
+    final s = _resolved!;
+    final theme = s.scrollbarTheme ?? const ScrollbarThemeData();
+    final manager = _manager;
+    final controller = manager?.scroll.bodyRowsHorizontal;
+    double frozenWidth(trina.TrinaColumnFrozen pin) =>
+        manager?.showFrozenColumn == true
+        ? manager!.columns
+              .where((c) => !c.hide && c.frozen == pin)
+              .fold<double>(0, (sum, c) => sum + c.width)
+        : 0;
+    return RawScrollbar(
+      controller: controller,
+      scrollbarOrientation: ScrollbarOrientation.bottom,
+      notificationPredicate: (notification) =>
+          notification.metrics.axis == Axis.horizontal,
+      interactive: controller != null && (theme.interactive ?? true),
+      thumbVisibility: controller == null || !_horizontalOverflow
+          ? false
+          : theme.thumbVisibility?.resolve({}),
+      trackVisibility: !_horizontalOverflow
+          ? false
+          : theme.trackVisibility?.resolve({}),
+      thickness:
+          theme.thickness?.resolve({}) ??
+          const trina.TrinaGridScrollbarConfig().thickness,
+      minThumbLength:
+          theme.minThumbLength ??
+          const trina.TrinaGridScrollbarConfig().minThumbLength,
+      radius: theme.radius,
+      thumbColor: theme.thumbColor?.resolve({}) ?? s.borderColor,
+      trackColor: theme.trackColor?.resolve({}) ?? Colors.transparent,
+      trackBorderColor:
+          theme.trackBorderColor?.resolve({}) ?? Colors.transparent,
+      padding: EdgeInsetsDirectional.only(
+        start: frozenWidth(trina.TrinaColumnFrozen.start),
+        end: frozenWidth(trina.TrinaColumnFrozen.end),
+      ).resolve(Directionality.of(context)),
+      child: child,
+    );
+  }
+
   @override
   void deactivate() {
     widget.controller?._detach(this);
@@ -1623,8 +2195,14 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     _captureEpoch++;
     _dragSnapshot.value?.dispose();
     _dragSnapshot.dispose();
+    _columnDropRect.dispose();
     _hoverLiftRect.dispose();
+    _hoveredHeader.dispose();
     _hoveredRow.dispose();
+    for (final foreground in _rowForegrounds.values) {
+      foreground.dispose();
+    }
+    _rowForegrounds.clear();
     widget.controller?._detach(this);
     _releaseManager();
     super.dispose();
@@ -1637,31 +2215,41 @@ class _HyperTableState<T> extends State<HyperTable<T>>
     final scaler = MediaQuery.textScalerOf(context);
     final font =
         s.textStyle?.fontSize ?? DefaultTextStyle.of(context).style.fontSize!;
-    final headerFont = s.headerTextStyle?.fontSize ?? font;
     final rowHeight = math.max(
       s.rowHeight!,
       scaler.scale(font) * (s.textStyle?.height ?? 1.5) +
           2 * s.verticalPadding!,
     );
-    final headerHeight = math.max(
-      s.headerHeight!,
-      scaler.scale(headerFont) * (s.headerTextStyle?.height ?? 1.5) +
-          2 * s.verticalPadding!,
-    );
-    final radius = BorderRadius.circular(s.radius!);
+    final radius = BorderRadius.circular(_embedded ? 0 : s.radius!);
     return LayoutBuilder(
       builder: (context, constraints) {
+        // Resolve before Trina paints, including its initial loading frame.
+        // onLoaded runs after layout and is too late to prevent a narrow header.
+        if (constraints.maxWidth.isFinite) {
+          _columnViewportWidth = constraints.maxWidth;
+          _layoutColumnWidths(duringBuild: true);
+          if (_manager == null &&
+              widget.rowHeightMode == HyperTableRowHeightMode.content) {
+            _gridRows = _rows();
+          }
+        }
         _scheduleColumnLayout(constraints.maxWidth);
+        final headerHeight = _resolveHeaderHeight();
+        _measuredHeaderHeight = headerHeight;
         return RepaintBoundary(
           key: _captureKey,
           child: HyperMaterialSurface(
-            material: s.material,
+            material:
+                s.material ??
+                (_embedded ? const HyperSurfaceMaterial.solid() : null),
             quality: s.materialQuality,
             reduceTransparency: s.reduceTransparency,
             semanticBackground: HyperFill.color(s.background!),
-            border: Border.all(color: s.borderColor!, width: s.borderWidth!),
+            border: _surfaceBorderWidth <= 0
+                ? const Border()
+                : Border.all(color: s.borderColor!, width: _surfaceBorderWidth),
             borderRadius: radius,
-            boxShadow: s.boxShadow,
+            boxShadow: _embedded ? const [] : s.boxShadow,
             child: ClipRRect(
               borderRadius: radius,
               child: Column(
@@ -1681,273 +2269,286 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                           Positioned.fill(
                             child: NotificationListener<ScrollNotification>(
                               onNotification: _scroll,
-                              child: trina.TrinaGrid(
-                                key: ValueKey(_gridVersion),
-                                columns: _columns,
-                                rows: _gridRows,
-                                configuration: trina.TrinaGridConfiguration(
-                                  rowWrapperIsConstantHeight: true,
-                                  enableAutoSelectFirstRow: false,
-                                  selectingMode:
-                                      trina.TrinaGridSelectingMode.row,
-                                  localeText:
-                                      const trina.TrinaGridLocaleText.china(),
-                                  scrollbar: trina.TrinaGridScrollbarConfig(
-                                    showHorizontal: _horizontalOverflow,
-                                    thickness:
-                                        s.scrollbarTheme?.thickness?.resolve(
-                                          {},
-                                        ) ??
-                                        const trina.TrinaGridScrollbarConfig()
-                                            .thickness,
-                                    minThumbLength:
-                                        s.scrollbarTheme?.minThumbLength ??
-                                        const trina.TrinaGridScrollbarConfig()
-                                            .minThumbLength,
-                                    radius: s.scrollbarTheme?.radius?.x,
-                                    thumbColor:
-                                        s.scrollbarTheme?.thumbColor?.resolve(
-                                          {},
-                                        ) ??
-                                        s.borderColor,
-                                    thumbHoverColor:
-                                        s.scrollbarTheme?.thumbColor?.resolve({
-                                          WidgetState.hovered,
-                                        }) ??
-                                        s.focusColor,
-                                    trackColor:
-                                        s.scrollbarTheme?.trackColor?.resolve(
-                                          {},
-                                        ) ??
-                                        Colors.transparent,
-                                  ),
-                                  style: trina.TrinaGridStyleConfig(
-                                    enableGridBorderShadow: false,
-                                    gridPadding: 0,
-                                    enableColumnBorderVertical: false,
-                                    enableColumnBorderHorizontal: false,
-                                    enableRowHoverColor: false,
-                                    gridBackgroundColor: Colors.transparent,
-                                    rowColor: Colors.transparent,
-                                    oddRowColor: Colors.transparent,
-                                    evenRowColor: Colors.transparent,
-                                    rowHoveredColor: Colors.transparent,
-                                    rowCheckedColor: Colors.transparent,
-                                    activatedColor: Colors.transparent,
-                                    gridBorderWidth: 0,
-                                    gridBorderColor: s.borderColor!,
-                                    borderColor: s.borderColor!,
-                                    activatedBorderColor:
-                                        widget.selectionMode ==
-                                            HyperTableSelectionMode.none
-                                        ? s.focusColor!
-                                        : Colors.transparent,
-                                    inactivatedBorderColor:
-                                        widget.selectionMode ==
-                                            HyperTableSelectionMode.none
-                                        ? s.borderColor!
-                                        : Colors.transparent,
-                                    enableCellBorderVertical: false,
-                                    enableCellBorderHorizontal: false,
-                                    // Row separators are painted inside _rowSurface. Do not
-                                    // reserve an additional native separator slot.
-                                    cellHorizontalBorderWidth: 0,
-                                    rowHeight: rowHeight,
-                                    columnHeight: headerHeight,
-                                    defaultCellPadding: EdgeInsets.symmetric(
-                                      horizontal: s.horizontalPadding!,
+                              child: _verticalScrollbar(
+                                headerHeight: headerHeight,
+                                child: trina.TrinaGrid(
+                                  key: ValueKey(_gridVersion),
+                                  columns: _columns,
+                                  rows: _gridRows,
+                                  configuration: trina.TrinaGridConfiguration(
+                                    shortcut: trina.TrinaGridShortcut(
+                                      actions: _hyperTableRowHeightShortcuts,
                                     ),
-                                    defaultColumnTitlePadding:
-                                        EdgeInsets.symmetric(
-                                          horizontal: s.horizontalPadding!,
-                                        ),
-                                    columnTextStyle: s.headerTextStyle!,
-                                    cellTextStyle: s.textStyle!,
-                                    iconSize: s.iconSize!,
-                                    iconColor: s.textStyle!.color!,
-                                    cellColorInEditState: Colors.transparent,
-                                    cellColorInReadOnlyState:
-                                        Colors.transparent,
-                                    cellReadonlyColor: null,
-                                    cellDefaultColor: null,
-                                    filterHeaderColor: s.headerBackground,
-                                  ),
-                                ),
-                                onLoaded: (e) {
-                                  _releaseManager();
-                                  _manager = e.stateManager;
-                                  widget.controller?._attach(this);
-                                  _manager!.setSortOnlyEvent(true);
-                                  _manager!.addListener(_managerChanged);
-                                  _syncSelection();
-                                  if (_columnViewportWidth != null) {
-                                    _scheduleColumnLayout(
-                                      _columnViewportWidth!,
-                                    );
-                                  }
-                                },
-                                onSelected: _selectRow,
-                                onSorted: (e) => sort(
-                                  e.column.sort == trina.TrinaColumnSort.none
-                                      ? null
-                                      : HyperTableSort(
-                                          e.column.field,
-                                          e.column.sort ==
-                                                  trina
-                                                      .TrinaColumnSort
-                                                      .ascending
-                                              ? HyperTableSortDirection
-                                                    .ascending
-                                              : HyperTableSortDirection
-                                                    .descending,
-                                        ),
-                                ),
-                                onChanged: (e) => widget.onCellChanged?.call(
-                                  HyperTableCellChange(
-                                    row: e.row.data as T,
-                                    rowKey: widget.rowKey(e.row.data as T),
-                                    columnId: e.column.field,
-                                    value: e.value,
-                                    oldValue: e.oldValue,
-                                  ),
-                                ),
-                                onColumnsMoved: (_) =>
-                                    widget.onColumnsReordered?.call(
-                                      _manager!.columns
-                                          .where(
-                                            (c) =>
-                                                !c.field.startsWith('__hyper_'),
-                                          )
-                                          .map((c) => c.field)
-                                          .toList(),
+                                    rowWrapperIsConstantHeight:
+                                        widget.dataMode !=
+                                        HyperTableDataMode.infinite,
+                                    enableAutoSelectFirstRow: false,
+                                    selectingMode:
+                                        trina.TrinaGridSelectingMode.row,
+                                    localeText:
+                                        const trina.TrinaGridLocaleText.china(),
+                                    scrollbar: trina.TrinaGridScrollbarConfig(
+                                      showVertical: false,
+                                      showHorizontal: false,
+                                      thickness:
+                                          s.scrollbarTheme?.thickness?.resolve(
+                                            {},
+                                          ) ??
+                                          const trina.TrinaGridScrollbarConfig()
+                                              .thickness,
+                                      minThumbLength:
+                                          s.scrollbarTheme?.minThumbLength ??
+                                          const trina.TrinaGridScrollbarConfig()
+                                              .minThumbLength,
+                                      radius: s.scrollbarTheme?.radius?.x,
+                                      thumbColor:
+                                          s.scrollbarTheme?.thumbColor?.resolve(
+                                            {},
+                                          ) ??
+                                          s.borderColor,
+                                      thumbHoverColor:
+                                          s.scrollbarTheme?.thumbColor?.resolve(
+                                            {WidgetState.hovered},
+                                          ) ??
+                                          s.focusColor,
+                                      trackColor:
+                                          s.scrollbarTheme?.trackColor?.resolve(
+                                            {},
+                                          ) ??
+                                          Colors.transparent,
                                     ),
-                                onRowsMoved: (_) {
-                                  if (_sort != null || _paged || _remoteMode) {
-                                    return;
-                                  }
-                                  widget.onRowsReordered?.call(
-                                    _manager!.rows
-                                        .map((r) => r.data as T)
-                                        .toList(),
-                                  );
-                                },
-                                onRowDoubleTap: widget.onRowDoubleTap == null
-                                    ? null
-                                    : (e) => widget.onRowDoubleTap!(
-                                        e.row.data as T,
+                                    style: trina.TrinaGridStyleConfig(
+                                      enableGridBorderShadow: false,
+                                      gridPadding: 0,
+                                      enableColumnBorderVertical: false,
+                                      enableColumnBorderHorizontal: false,
+                                      enableRowHoverColor: false,
+                                      gridBackgroundColor: Colors.transparent,
+                                      rowColor: Colors.transparent,
+                                      oddRowColor: Colors.transparent,
+                                      evenRowColor: Colors.transparent,
+                                      rowHoveredColor: Colors.transparent,
+                                      rowCheckedColor: Colors.transparent,
+                                      activatedColor: Colors.transparent,
+                                      gridBorderWidth: 0,
+                                      // Trina uses Border.all(width: 0), which
+                                      // still paints a hairline. Hyper owns
+                                      // the only outer contour in both modes.
+                                      gridBorderColor: Colors.transparent,
+                                      borderColor: s.borderColor!,
+                                      activatedBorderColor: Colors.transparent,
+                                      inactivatedBorderColor:
+                                          Colors.transparent,
+                                      enableCellBorderVertical: false,
+                                      enableCellBorderHorizontal: false,
+                                      // Row separators are painted inside _rowSurface. Do not
+                                      // reserve an additional native separator slot.
+                                      cellHorizontalBorderWidth: 0,
+                                      rowHeight: rowHeight,
+                                      columnHeight: headerHeight,
+                                      defaultCellPadding: EdgeInsets.symmetric(
+                                        horizontal: s.horizontalPadding!,
                                       ),
-                                rowWrapper: _rowSurface,
-                                editCellRenderer:
-                                    (
-                                      defaultEditor,
-                                      cell,
-                                      controller,
-                                      focusNode,
-                                      handleSelected,
-                                    ) {
-                                      final column = widget.columns.firstWhere(
-                                        (c) => c.id == cell.column.field,
+                                      defaultColumnTitlePadding:
+                                          EdgeInsets.symmetric(
+                                            horizontal: s.horizontalPadding!,
+                                          ),
+                                      columnTextStyle: s.headerTextStyle!,
+                                      cellTextStyle: s.textStyle!,
+                                      iconSize: s.iconSize!,
+                                      iconColor: s.textStyle!.color!,
+                                      cellColorInEditState: Colors.transparent,
+                                      cellColorInReadOnlyState:
+                                          Colors.transparent,
+                                      cellReadonlyColor: null,
+                                      cellDefaultColor: null,
+                                      filterHeaderColor: s.headerBackground,
+                                    ),
+                                  ),
+                                  onLoaded: (e) {
+                                    _releaseManager();
+                                    _manager = e.stateManager;
+                                    widget.controller?._attach(this);
+                                    _manager!.setSortOnlyEvent(true);
+                                    _manager!.addListener(_managerChanged);
+                                    _manager!.resizingChangeNotifier
+                                        .addListener(_managerChanged);
+                                    _syncSelection();
+                                    if (_columnViewportWidth != null) {
+                                      _scheduleColumnLayout(
+                                        _columnViewportWidth!,
                                       );
-                                      final original = cell.value;
-                                      if (column.editorBuilder != null) {
-                                        var finished = false;
-                                        void finish(
-                                          Object? value, {
-                                          bool cancelled = false,
-                                        }) {
-                                          if (finished ||
-                                              !mounted ||
-                                              _manager?.currentCell != cell ||
-                                              _manager?.isEditing != true) {
-                                            return;
-                                          }
-                                          finished = true;
-                                          controller.text = '${value ?? ''}';
-                                          if (!cancelled) {
-                                            _manager!.changeCellValue(
-                                              cell,
-                                              value,
+                                    }
+                                    setState(() {});
+                                  },
+                                  onSelected: _selectRow,
+                                  onSorted: (e) => sort(
+                                    e.column.sort == trina.TrinaColumnSort.none
+                                        ? null
+                                        : HyperTableSort(
+                                            e.column.field,
+                                            e.column.sort ==
+                                                    trina
+                                                        .TrinaColumnSort
+                                                        .ascending
+                                                ? HyperTableSortDirection
+                                                      .ascending
+                                                : HyperTableSortDirection
+                                                      .descending,
+                                          ),
+                                  ),
+                                  onChanged: (e) => widget.onCellChanged?.call(
+                                    HyperTableCellChange(
+                                      row: e.row.data as T,
+                                      rowKey: widget.rowKey(e.row.data as T),
+                                      columnId: e.column.field,
+                                      value: e.value,
+                                      oldValue: e.oldValue,
+                                    ),
+                                  ),
+                                  onColumnsMoved: (_) =>
+                                      widget.onColumnsReordered?.call(
+                                        _manager!.columns
+                                            .where(
+                                              (c) => !c.field.startsWith(
+                                                '__hyper_',
+                                              ),
+                                            )
+                                            .map((c) => c.field)
+                                            .toList(),
+                                      ),
+                                  onRowsMoved: (_) {
+                                    if (_sort != null ||
+                                        _paged ||
+                                        _remoteMode) {
+                                      return;
+                                    }
+                                    widget.onRowsReordered?.call(
+                                      _manager!.rows
+                                          .map((r) => r.data as T)
+                                          .toList(),
+                                    );
+                                  },
+                                  onRowDoubleTap: widget.onRowDoubleTap == null
+                                      ? null
+                                      : (e) => widget.onRowDoubleTap!(
+                                          e.row.data as T,
+                                        ),
+                                  rowWrapper: _rowSurface,
+                                  editCellRenderer:
+                                      (
+                                        defaultEditor,
+                                        cell,
+                                        controller,
+                                        focusNode,
+                                        handleSelected,
+                                      ) {
+                                        final column = widget.columns
+                                            .firstWhere(
+                                              (c) => c.id == cell.column.field,
                                             );
+                                        final original = cell.value;
+                                        if (column.editorBuilder != null) {
+                                          var finished = false;
+                                          void finish(
+                                            Object? value, {
+                                            bool cancelled = false,
+                                          }) {
+                                            if (finished ||
+                                                !mounted ||
+                                                _manager?.currentCell != cell ||
+                                                _manager?.isEditing != true) {
+                                              return;
+                                            }
+                                            finished = true;
+                                            controller.text = '${value ?? ''}';
+                                            if (!cancelled) {
+                                              _manager!.changeCellValue(
+                                                cell,
+                                                value,
+                                              );
+                                            }
+                                            _manager!.setEditing(false);
                                           }
-                                          _manager!.setEditing(false);
-                                        }
 
-                                        return column.editorBuilder!(
+                                          return column.editorBuilder!(
+                                            context,
+                                            HyperTableEditContext<T>(
+                                              row: cell.row.data as T,
+                                              rowKey: widget.rowKey(
+                                                cell.row.data as T,
+                                              ),
+                                              columnId: column.id,
+                                              value: original,
+                                              controller: controller,
+                                              focusNode: focusNode,
+                                              commit: (value) => finish(value),
+                                              cancel: () => finish(
+                                                original,
+                                                cancelled: true,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        final inputMetrics = HyperTheme.sizesOf(
                                           context,
-                                          HyperTableEditContext<T>(
-                                            row: cell.row.data as T,
-                                            rowKey: widget.rowKey(
-                                              cell.row.data as T,
-                                            ),
-                                            columnId: column.id,
-                                            value: original,
-                                            controller: controller,
-                                            focusNode: focusNode,
-                                            commit: (value) => finish(value),
-                                            cancel: () => finish(
-                                              original,
-                                              cancelled: true,
-                                            ),
+                                        ).textField;
+                                        final editorHeight = math.min(
+                                          rowHeight,
+                                          math.max(
+                                            inputMetrics.minimumHeight,
+                                            scaler.scale(font) *
+                                                (s.textStyle?.height ?? 1.5),
                                           ),
                                         );
-                                      }
-                                      final inputMetrics = HyperTheme.sizesOf(
-                                        context,
-                                      ).textField;
-                                      final editorHeight = math.min(
-                                        rowHeight,
-                                        math.max(
-                                          inputMetrics.minimumHeight,
-                                          scaler.scale(font) *
-                                              (s.textStyle?.height ?? 1.5),
-                                        ),
-                                      );
-                                      return TapRegion(
-                                        onTapOutside: (_) =>
-                                            focusNode.unfocus(),
-                                        child: Focus(
-                                          onFocusChange: (focused) {
-                                            if (focused) return;
-                                            WidgetsBinding.instance
-                                                .addPostFrameCallback((_) {
-                                                  if (!mounted ||
-                                                      focusNode.hasFocus ||
-                                                      _manager?.currentCell !=
-                                                          cell ||
-                                                      _manager?.isEditing !=
-                                                          true) {
-                                                    return;
-                                                  }
-                                                  _manager!.setEditing(false);
-                                                });
-                                          },
-                                          child: Center(
-                                            child: SizedBox(
-                                              height: editorHeight,
-                                              child: HyperTextField(
-                                                controller: controller,
-                                                focusNode: focusNode,
-                                                textAlign: widget.columns
-                                                    .firstWhere(
-                                                      (c) =>
-                                                          c.id ==
-                                                          cell.column.field,
-                                                    )
-                                                    .textAlign,
-                                                style: HyperTextFieldStyle(
-                                                  minimumHeight: editorHeight,
-                                                  height: editorHeight,
-                                                  textAlignVertical:
-                                                      TextAlignVertical.center,
-                                                ).merge(s.editorStyle),
-                                                onSubmitted: (_) =>
-                                                    _manager?.setEditing(false),
+                                        return TapRegion(
+                                          onTapOutside: (_) =>
+                                              focusNode.unfocus(),
+                                          child: Focus(
+                                            onFocusChange: (focused) {
+                                              if (focused) return;
+                                              WidgetsBinding.instance
+                                                  .addPostFrameCallback((_) {
+                                                    if (!mounted ||
+                                                        focusNode.hasFocus ||
+                                                        _manager?.currentCell !=
+                                                            cell ||
+                                                        _manager?.isEditing !=
+                                                            true) {
+                                                      return;
+                                                    }
+                                                    _manager!.setEditing(false);
+                                                  });
+                                            },
+                                            child: Center(
+                                              child: SizedBox(
+                                                height: editorHeight,
+                                                child: HyperTextField(
+                                                  controller: controller,
+                                                  focusNode: focusNode,
+                                                  textAlign: widget.columns
+                                                      .firstWhere(
+                                                        (c) =>
+                                                            c.id ==
+                                                            cell.column.field,
+                                                      )
+                                                      .textAlign,
+                                                  style: HyperTextFieldStyle(
+                                                    minimumHeight: editorHeight,
+                                                    height: editorHeight,
+                                                    textAlignVertical:
+                                                        TextAlignVertical
+                                                            .center,
+                                                  ).merge(s.editorStyle),
+                                                  onSubmitted: (_) => _manager
+                                                      ?.setEditing(false),
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      );
-                                    },
+                                        );
+                                      },
+                                ),
                               ),
                             ),
                           ),
@@ -2007,7 +2608,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                                   },
                                   child:
                                       rect != null &&
-                                          widget.hoverLift &&
+                                          _hoverLift &&
                                           !_draggingRow
                                       ? CustomPaint(
                                           key: ValueKey(rect),
@@ -2027,7 +2628,23 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                               ),
                             ),
                           ),
-                          if (_loading)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: ValueListenableBuilder<Rect?>(
+                                valueListenable: _columnDropRect,
+                                builder: (context, rect, _) => Stack(
+                                  children: [
+                                    if (rect != null)
+                                      Positioned.fromRect(
+                                        rect: rect,
+                                        child: ColoredBox(color: s.focusColor!),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_loading && !_appending)
                             Positioned(
                               top: headerHeight,
                               left: 0,
@@ -2099,7 +2716,9 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                       ),
                     ),
                   ),
-                  if (_error != null && _data.isNotEmpty)
+                  if (_error != null &&
+                      _data.isNotEmpty &&
+                      widget.dataMode != HyperTableDataMode.infinite)
                     Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: s.horizontalPadding!,
@@ -2124,7 +2743,7 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                     SizedBox(
                       width: double.infinity,
                       child: DecoratedBox(
-                        decoration: BoxDecoration(
+                        decoration: HyperBoxDecoration(
                           color: s.background,
                           border: Border(
                             top: BorderSide(
@@ -2153,16 +2772,6 @@ class _HyperTableState<T> extends State<HyperTable<T>>
                         ),
                       ),
                     ),
-                  if (widget.dataMode == HyperTableDataMode.infinite &&
-                      _hasMore &&
-                      !_loading &&
-                      _error == null)
-                    HyperButton.text(
-                      onPressed: () {
-                        _requestMore();
-                      },
-                      child: const Text('加载更多'),
-                    ),
                 ],
               ),
             ),
@@ -2175,6 +2784,54 @@ class _HyperTableState<T> extends State<HyperTable<T>>
 
 // Paint above all grid segments so later rows cannot cover the lifted shadow.
 // Excluding the row interior keeps its live controls and colors untouched.
+// The grid may remount cells on selection changes. Keep each row's animation
+// here so fixed cells, ordinary cells and controls share the same current color.
+class _TableRowForeground extends ChangeNotifier {
+  _TableRowForeground(this._target, this._vsync) : _from = _target;
+  final TickerProvider _vsync;
+  AnimationController? _controller;
+  Color _from, _target;
+  Curve _curve = Curves.linear;
+
+  Color get color => _controller == null
+      ? _target
+      : Color.lerp(_from, _target, _curve.transform(_controller!.value))!;
+
+  void update(Color target, Duration duration, Curve curve) {
+    if (target == _target) {
+      if (duration == Duration.zero && (_controller?.isAnimating ?? false)) {
+        _controller!.value = 1;
+      } else {
+        // Row loading/error state and typography can change without a new hue.
+        notifyListeners();
+      }
+      return;
+    }
+    final current = color;
+    _from = current;
+    _target = target;
+    _curve = curve;
+    if (duration == Duration.zero || !hasListeners) {
+      if (_controller != null) {
+        _controller!.value = 1;
+      } else {
+        notifyListeners();
+      }
+      return;
+    }
+    _controller ??= AnimationController(vsync: _vsync)
+      ..addListener(notifyListeners);
+    _controller!.duration = duration;
+    _controller!.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+}
+
 class _HyperTableLiftPainter extends CustomPainter {
   const _HyperTableLiftPainter({
     required this.rect,

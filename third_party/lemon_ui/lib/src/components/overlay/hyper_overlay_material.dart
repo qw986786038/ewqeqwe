@@ -8,6 +8,25 @@ import '../../theme/material/hyper_material_theme.dart';
 
 /// 浮层消费者共用的默认材质；显式配方由原消费者保持完整优先级。
 abstract final class HyperOverlayMaterial {
+  /// 柔和抬升投影；不包含菜单表面的硬轮廓层。
+  static BoxShadow get defaultElevationShadow => BoxShadow(
+    color: Colors.black.withValues(alpha: .30),
+    blurRadius: 24,
+    offset: const Offset(0, 4),
+  );
+
+  /// macOS 27 UI Kit 的 Liquid Glass/Light|Dark/Menus 外阴影。
+  /// 来源、单位与 Flutter 映射见 docs/macos-menu-shadow.md。
+  static List<BoxShadow> defaultShadowsFor(HyperColorScheme colors) => [
+    defaultElevationShadow,
+    BoxShadow(
+      color: Colors.black.withValues(
+        alpha: colors.brightness == Brightness.dark ? .80 : .20,
+      ),
+      spreadRadius: .5,
+    ),
+  ];
+
   static HyperSurfaceMaterial? fallback(
     BuildContext context, {
     HyperSurfaceMaterial? componentMaterial,
@@ -44,24 +63,11 @@ abstract final class HyperOverlayMaterial {
       blurSigmaX: 20,
       blurSigmaY: 20,
       tint: colors.surfaceElevated.withValues(alpha: .06),
-      border: BorderSide(color: colors.outline.withValues(alpha: .65)),
-      boxShadow: [
-        BoxShadow(
-          color: colors.scrim.withValues(alpha: .12),
-          blurRadius: 12,
-          offset: const Offset(0, 4),
-        ),
-      ],
+      boxShadow: defaultShadowsFor(colors),
       fallback: HyperSurfaceMaterial.solid(
         background: HyperFill.color(colors.surfaceElevated),
         border: BorderSide(color: colors.outline.withValues(alpha: .65)),
-        boxShadow: [
-          BoxShadow(
-            color: colors.scrim.withValues(alpha: .12),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: defaultShadowsFor(colors),
       ),
     );
   }

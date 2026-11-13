@@ -136,7 +136,12 @@ OacAgencyOverview _parseOverview(Map<String, dynamic> json) =>
 
 OacAgency _parseAgency(Map<String, dynamic> json) => OacAgency()
   ..id = _asString(json['id'])
+  ..customerId = _asString(json['customerId']) ??
+      _asString(json['customer_id']) ??
+      _asString(json['id'])
   ..tenantId = _asString(json['tenantId'])
+  ..agencyCode = _asString(json['agencyCode'])
+  ..customerType = _asString(json['customerType'])
   ..name = _asString(json['name']) ??
       _asString(json['fullName']) ??
       _asString(json['agencyName'])
@@ -157,12 +162,17 @@ OacAgency _parseAgency(Map<String, dynamic> json) => OacAgency()
   ..latestDynamic = _asString(json['latestDynamic'])
   ..orderCount = _asInt(json['orderCount'])
   ..orderAmount = _asString(json['orderAmount'])
+  ..orderAmountYoyRate = _asString(json['orderAmountYoyRate'])
+  ..deptPerfShareRate = _asString(json['deptPerfShareRate'])
+  ..q4ExpectedYoyRate = _asString(json['q4ExpectedYoyRate'])
   ..brandCount = _asInt(json['brandCount']) ??
       _asInt(json['relatedBrandCount'])
   ..brandNames = _asString(json['brandNames']) ??
       _asString(json['relatedBrandNames'])
   ..brandNameList = _asStringList(json['brandNameList']) ??
       _splitCsv(_asString(json['brandNames']))
+  ..brandIdList = _asStringList(json['brandIdList'])
+  ..brandIndustrySummary = _asString(json['brandIndustrySummary'])
   ..enterpriseCount = _asInt(json['enterpriseCount']) ??
       _asInt(json['relatedEnterpriseCount'])
   ..enterpriseNames = _asString(json['enterpriseNames']) ??

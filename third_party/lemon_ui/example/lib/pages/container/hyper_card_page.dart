@@ -22,7 +22,7 @@ class _HyperCardPageState extends State<HyperCardPage> {
           vertical: 24,
         ),
         children: [
-          const HyperText('HyperCard', variant: HyperTextVariant.pageTitle),
+          const HyperText('卡片', variant: HyperTextVariant.pageTitle),
           const SizedBox(height: 8),
           const HyperText('卡片默认提供内容内边距；标题区独立配置，媒体可显式关闭内边距。'),
           const SizedBox(height: 24),
@@ -72,6 +72,27 @@ class _HyperCardPageState extends State<HyperCardPage> {
                 ),
               ),
               child: const HyperText('Card 与 Button 使用相同的材质配方'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const HyperText('独立材质（实例覆盖）', variant: HyperTextVariant.sectionTitle),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFFFFCB98),
+                  Color(0xFF8DDBEB),
+                  Color(0xFFBCA5EA),
+                ],
+              ),
+            ),
+            child: HyperCard(
+              style: HyperCardStyle(
+                material: const HyperSurfaceMaterial.clearFrostedGlass(),
+              ),
+              child: const HyperText('此卡片独立使用高透毛玻璃，无需设置全局配方'),
             ),
           ),
           const SizedBox(height: 16),

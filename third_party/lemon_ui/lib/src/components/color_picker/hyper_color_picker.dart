@@ -1,3 +1,5 @@
+import 'hyper_color_swatch.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -128,8 +130,11 @@ class _HyperColorPickerState extends State<HyperColorPicker> {
     HyperSliderStyle gradientStyle(
       List<Color> colors, {
       bool checker = false,
+      bool showIndicator = false,
     }) => HyperSliderStyle(
-      showValueIndicator: ShowValueIndicator.never,
+      showValueIndicator: showIndicator
+          ? ShowValueIndicator.onDrag
+          : ShowValueIndicator.never,
       trackShape: _ColorTrackShape(
         colors,
         checker: checker,
@@ -273,11 +278,15 @@ class _HyperColorPickerState extends State<HyperColorPicker> {
           if (widget.showAlpha)
             HyperSlider(
               value: widget.value.a,
-              label: '不透明度',
-              style: gradientStyle([
-                widget.value.withValues(alpha: 0),
-                widget.value.withValues(alpha: 1),
-              ], checker: true),
+              label: '${(widget.value.a * 100).round()}%',
+              style: gradientStyle(
+                [
+                  widget.value.withValues(alpha: 0),
+                  widget.value.withValues(alpha: 1),
+                ],
+                checker: true,
+                showIndicator: true,
+              ),
               semanticFormatterCallback: (value) =>
                   '不透明度 ${(value * 100).round()}%',
               onChanged: enabled
@@ -293,7 +302,7 @@ class _HyperColorPickerState extends State<HyperColorPicker> {
                 for (final color in widget.recommendedColors)
                   HyperIconButton.outlined(
                     tooltip: _hex(color),
-                    icon: Icon(Icons.circle, color: color),
+                    icon: HyperColorSwatch(color: color, circle: true),
                     onPressed: enabled
                         ? () => _change(
                             HSVColor.fromColor(
@@ -374,14 +383,16 @@ class _PalettePainter extends CustomPainter {
         ).createShader(rect),
     );
     final border = style.paletteBorder!;
-    canvas.drawCircle(
-      origin,
-      math.max(0, wheelRadius - border.width / 2),
-      Paint()
-        ..color = border.color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = border.width,
-    );
+    if (border.style != BorderStyle.none && border.width > 0) {
+      canvas.drawCircle(
+        origin,
+        math.max(0, wheelRadius - border.width / 2),
+        Paint()
+          ..color = border.color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = border.width,
+      );
+    }
     final radius = style.markerRadius!.clamp(0.0, wheelRadius);
     final angle = (hsv.hue - 90) * math.pi / 180;
     final distance = math.min(
@@ -404,14 +415,16 @@ class _PalettePainter extends CustomPainter {
       radius,
       Paint()..color = hsv.withAlpha(1).toColor(),
     );
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..color = style.markerColor!
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = border.width,
-    );
+    if (border.style != BorderStyle.none && border.width > 0) {
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..color = style.markerColor!
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = border.width,
+      );
+    }
   }
 
   @override

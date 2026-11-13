@@ -1,3 +1,15 @@
+import '../../components/image/hyper_image_editor_theme.dart';
+import '../../components/image/hyper_image_preview_theme.dart';
+import '../../components/image/hyper_image_theme.dart';
+import '../../components/number_input/hyper_number_input_theme.dart';
+import '../../components/popover/hyper_popover_theme.dart';
+import '../../components/rating/hyper_rating_theme.dart';
+import '../../components/transfer/hyper_transfer_theme.dart';
+import '../../components/resizable/hyper_resizable_theme.dart';
+import '../../components/movable_dialog/hyper_movable_dialog_theme.dart';
+import '../../components/navigation_bar/hyper_navigation_bar_theme.dart';
+import '../../components/inline_edit/hyper_inline_edit_theme.dart';
+import '../../components/charts/hyper_chart_theme.dart';
 import '../../components/table/hyper_table_theme.dart';
 import '../../components/form/hyper_form_theme.dart';
 import '../../components/cascader/hyper_cascader_theme.dart';
@@ -70,6 +82,34 @@ import '../typography/hyper_typography_scheme.dart';
 import '../typography/hyper_typography_theme_data.dart';
 
 /// 返回当前平台原生 UI 字体，不依赖随 Flutter 或应用打包的字体文件。
+// Theme-root styles have a consistent inheritance contract for interpolation.
+// Preserve every supplied metric; adding Material geometry here changes control
+// heights when a previously unspecified line height becomes explicit.
+TextStyle? _standaloneTextStyle(TextStyle? style) => style?.copyWith(
+  inherit: false,
+  textBaseline: style.textBaseline ?? TextBaseline.alphabetic,
+  leadingDistribution:
+      style.leadingDistribution ?? TextLeadingDistribution.even,
+);
+
+TextTheme _standaloneTextTheme(TextTheme text) => TextTheme(
+  displayLarge: _standaloneTextStyle(text.displayLarge),
+  displayMedium: _standaloneTextStyle(text.displayMedium),
+  displaySmall: _standaloneTextStyle(text.displaySmall),
+  headlineLarge: _standaloneTextStyle(text.headlineLarge),
+  headlineMedium: _standaloneTextStyle(text.headlineMedium),
+  headlineSmall: _standaloneTextStyle(text.headlineSmall),
+  titleLarge: _standaloneTextStyle(text.titleLarge),
+  titleMedium: _standaloneTextStyle(text.titleMedium),
+  titleSmall: _standaloneTextStyle(text.titleSmall),
+  bodyLarge: _standaloneTextStyle(text.bodyLarge),
+  bodyMedium: _standaloneTextStyle(text.bodyMedium),
+  bodySmall: _standaloneTextStyle(text.bodySmall),
+  labelLarge: _standaloneTextStyle(text.labelLarge),
+  labelMedium: _standaloneTextStyle(text.labelMedium),
+  labelSmall: _standaloneTextStyle(text.labelSmall),
+);
+
 String _systemFontFamily() => switch (defaultTargetPlatform) {
   TargetPlatform.windows => 'Microsoft YaHei UI',
   TargetPlatform.macOS => '.AppleSystemUIFont',
@@ -78,6 +118,11 @@ String _systemFontFamily() => switch (defaultTargetPlatform) {
   TargetPlatform.linux => 'sans-serif',
   TargetPlatform.fuchsia => 'sans-serif',
 };
+
+TextTheme _applyFont(TextTheme text, String? family, List<String>? fallback) =>
+    family == null && fallback == null
+    ? text
+    : text.apply(fontFamily: family, fontFamilyFallback: fallback);
 
 /// 中文字体放在前面，桌面端缺少某个字体时仍能回退到系统字库。
 List<String> _systemFontFallback() => switch (defaultTargetPlatform) {
@@ -106,12 +151,19 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
     this.scaffoldTheme = const HyperScaffoldThemeData(),
     this.appBarTheme = const HyperAppBarThemeData(),
     this.drawerTheme = const HyperDrawerThemeData(),
+    this.chartTheme = const HyperChartThemeData(),
     this.sidebarTheme = const HyperSidebarThemeData(),
     this.menuTheme = const HyperMenuThemeData(),
     this.topNavigationTheme = const HyperTopNavigationThemeData(),
     this.colorPickerTheme = const HyperColorPickerThemeData(),
     this.selectTheme = const HyperSelectThemeData(),
     this.cascaderTheme = const HyperCascaderThemeData(),
+    this.ratingTheme = const HyperRatingThemeData(),
+    this.transferTheme = const HyperTransferThemeData(),
+    this.resizableTheme = const HyperResizableThemeData(),
+    this.movableDialogTheme = const HyperMovableDialogThemeData(),
+    this.navigationBarTheme = const HyperNavigationBarThemeData(),
+    this.inlineEditTheme = const HyperInlineEditThemeData(),
     this.treeSelectTheme = const HyperTreeSelectThemeData(),
     this.tabBarTheme = const HyperTabBarThemeData(),
     this.breadcrumbTheme = const HyperBreadcrumbThemeData(),
@@ -150,6 +202,11 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
     this.chipTheme = const HyperChipThemeData(),
     this.widgetGroupTheme = const HyperWidgetGroupThemeData(),
     this.iconButtonTheme = const HyperIconButtonThemeData(),
+    this.numberInputTheme = const HyperNumberInputThemeData(),
+    this.imagePreviewTheme = const HyperImagePreviewThemeData(),
+    this.imageEditorTheme = const HyperImageEditorThemeData(),
+    this.imageTheme = const HyperImageThemeData(),
+    this.popoverTheme = const HyperPopoverThemeData(),
     this.tooltipTheme = const HyperTooltipThemeData(),
     this.iconTheme = const HyperIconThemeData(),
     this.dividerTheme = const HyperDividerThemeData(),
@@ -167,11 +224,15 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
   });
 
   factory HyperThemeData.light({
+    String? fontFamily,
+    List<String>? fontFamilyFallback,
     Color seedColor = const Color(0xFF3482FF),
     HyperSizeThemeData sizes = const HyperSizeThemeData(),
     HyperTypographyScheme? typography,
     HyperTypographyThemeData typographyTheme = const HyperTypographyThemeData(),
   }) => HyperThemeData.fromSeed(
+    fontFamily: fontFamily,
+    fontFamilyFallback: fontFamilyFallback,
     seedColor: seedColor,
     sizes: sizes,
     typography: typography,
@@ -179,11 +240,15 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
   );
 
   factory HyperThemeData.dark({
+    String? fontFamily,
+    List<String>? fontFamilyFallback,
     Color seedColor = const Color(0xFF3482FF),
     HyperSizeThemeData sizes = const HyperSizeThemeData(),
     HyperTypographyScheme? typography,
     HyperTypographyThemeData typographyTheme = const HyperTypographyThemeData(),
   }) => HyperThemeData.fromSeed(
+    fontFamily: fontFamily,
+    fontFamilyFallback: fontFamilyFallback,
     seedColor: seedColor,
     brightness: Brightness.dark,
     sizes: sizes,
@@ -193,6 +258,8 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
 
   /// 从种子色和一套明确尺寸创建开箱即用的完整主题。
   factory HyperThemeData.fromSeed({
+    String? fontFamily,
+    List<String>? fontFamilyFallback,
     required Color seedColor,
     Brightness brightness = Brightness.light,
     HyperSizeThemeData sizes = const HyperSizeThemeData(),
@@ -210,12 +277,14 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
     final material = ThemeData(
       colorScheme: colors.toMaterialColorScheme(),
       useMaterial3: true,
-      fontFamily: _systemFontFamily(),
-      fontFamilyFallback: _systemFontFallback(),
+      fontFamily: fontFamily ?? _systemFontFamily(),
+      fontFamilyFallback: fontFamilyFallback ?? _systemFontFallback(),
     );
     return HyperThemeData(
       colors: colors,
-      textTheme: resolvedTypography.applyTo(material.textTheme),
+      textTheme: resolvedTypography.applyTo(
+        _standaloneTextTheme(material.textTheme),
+      ),
       sizes: sizes,
       typography: resolvedTypography,
       typographyTheme: resolvedTypographyTheme,
@@ -255,6 +324,8 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
   /// 从当前 Flutter Material 主题建立 Hyper 主题回退值。
   factory HyperThemeData.fromMaterial(
     ThemeData material, {
+    String? fontFamily,
+    List<String>? fontFamilyFallback,
     HyperSizeThemeData sizes = const HyperSizeThemeData(),
     HyperTypographyScheme? typography,
     HyperTypographyThemeData typographyTheme = const HyperTypographyThemeData(),
@@ -291,7 +362,13 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
         );
     return HyperThemeData(
       colors: colors,
-      textTheme: resolvedTypography.applyTo(material.textTheme),
+      textTheme: resolvedTypography.applyTo(
+        _applyFont(
+          _standaloneTextTheme(material.textTheme),
+          fontFamily,
+          fontFamilyFallback,
+        ),
+      ),
       sizes: sizes,
       typography: resolvedTypography,
       typographyTheme: resolvedTypographyTheme,
@@ -358,6 +435,7 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
 
   /// 全局通用抽屉主题。
   final HyperDrawerThemeData drawerTheme;
+  final HyperChartThemeData chartTheme;
 
   /// 全局树形侧栏主题。
   final HyperSidebarThemeData sidebarTheme;
@@ -372,6 +450,12 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
   /// 全局下拉选择器主题。
   final HyperSelectThemeData selectTheme;
   final HyperCascaderThemeData cascaderTheme;
+  final HyperRatingThemeData ratingTheme;
+  final HyperTransferThemeData transferTheme;
+  final HyperResizableThemeData resizableTheme;
+  final HyperMovableDialogThemeData movableDialogTheme;
+  final HyperNavigationBarThemeData navigationBarTheme;
+  final HyperInlineEditThemeData inlineEditTheme;
   final HyperTreeSelectThemeData treeSelectTheme;
 
   /// 全局面包屑视觉主题。
@@ -423,8 +507,17 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
   /// 全局图标按钮主题。
   final HyperIconButtonThemeData iconButtonTheme;
 
-  /// 全局基础图标主题，不与图标按钮主题共用。
+  /// 全局数字输入主题。
+  final HyperNumberInputThemeData numberInputTheme;
+
+  /// 全局锚定面板主题。
+  final HyperImagePreviewThemeData imagePreviewTheme;
+  final HyperImageEditorThemeData imageEditorTheme;
+  final HyperImageThemeData imageTheme;
+  final HyperPopoverThemeData popoverTheme;
   final HyperTooltipThemeData tooltipTheme;
+
+  /// 全局基础图标主题，不与图标按钮主题共用。
   final HyperIconThemeData iconTheme;
 
   /// 全局分隔线主题，不直接复用 Material DividerTheme。
@@ -509,6 +602,8 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
 
   @override
   HyperThemeData copyWith({
+    String? fontFamily,
+    List<String>? fontFamilyFallback,
     HyperColorScheme? colors,
     TextTheme? textTheme,
     HyperSizeThemeData? sizes,
@@ -519,12 +614,19 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
     HyperScaffoldThemeData? scaffoldTheme,
     HyperAppBarThemeData? appBarTheme,
     HyperDrawerThemeData? drawerTheme,
+    HyperChartThemeData? chartTheme,
     HyperSidebarThemeData? sidebarTheme,
     HyperMenuThemeData? menuTheme,
     HyperTopNavigationThemeData? topNavigationTheme,
     HyperColorPickerThemeData? colorPickerTheme,
     HyperSelectThemeData? selectTheme,
     HyperCascaderThemeData? cascaderTheme,
+    HyperRatingThemeData? ratingTheme,
+    HyperTransferThemeData? transferTheme,
+    HyperResizableThemeData? resizableTheme,
+    HyperMovableDialogThemeData? movableDialogTheme,
+    HyperNavigationBarThemeData? navigationBarTheme,
+    HyperInlineEditThemeData? inlineEditTheme,
     HyperTreeSelectThemeData? treeSelectTheme,
     HyperTabBarThemeData? tabBarTheme,
     HyperBreadcrumbThemeData? breadcrumbTheme,
@@ -563,6 +665,11 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
     HyperChipThemeData? chipTheme,
     HyperWidgetGroupThemeData? widgetGroupTheme,
     HyperIconButtonThemeData? iconButtonTheme,
+    HyperNumberInputThemeData? numberInputTheme,
+    HyperImagePreviewThemeData? imagePreviewTheme,
+    HyperImageEditorThemeData? imageEditorTheme,
+    HyperImageThemeData? imageTheme,
+    HyperPopoverThemeData? popoverTheme,
     HyperTooltipThemeData? tooltipTheme,
     HyperIconThemeData? iconTheme,
     HyperDividerThemeData? dividerTheme,
@@ -583,11 +690,14 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
         (typography == null
             ? this.typographyTheme
             : HyperTypographyThemeData.uniform(typography));
-    final resolvedTextTheme =
-        textTheme ??
-        (typography == null && typographyTheme == null
-            ? this.textTheme
-            : resolvedTypography.applyTo(this.textTheme));
+    final resolvedTextTheme = _applyFont(
+      textTheme ??
+          (typography == null && typographyTheme == null
+              ? this.textTheme
+              : resolvedTypography.applyTo(this.textTheme)),
+      fontFamily,
+      fontFamilyFallback,
+    );
     return HyperThemeData(
       colors: colors ?? this.colors,
       textTheme: resolvedTextTheme,
@@ -599,12 +709,19 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
       scaffoldTheme: scaffoldTheme ?? this.scaffoldTheme,
       appBarTheme: appBarTheme ?? this.appBarTheme,
       drawerTheme: drawerTheme ?? this.drawerTheme,
+      chartTheme: chartTheme ?? this.chartTheme,
       sidebarTheme: sidebarTheme ?? this.sidebarTheme,
       menuTheme: menuTheme ?? this.menuTheme,
       topNavigationTheme: topNavigationTheme ?? this.topNavigationTheme,
       colorPickerTheme: colorPickerTheme ?? this.colorPickerTheme,
       selectTheme: selectTheme ?? this.selectTheme,
       cascaderTheme: cascaderTheme ?? this.cascaderTheme,
+      ratingTheme: ratingTheme ?? this.ratingTheme,
+      transferTheme: transferTheme ?? this.transferTheme,
+      resizableTheme: resizableTheme ?? this.resizableTheme,
+      movableDialogTheme: movableDialogTheme ?? this.movableDialogTheme,
+      navigationBarTheme: navigationBarTheme ?? this.navigationBarTheme,
+      inlineEditTheme: inlineEditTheme ?? this.inlineEditTheme,
       treeSelectTheme: treeSelectTheme ?? this.treeSelectTheme,
       tabBarTheme: tabBarTheme ?? this.tabBarTheme,
       breadcrumbTheme: breadcrumbTheme ?? this.breadcrumbTheme,
@@ -643,6 +760,11 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
       chipTheme: chipTheme ?? this.chipTheme,
       widgetGroupTheme: widgetGroupTheme ?? this.widgetGroupTheme,
       iconButtonTheme: iconButtonTheme ?? this.iconButtonTheme,
+      numberInputTheme: numberInputTheme ?? this.numberInputTheme,
+      imagePreviewTheme: imagePreviewTheme ?? this.imagePreviewTheme,
+      imageEditorTheme: imageEditorTheme ?? this.imageEditorTheme,
+      imageTheme: imageTheme ?? this.imageTheme,
+      popoverTheme: popoverTheme ?? this.popoverTheme,
       tooltipTheme: tooltipTheme ?? this.tooltipTheme,
       iconTheme: iconTheme ?? this.iconTheme,
       dividerTheme: dividerTheme ?? this.dividerTheme,
@@ -685,6 +807,7 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
       ),
       appBarTheme: HyperAppBarThemeData.lerp(appBarTheme, other.appBarTheme, t),
       drawerTheme: HyperDrawerThemeData.lerp(drawerTheme, other.drawerTheme, t),
+      chartTheme: HyperChartThemeData.lerp(chartTheme, other.chartTheme, t),
       dialogTheme: HyperDialogThemeData.lerp(dialogTheme, other.dialogTheme, t),
       toastTheme: HyperToastThemeData.lerp(toastTheme, other.toastTheme, t),
       snackbarTheme: HyperSnackbarThemeData.lerp(
@@ -756,6 +879,32 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
         t,
       ),
       selectTheme: HyperSelectThemeData.lerp(selectTheme, other.selectTheme, t),
+      ratingTheme: HyperRatingThemeData.lerp(ratingTheme, other.ratingTheme, t),
+      transferTheme: HyperTransferThemeData.lerp(
+        transferTheme,
+        other.transferTheme,
+        t,
+      ),
+      resizableTheme: HyperResizableThemeData.lerp(
+        resizableTheme,
+        other.resizableTheme,
+        t,
+      ),
+      movableDialogTheme: HyperMovableDialogThemeData.lerp(
+        movableDialogTheme,
+        other.movableDialogTheme,
+        t,
+      ),
+      navigationBarTheme: HyperNavigationBarThemeData.lerp(
+        navigationBarTheme,
+        other.navigationBarTheme,
+        t,
+      ),
+      inlineEditTheme: HyperInlineEditThemeData.lerp(
+        inlineEditTheme,
+        other.inlineEditTheme,
+        t,
+      ),
       cascaderTheme: HyperCascaderThemeData.lerp(
         cascaderTheme,
         other.cascaderTheme,
@@ -842,6 +991,27 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
         other.iconButtonTheme,
         t,
       ),
+      numberInputTheme: HyperNumberInputThemeData.lerp(
+        numberInputTheme,
+        other.numberInputTheme,
+        t,
+      ),
+      imagePreviewTheme: HyperImagePreviewThemeData.lerp(
+        imagePreviewTheme,
+        other.imagePreviewTheme,
+        t,
+      ),
+      imageEditorTheme: HyperImageEditorThemeData.lerp(
+        imageEditorTheme,
+        other.imageEditorTheme,
+        t,
+      ),
+      imageTheme: HyperImageThemeData.lerp(imageTheme, other.imageTheme, t),
+      popoverTheme: HyperPopoverThemeData.lerp(
+        popoverTheme,
+        other.popoverTheme,
+        t,
+      ),
       tooltipTheme: HyperTooltipThemeData.lerp(
         tooltipTheme,
         other.tooltipTheme,
@@ -903,12 +1073,19 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
           other.scaffoldTheme == scaffoldTheme &&
           other.appBarTheme == appBarTheme &&
           other.drawerTheme == drawerTheme &&
+          other.chartTheme == chartTheme &&
           other.sidebarTheme == sidebarTheme &&
           other.menuTheme == menuTheme &&
           other.topNavigationTheme == topNavigationTheme &&
           other.colorPickerTheme == colorPickerTheme &&
           other.selectTheme == selectTheme &&
           other.cascaderTheme == cascaderTheme &&
+          other.ratingTheme == ratingTheme &&
+          other.transferTheme == transferTheme &&
+          other.resizableTheme == resizableTheme &&
+          other.movableDialogTheme == movableDialogTheme &&
+          other.navigationBarTheme == navigationBarTheme &&
+          other.inlineEditTheme == inlineEditTheme &&
           other.treeSelectTheme == treeSelectTheme &&
           other.tabBarTheme == tabBarTheme &&
           other.breadcrumbTheme == breadcrumbTheme &&
@@ -947,6 +1124,11 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
           other.tagTheme == tagTheme &&
           other.widgetGroupTheme == widgetGroupTheme &&
           other.iconButtonTheme == iconButtonTheme &&
+          other.numberInputTheme == numberInputTheme &&
+          other.imagePreviewTheme == imagePreviewTheme &&
+          other.imageEditorTheme == imageEditorTheme &&
+          other.imageTheme == imageTheme &&
+          other.popoverTheme == popoverTheme &&
           other.tooltipTheme == tooltipTheme &&
           other.iconTheme == iconTheme &&
           other.dividerTheme == dividerTheme &&
@@ -972,12 +1154,19 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
     scaffoldTheme,
     appBarTheme,
     drawerTheme,
+    chartTheme,
     sidebarTheme,
     menuTheme,
     topNavigationTheme,
     colorPickerTheme,
     selectTheme,
     cascaderTheme,
+    ratingTheme,
+    transferTheme,
+    resizableTheme,
+    movableDialogTheme,
+    navigationBarTheme,
+    inlineEditTheme,
     treeSelectTheme,
     breadcrumbTheme,
     cardTheme,
@@ -1015,6 +1204,11 @@ final class HyperThemeData extends ThemeExtension<HyperThemeData> {
     tagTheme,
     widgetGroupTheme,
     iconButtonTheme,
+    numberInputTheme,
+    imagePreviewTheme,
+    imageEditorTheme,
+    imageTheme,
+    popoverTheme,
     tooltipTheme,
     iconTheme,
     dividerTheme,

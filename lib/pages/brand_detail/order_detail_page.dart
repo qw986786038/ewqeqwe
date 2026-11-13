@@ -226,6 +226,11 @@ class _BrandOrderDetailPageState extends State<BrandOrderDetailPage> {
                     brand: brand,
                     onBack: () => Navigator.of(context).pop(),
                     onAdd: _addOrder,
+                    onExport: () => _exportOrderDetails(
+                      context,
+                      c,
+                      orders: orders,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   _OrderDetailKpis(controller: c, orders: orders),
@@ -280,12 +285,11 @@ class _BrandOrderDetailPageState extends State<BrandOrderDetailPage> {
                             ),
                             const Spacer(),
                             AppButton.outline(
-                              onPressed: () {
-                                showHyperToast(
-                                  context,
-                                  content: const Text('导出暂未开放'),
-                                );
-                              },
+                              onPressed: () => _exportOrderDetails(
+                                context,
+                                c,
+                                orders: orders,
+                              ),
                               leading: const Icon(Icons.upload_outlined, size: 14),
                               child: const Text('导出'),
                             ),
@@ -332,12 +336,14 @@ class _OrderDetailHero extends StatelessWidget {
     required this.brand,
     required this.onBack,
     required this.onAdd,
+    required this.onExport,
   });
 
   final BrandDetailController controller;
   final OacBrand? brand;
   final VoidCallback onBack;
   final VoidCallback onAdd;
+  final VoidCallback onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -447,9 +453,7 @@ class _OrderDetailHero extends StatelessWidget {
             ),
           ),
           AppButton.outline(
-            onPressed: () {
-              showHyperToast(context, content: const Text('导出暂未开放'));
-            },
+            onPressed: onExport,
             leading: const Icon(Icons.upload_outlined, size: 14),
             child: const Text('导出'),
           ),

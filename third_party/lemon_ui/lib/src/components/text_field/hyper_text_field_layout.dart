@@ -2,6 +2,15 @@ import 'dart:math' as math;
 
 import 'package:flutter/painting.dart';
 
+/// 以自然字体度量托住紧凑行高，避免中文及回退字形超出强制行框。
+/// 更大的主题行高仍由文字样式决定。
+StrutStyle resolveHyperTextFieldStrut(TextStyle style) =>
+    StrutStyle.fromTextStyle(
+      style,
+      height: kTextHeightNone,
+      forceStrutHeight: false,
+    );
+
 /// 按钮自身已包含图标两侧留白，外侧只补齐剩余的内容内边距。
 double resolveHyperTextFieldSuffixPadding({
   required double padding,
@@ -20,22 +29,22 @@ double resolveHyperTextFieldSuffixPadding({
   required double contentHeight,
   required double borderWidth,
 }) {
-  assert(height == null || height > 0);
+  assert(height == null || height >= 0);
   assert(contentHeight >= 0 && borderWidth >= 0);
   if (height == null) return (minimumHeight: minimumHeight, padding: padding);
-  final target = math.max(height, contentHeight + borderWidth * 2);
-  final budget = target - contentHeight - borderWidth * 2;
-  final top = math.max(0.0, padding.top - borderWidth);
-  final bottom = math.max(0.0, padding.bottom - borderWidth);
+  final target = height;
+  final budget = math.max(0.0, target - contentHeight - borderWidth * 2);
+  final top = math.max(0.0, padding.top);
+  final bottom = math.max(0.0, padding.bottom);
   final total = top + bottom;
   final factor = total == 0 ? 0.0 : math.min(1.0, budget / total);
   return (
     minimumHeight: target,
     padding: EdgeInsets.fromLTRB(
       padding.left,
-      borderWidth + top * factor,
+      top * factor,
       padding.right,
-      borderWidth + bottom * factor,
+      bottom * factor,
     ),
   );
 }
@@ -45,4 +54,5 @@ double resolveHyperTextFieldActionHeight({
   required double minimumHeight,
   required double iconSize,
   required EdgeInsets padding,
-}) => math.max(iconSize, minimumHeight - padding.vertical);
+  double borderVertical = 0,
+}) => math.max(iconSize, minimumHeight - padding.vertical - borderVertical);

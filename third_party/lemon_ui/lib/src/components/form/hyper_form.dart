@@ -1,3 +1,5 @@
+import '../../foundation/hyper_icons.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -476,7 +478,7 @@ class HyperField extends StatelessWidget {
                           Tooltip(
                             message: errorText!,
                             child: Icon(
-                              Icons.error_outline,
+                              HyperIcons.circleAlert,
                               color: errorStyle.color,
                               size: theme.textTheme.bodyMedium?.fontSize,
                             ),
@@ -505,7 +507,12 @@ class HyperField extends StatelessWidget {
         );
         if (horizontal && showLabel) {
           return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: switch (visual.horizontalAlignment ??
+                HyperFieldAlignment.center) {
+              HyperFieldAlignment.start => CrossAxisAlignment.start,
+              HyperFieldAlignment.center => CrossAxisAlignment.center,
+              HyperFieldAlignment.end => CrossAxisAlignment.end,
+            },
             children: [
               SizedBox(width: labelWidth, child: title()),
               SizedBox(width: gap),

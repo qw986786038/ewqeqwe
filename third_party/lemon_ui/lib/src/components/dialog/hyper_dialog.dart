@@ -1,3 +1,5 @@
+import '../../foundation/hyper_icons.dart';
+import '../overlay/hyper_overlay.dart';
 import '../../painting/hyper_box_decoration.dart';
 import '../overlay/hyper_backdrop_safe_opacity.dart';
 
@@ -22,25 +24,41 @@ class HyperDialog extends StatelessWidget {
   const HyperDialog({
     super.key,
     this.title,
+    this.titleActions = const [],
     required this.content,
     this.actions = const [],
     this.showCloseButton = true,
     this.onClose,
-    this.scrollable = true,
+    this.scrollable = false,
     this.semanticLabel,
     this.style,
+    this.surfaceBuilder,
+    this.animateInsets = true,
   });
 
   final Widget? title;
+
+  /// Independent title-end controls; their hit regions do not size the title.
+  final List<Widget> titleActions;
   final Widget content;
   final List<Widget> actions;
   final bool showCloseButton;
   final VoidCallback? onClose;
 
-  /// 默认正文滚动，标题和按钮固定；自带滚动的内容可关闭此包装。
+  /// 默认正文接受扣除标题和按钮后的有限宽高，不额外包装滚动容器。
+  ///
+  /// 支持纵向 Expanded、无限高度及 ListView/GridView，无需额外指定尺寸。
+  /// 长文字、长表单等需要外层滚动时显式设为 true；此时正文高度无界，
+  /// 标题和按钮固定，正文内部不应再使用需要有限高度的纵向 Expanded。
   final bool scrollable;
   final String? semanticLabel;
   final HyperDialogStyle? style;
+
+  /// Wraps the resolved dialog surface, preserving the shared material path.
+  final Widget Function(BuildContext context, Widget surface)? surfaceBuilder;
+
+  /// Disable for window geometry changes that must apply in a single layout.
+  final bool animateInsets;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +81,10 @@ class HyperDialog extends StatelessWidget {
       padding: metrics.padding,
       insetPadding: metrics.insetPadding,
       alignment: Alignment.center,
-      titleStyle: theme.textTheme.titleMedium ?? const TextStyle(),
+      titleStyle: (theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
+        fontSize: theme.textTheme.bodyLarge?.fontSize,
+        fontWeight: FontWeight.w500,
+      ),
       contentStyle: (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
         color: theme.colors.textSecondary,
       ),
@@ -72,24 +93,32 @@ class HyperDialog extends StatelessWidget {
       actionRunSpacing: metrics.actionRunSpacing,
       actionsAlignment: WrapAlignment.end,
       actionsDirection: Axis.horizontal,
-      closeIcon: Icons.close,
+      closeIcon: HyperIcons.x,
       closeIconColor: theme.colors.textSecondary,
       closeIconSize: metrics.closeIconSize,
       clipBehavior: Clip.antiAlias,
     ).merge(HyperDialogTheme.of(context).style).merge(style);
     final layout = HyperModalContent(
       title: title,
-      closeButton: showCloseButton
-          ? HyperIconButton.ghost(
-              icon: Icon(resolved.closeIcon!),
-              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-              style: HyperIconButtonStyle(
-                foregroundColor: resolved.closeIconColor,
-                iconSize: resolved.closeIconSize,
-              ),
-              onPressed: onClose ?? () => Navigator.of(context).pop(),
-            )
-          : null,
+      closeButton: titleActions.isEmpty && !showCloseButton
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ...titleActions,
+                if (showCloseButton)
+                  HyperIconButton.ghost(
+                    icon: Icon(resolved.closeIcon!),
+                    tooltip: MaterialLocalizations.of(context)
+                        .closeButtonTooltip,
+                    style: HyperIconButtonStyle(
+                      foregroundColor: resolved.closeIconColor,
+                      iconSize: resolved.closeIconSize,
+                    ),
+                    onPressed: onClose ?? () => HyperOverlay.close(context),
+                  ),
+              ],
+            ),
       content: content,
       actions: actions,
       scrollable: scrollable,
@@ -117,6 +146,7 @@ class HyperDialog extends StatelessWidget {
         border: resolved.material == null ? resolved.border : null,
         borderRadius: resolved.borderRadius,
         boxShadow: resolved.material == null ? resolved.boxShadow : null,
+        outerShadowsOnly: true,
       ),
       child: ClipRRect(
         borderRadius: resolved.borderRadius!,
@@ -127,6 +157,7 @@ class HyperDialog extends StatelessWidget {
     if (resolved.material != null) {
       surface = HyperMaterialSurface(
         material: resolved.material,
+        materialEdge: false,
         boxShadow: resolved.boxShadow,
         border: resolved.border,
         semanticBackground: resolved.background,
@@ -135,6 +166,15 @@ class HyperDialog extends StatelessWidget {
         child: surface,
       );
     }
+    Widget positionedSurface = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: resolved.maxWidth!),
+      child: SizedBox(
+        width: resolved.width ?? resolved.maxWidth,
+        child: surface,
+      ),
+    );
+    positionedSurface =
+        surfaceBuilder?.call(context, positionedSurface) ?? positionedSurface;
     return Semantics(
       scopesRoute: true,
       namesRoute: true,
@@ -142,26 +182,20 @@ class HyperDialog extends StatelessWidget {
       explicitChildNodes: true,
       child: AnimatedPadding(
         padding: resolved.insetPadding!.add(MediaQuery.viewInsetsOf(context)),
-        duration: MediaQuery.of(context).disableAnimations
+        duration: !animateInsets || MediaQuery.of(context).disableAnimations
             ? Duration.zero
             : (resolved.duration ?? theme.motion.fastDuration),
         curve: resolved.curve ?? theme.motion.fastCurve,
-        child: Align(
-          alignment: resolved.alignment!,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: resolved.maxWidth!),
-            child: SizedBox(
-              width: resolved.width ?? resolved.maxWidth,
-              child: surface,
-            ),
-          ),
-        ),
+        child: Align(alignment: resolved.alignment!, child: positionedSurface),
       ),
     );
   }
 }
 
 /// 捕获调用处的全局及局部主题，使用 Flutter 原生模态路由与焦点循环。
+///
+/// [heroAnimation] opts into a non-opaque page route for native Hero flights,
+/// retaining the shared dialog surface, barrier and material-safe transition.
 Future<T?> showHyperDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -173,6 +207,7 @@ Future<T?> showHyperDialog<T>({
   bool? requestFocus,
   RouteSettings? routeSettings,
   Offset? anchorPoint,
+  bool heroAnimation = false,
 }) {
   final navigator = Navigator.of(
     context,
@@ -185,13 +220,90 @@ Future<T?> showHyperDialog<T>({
   final motion = HyperTheme.of(context).motion;
   final reduced = MediaQuery.of(context).disableAnimations;
   final textDirection = Directionality.of(context);
+  Widget pageBuilder(
+    BuildContext routeContext,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    Widget page = HyperLiveRouteThemes(
+      source: context,
+      destination: navigator.context,
+      child: HyperDialogTheme(
+        data: HyperDialogThemeData(style: style ?? const HyperDialogStyle()),
+        child: HyperOverlayScope.route<T>(
+          context: routeContext,
+          child: Builder(builder: builder),
+        ),
+      ),
+    );
+    if (useSafeArea) page = SafeArea(child: page);
+    // Navigator 之外的局部设置不会被 InheritedTheme.capture 捕获。
+    page = Directionality(textDirection: textDirection, child: page);
+    if (reduced) {
+      page = MediaQuery(
+        data: MediaQuery.of(routeContext).copyWith(disableAnimations: true),
+        child: page,
+      );
+    }
+    return page;
+  }
+
+  Widget transitionsBuilder(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (reduced) return child;
+    if (resolved.transitionBuilder case final custom?) {
+      return custom(context, animation, secondaryAnimation, child);
+    }
+    final eased = animation.drive(
+      CurveTween(curve: resolved.curve ?? motion.fastCurve),
+    );
+    return HyperBackdropSafeFade(
+      opacity: eased,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: .96, end: 1).animate(eased),
+        alignment: (resolved.alignment ?? Alignment.center).resolve(
+          textDirection,
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  if (heroAnimation && !reduced) {
+    return navigator.push<T>(
+      _HyperHeroDialogRoute<T>(
+        opaque: false,
+        barrierDismissible: barrierDismissible,
+        barrierLabel:
+            barrierLabel ??
+            MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        barrierColor:
+            resolved.barrierColor ?? HyperTheme.of(context).colors.scrim,
+        transitionDuration: resolved.duration ?? motion.standardDuration,
+        reverseTransitionDuration: resolved.duration ?? motion.standardDuration,
+        settings: routeSettings,
+        requestFocus: requestFocus,
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            DisplayFeatureSubScreen(
+              anchorPoint: anchorPoint,
+              child: pageBuilder(context, animation, secondaryAnimation),
+            ),
+        transitionsBuilder: transitionsBuilder,
+      ),
+    );
+  }
   return navigator.push<T>(
     RawDialogRoute<T>(
       barrierDismissible: barrierDismissible,
       barrierLabel:
           barrierLabel ??
           MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      barrierColor: resolved.barrierColor ?? Colors.black.withValues(alpha: .2),
+      barrierColor:
+          resolved.barrierColor ?? HyperTheme.of(context).colors.scrim,
       transitionDuration: reduced
           ? Duration.zero
           : (resolved.duration ?? motion.fastDuration),
@@ -199,47 +311,27 @@ Future<T?> showHyperDialog<T>({
       anchorPoint: anchorPoint,
       requestFocus: requestFocus,
       traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
-      pageBuilder: (routeContext, animation, secondaryAnimation) {
-        Widget page = HyperLiveRouteThemes(
-          source: context,
-          destination: navigator.context,
-          child: HyperDialogTheme(
-            data: HyperDialogThemeData(
-              style: style ?? const HyperDialogStyle(),
-            ),
-            child: Builder(builder: builder),
-          ),
-        );
-        if (useSafeArea) page = SafeArea(child: page);
-        // Navigator 之外的局部设置不会被 InheritedTheme.capture 捕获。
-        page = Directionality(textDirection: textDirection, child: page);
-        if (reduced) {
-          page = MediaQuery(
-            data: MediaQuery.of(routeContext).copyWith(disableAnimations: true),
-            child: page,
-          );
-        }
-        return page;
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        if (reduced) return child;
-        if (resolved.transitionBuilder case final custom?) {
-          return custom(context, animation, secondaryAnimation, child);
-        }
-        final eased = animation.drive(
-          CurveTween(curve: resolved.curve ?? motion.fastCurve),
-        );
-        return HyperBackdropSafeFade(
-          opacity: eased,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: .96, end: 1).animate(eased),
-            alignment: (resolved.alignment ?? Alignment.center).resolve(
-              textDirection,
-            ),
-            child: child,
-          ),
-        );
-      },
+      pageBuilder: pageBuilder,
+      transitionBuilder: transitionsBuilder,
     ),
   );
+}
+
+class _HyperHeroDialogRoute<T> extends PageRouteBuilder<T> {
+  _HyperHeroDialogRoute({
+    required super.pageBuilder,
+    required super.transitionsBuilder,
+    required super.opaque,
+    required super.barrierDismissible,
+    required super.barrierLabel,
+    required super.barrierColor,
+    required super.transitionDuration,
+    required super.reverseTransitionDuration,
+    super.settings,
+    super.requestFocus,
+  });
+
+  @override
+  TraversalEdgeBehavior get traversalEdgeBehavior =>
+      TraversalEdgeBehavior.closedLoop;
 }

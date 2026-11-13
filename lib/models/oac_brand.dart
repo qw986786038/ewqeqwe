@@ -15,19 +15,27 @@ class OacBrandOverview {
   String? dataAsOf;
 }
 
-/// 品牌列表行（OacBrandVo）
+/// 品牌列表行（OacBrandVo）/ 详情主体（亦可能为企业客户）
 class OacBrand {
   String? id;
   String? tenantId;
   String? brandCode;
   String? name;
+  String? customerType;
+  String? relationType;
+  String? entityNature;
   String? industry;
+  String? industryLabel;
   String? city;
   String? tags;
   List<String>? tagList;
   String? clientTag;
+  String? clientTagLabel;
   String? spokesperson;
   int? weight;
+  int? healthScore;
+  String? healthLabel;
+  int? topRank;
   String? iconUrl;
   String? ownerNames;
   List<String>? ownerNameList;
@@ -35,7 +43,10 @@ class OacBrand {
   int? orderCount;
   String? orderAmount;
   int? enterpriseCount;
+  /// 企业视角：关联品牌数。
+  int? brandCount;
   int? agencyCount;
+  String? agencyNames;
   int? contactCount;
   String? latestOrderTime;
   String? status;

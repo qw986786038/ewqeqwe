@@ -17,7 +17,11 @@ class OacAgencyOverview {
 /// 4A 公司列表行（OacAgencyVo）
 class OacAgency {
   String? id;
+  /// 客户档案 / 详情聚合入口（`GET /desktop/oac/brand/{customerId}/detail`）。
+  String? customerId;
   String? tenantId;
+  String? agencyCode;
+  String? customerType;
   String? name;
   String? shortName;
   String? city;
@@ -34,9 +38,18 @@ class OacAgency {
   String? latestDynamic;
   int? orderCount;
   String? orderAmount;
+  /// 订单金额同比（%）。
+  String? orderAmountYoyRate;
+  /// 部门业绩占比（%）。
+  String? deptPerfShareRate;
+  /// Q4 预期同比（%）。
+  String? q4ExpectedYoyRate;
   int? brandCount;
   String? brandNames;
   List<String>? brandNameList;
+  List<String>? brandIdList;
+  /// 如 `乳制品 2`。
+  String? brandIndustrySummary;
   int? enterpriseCount;
   String? enterpriseNames;
   List<String>? enterpriseNameList;

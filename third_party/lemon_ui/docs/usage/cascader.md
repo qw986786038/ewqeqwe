@@ -5,6 +5,8 @@
 可选首部 `leading`、静态 `children`、动态分支标记 `hasChildren` 和 `enabled`。
 节点值必须全树唯一且具有稳定的相等性；传入的数据列表应视为不可变配置。
 
+默认需选到叶子节点。设置 `maxDepth: 1` 可只选择一级行业：根节点即使有子节点也可直接提交 `[rootValue]`，不展示或加载下级；`maxDepth: 2` 则最多选到第二级，提前遇到自然叶子时仍可提交。限制在公共控制器的数据视图中应用，桌面菜单、移动端滚轮与独立页面遵守同一规则，不修改传入的原始节点。`maxDepth` 须为正整数，省略时保留完整级联；`HyperCascaderFormField` 同样支持该参数。
+
 ```dart
 HyperCascader<String>(
   nodes: const [
@@ -87,7 +89,7 @@ Tab 访问。加载、错误和空态提供 live region。文字跟随系统 Tex
 `resolveHyperMenuSurface`，底部弹窗使用统一 BottomSheet 表面，不叠加 Card；
 材质质量、默认配方、降级和开合安全动画均继承公共基础设施。
 
-Gallery 和主题编辑器入口为“未确认 → 级联选择 Cascader”，id 为 `hyper-cascader`。
+Gallery 和主题编辑器入口为“选择控件 → 级联选择 Cascader”，id 为 `hyper-cascader`。
 编辑器提供默认 Demo 预览以及 Select、Menu、Button 现有设置入口，不建立另一份尺寸或
 表面配置存储；这些设置继续使用原有四端/亮暗存储、继承恢复和保存导入机制。
 
@@ -135,4 +137,4 @@ HyperCascaderFormField<String>(
 `surfaceStyle` 最后覆盖浮层表面。`loadChildren`、`labelBuilder`、`allowClear`、
 呈现方式和路径文字选项均透传给底层控件，不建立第二套主题或设备常量。
 禁用字段沿用公共表单的跳过校验行为，旧异步校验在值变更或重置后失效。
-当前“未确认 → 级联选择 Cascader”页面包含必填、提交和重置演示，未迁移分类。
+当前“选择控件 → 级联选择 Cascader”页面包含必填、提交和重置演示，已于 2026-10-21 经用户确认迁移至正式分类。

@@ -23,12 +23,20 @@ const _kContractTypeOptions = [
   AppOption(value: '项目制', label: '项目制'),
 ];
 
+const _kRelationOptions = [
+  AppOption(value: '经营主体', label: '经营主体'),
+  AppOption(value: '关联4A', label: '关联4A'),
+  AppOption(value: '媒体主', label: '媒体主'),
+];
+
 /// 打开「+添加订单」弹窗（与主体概览同款 HyperDialog 小窗）。
 /// [initialBrandId] 可选：从详情页打开时预选该品牌。
-/// 返回 `true` 表示创建成功。
+/// [editingOrder] 非空时为「编辑订单」，保存走 `PUT /desktop/oac/order`。
+/// 返回 `true` 表示创建/更新成功。
 Future<bool> showAddOrderDialog(
   BuildContext context, {
   String? initialBrandId,
+  OrderItem? editingOrder,
 }) async {
   final result = await showHyperDialog<bool>(
     context: context,
@@ -52,6 +60,7 @@ Future<bool> showAddOrderDialog(
           data: mq.copyWith(textScaler: TextScaler.noScaling),
           child: _AddOrderDialog(
             initialBrandId: initialBrandId,
+            editingOrder: editingOrder,
             onClose: ([bool saved = false]) =>
                 Navigator.of(dialogContext).pop(saved),
           ),
@@ -62,13 +71,27 @@ Future<bool> showAddOrderDialog(
   return result ?? false;
 }
 
+/// 打开「编辑订单」弹窗。
+Future<bool> showEditOrderDialog(
+  BuildContext context, {
+  required OrderItem order,
+  String? initialBrandId,
+}) =>
+    showAddOrderDialog(
+      context,
+      initialBrandId: initialBrandId ?? order.brandId,
+      editingOrder: order,
+    );
+
 class _AddOrderDialog extends StatefulWidget {
   const _AddOrderDialog({
     required this.onClose,
     this.initialBrandId,
+    this.editingOrder,
   });
 
   final String? initialBrandId;
+  final OrderItem? editingOrder;
   final void Function([bool saved]) onClose;
 
   @override
@@ -91,16 +114,24 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
   OacBrandDetail? _detail;
   CustomerArchive? _selectedBrand;
   EnterpriseItem? _selectedEnterprise;
+  String? _selectedAgencyId;
   /// 品牌切换时递增：重建签约主体下拉。
   var _brandEpoch = 0;
   /// 签约主体切换时递增：重建只读品牌信息与联系人。
   var _fillEpoch = 0;
 
+  bool get _isEdit => widget.editingOrder != null;
+
   @override
   void initState() {
     super.initState();
-    _durationCtrl = TextEditingController();
-    _remarkCtrl = TextEditingController();
+    final editing = widget.editingOrder;
+    _durationCtrl = TextEditingController(
+      text: editing?.durationDays != null && editing!.durationDays! > 0
+          ? '${editing.durationDays} 天'
+          : '',
+    );
+    _remarkCtrl = TextEditingController(text: editing?.remark?.trim() ?? '');
     _bootstrap();
   }
 
@@ -172,12 +203,70 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
   }
 
   CustomerArchive? _resolveInitialBrand() {
-    final initialId = widget.initialBrandId?.trim();
-    if (initialId == null || initialId.isEmpty) return null;
-    for (final b in _brands) {
-      if (b.id == initialId) return b;
+    final candidates = [
+      widget.editingOrder?.brandId?.trim(),
+      widget.initialBrandId?.trim(),
+    ];
+    for (final initialId in candidates) {
+      if (initialId == null || initialId.isEmpty) continue;
+      for (final b in _brands) {
+        if (b.id == initialId) return b;
+      }
     }
     return null;
+  }
+
+  EnterpriseItem? _resolveEnterpriseForEdit(OacBrandDetail detail) {
+    final editing = widget.editingOrder;
+    if (editing == null) return _firstEnterprise(detail);
+    final entId = editing.signEnterpriseId?.trim();
+    if (entId != null && entId.isNotEmpty) {
+      for (final e in detail.enterprises) {
+        if (e.id?.trim() == entId) return e;
+      }
+    }
+    final name = editing.enterprise?.trim();
+    if (name != null && name.isNotEmpty) {
+      for (final e in detail.enterprises) {
+        if (e.name?.trim() == name) return e;
+      }
+    }
+    return _firstEnterprise(detail);
+  }
+
+  DateTime? _parseDate(String? raw) {
+    final s = raw?.trim();
+    if (s == null || s.isEmpty) return null;
+    final normalized = s.contains('T') ? s : s.replaceFirst(' ', 'T');
+    return DateTime.tryParse(normalized) ?? DateTime.tryParse(s);
+  }
+
+  shad.DateTimeRange? _editPeriod() {
+    final start = _parseDate(widget.editingOrder?.periodStart);
+    final end = _parseDate(widget.editingOrder?.periodEnd);
+    if (start == null || end == null) return null;
+    return shad.DateTimeRange(start, end);
+  }
+
+  List<String> _editContactNames() =>
+      _splitNames(widget.editingOrder?.contact);
+
+  List<String> _editSalesNames() =>
+      _splitNames(widget.editingOrder?.salesPerson);
+
+  String? _editRelationValue() {
+    final editing = widget.editingOrder;
+    if (editing == null) return null;
+    final label = editing.relationLabel?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    final raw = editing.relation?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    return switch (raw) {
+      'operating_entity' || 'operatingEntity' || 'operator' => '经营主体',
+      'agency' => '关联4A',
+      'media' => '媒体主',
+      _ => raw,
+    };
   }
 
   CustomerArchive? _firstBrand() {
@@ -234,10 +323,14 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
     try {
       final detail = await _brandApi.fetchDetail(id);
       if (!mounted) return;
-      final firstEnt = _firstEnterprise(detail);
+      final firstEnt = _resolveEnterpriseForEdit(detail);
+      final editingAgency = widget.editingOrder?.agencyId?.trim();
       setState(() {
         _detail = detail;
         _selectedEnterprise = firstEnt;
+        _selectedAgencyId = (editingAgency != null && editingAgency.isNotEmpty)
+            ? editingAgency
+            : _resolveAgencyId(detail: detail, brand: row);
         _detailLoading = false;
         _brandEpoch++;
         _remountFillFields();
@@ -490,16 +583,32 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
             ) ??
             values['city']?.toString();
 
+        final editingId = _asInt(widget.editingOrder?.id);
+        final agencyFromForm = _isEdit
+            ? _asInt(
+                _findAgency(values['agency']?.toString())?.id ??
+                    values['agency'] ??
+                    _selectedAgencyId,
+              )
+            : agencyId;
+        final relationFromForm = _isEdit
+            ? (values['relation']?.toString().trim().isNotEmpty == true
+                ? values['relation']?.toString().trim()
+                : relation)
+            : relation;
+
         final body = OacOrderCreateBody()
+          ..id = editingId
           ..brandId = brandId
-          ..agencyId = agencyId
-          ..agencyCustomerId = agencyId
+          ..agencyId = agencyFromForm
+          ..agencyCustomerId = agencyFromForm
           ..signEnterpriseId = _asInt(enterprise?.id)
           ..enterpriseName = enterpriseName
-          ..dealRelation = relation
+          ..dealRelation = relationFromForm
           ..customerType = clientType
           ..industry = industry
           ..city = city
+          ..orderName = widget.editingOrder?.orderNo?.trim()
           ..amount = amount
           ..signDate = signDt == null ? null : _fmtDateTime(signDt)
           ..orderTime = signDt == null ? null : _fmtDateTime(signDt)
@@ -514,11 +623,18 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
               ? null
               : _remarkCtrl.text.trim();
 
-        await _orderApi.createOrder(body);
+        if (_isEdit) {
+          if (editingId == null) {
+            throw OrderApiException('订单 id 无效，无法保存');
+          }
+          await _orderApi.updateOrder(body);
+        } else {
+          await _orderApi.createOrder(body);
+        }
       });
       if (!ok || !mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('订单已保存')),
+        SnackBar(content: Text(_isEdit ? '订单已更新' : '订单已保存')),
       );
       widget.onClose(true);
     } catch (e) {
@@ -672,13 +788,23 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
 
     final detail = _detail;
     final enterprise = _selectedEnterprise;
-    final industry =
-        detail?.brand?.industry?.trim() ?? _selectedBrand?.industry?.trim();
-    final city = _resolveCity(detail: detail, enterprise: enterprise) ?? '';
-    final relation = _resolveRelation(enterprise) ?? '';
-    final clientType = _clientTypeLabel(_selectedBrand?.customerType) ?? '';
-    final agencyId = _resolveAgencyId(detail: detail, brand: _selectedBrand);
-    final agencyName = _agencyDisplayName(agencyId) ?? '';
+    final editing = widget.editingOrder;
+    final industry = detail?.brand?.industry?.trim() ??
+        _selectedBrand?.industry?.trim() ??
+        editing?.industry?.trim();
+    final city = _resolveCity(detail: detail, enterprise: enterprise) ??
+        editing?.city?.trim() ??
+        '';
+    final relation = _editRelationValue() ?? _resolveRelation(enterprise) ?? '';
+    final clientType = _clientTypeLabel(
+          _selectedBrand?.customerType ?? editing?.customerType,
+        ) ??
+        '';
+    final agencyId = _selectedAgencyId ??
+        _resolveAgencyId(detail: detail, brand: _selectedBrand);
+    final agencyName = _agencyDisplayName(agencyId) ??
+        editing?.agencyName?.trim() ??
+        '';
 
     final enterprises = detail?.enterprises
             .where((e) => e.name?.trim().isNotEmpty == true)
@@ -692,6 +818,12 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
         const <AppOption<String>>[];
     final selectedEntKey =
         enterprise == null ? null : _enterpriseKey(enterprise);
+
+    final agencyOptions = [
+      for (final a in _agencies)
+        if (a.id != null && (a.brandName?.trim().isNotEmpty ?? false))
+          AppOption(value: a.id!, label: a.brandName!.trim()),
+    ];
 
     final entId = enterprise?.id?.trim();
     final contactOptions = detail?.contacts
@@ -710,13 +842,38 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
         .map((e) => AppOption(value: e, label: e))
         .toList();
 
-    final quickCreateEnabled = !_bootLoading;
+    final editContacts = _editContactNames();
+    final editSales = _editSalesNames();
+    final initialContacts = _isEdit
+        ? [
+            for (final n in editContacts)
+              if (contactOptions.any((o) => o.value == n) || n.isNotEmpty) n,
+          ]
+        : (contactOptions.isNotEmpty
+            ? [contactOptions.first.value]
+            : const <String>[]);
+    final initialSales = _isEdit
+        ? [
+            for (final n in editSales)
+              if (salesOptions.any((o) => o.value == n) || n.isNotEmpty) n,
+          ]
+        : (salesOptions.isNotEmpty
+            ? [salesOptions.first.value]
+            : const <String>[]);
+
+    final editPeriod = _editPeriod();
+    final editSignDate = _parseDate(editing?.orderTime) ?? DateTime.now();
+    final editContract = editing?.contractType?.trim();
+    final editAmount = editing?.amount?.trim() ?? '';
+    final editOrderNo = editing?.orderNo?.trim() ?? '';
+
+    final quickCreateEnabled = !_bootLoading && !_isEdit;
 
     return AppForm(
       key: ValueKey(_fillEpoch),
       controller: _form,
       child: HyperDialog(
-        title: const Text('+添加订单'),
+        title: Text(_isEdit ? '编辑订单' : '+添加订单'),
         scrollable: true,
         style: const HyperDialogStyle(maxWidth: 640),
         onClose: () => widget.onClose(),
@@ -811,13 +968,37 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                             children: [
                               const SizedBox(height: 8),
                               _row(
-                                _readonlyField(
-                                  name: 'relation',
-                                  label: '关联关系',
-                                  required: true,
-                                  value: relation,
-                                  hintText: '随签约主体自动填充',
-                                ),
+                                _isEdit
+                                    ? AppSelectFormField<String>(
+                                        name: 'relation',
+                                        label: '关联关系',
+                                        required: true,
+                                        hintText: '请选择',
+                                        popupMinWidth: 160,
+                                        options: [
+                                          ..._kRelationOptions,
+                                          if (relation.isNotEmpty &&
+                                              !_kRelationOptions.any(
+                                                (o) => o.value == relation,
+                                              ))
+                                            AppOption(
+                                              value: relation,
+                                              label: relation,
+                                            ),
+                                        ],
+                                        initialValue: relation.isEmpty
+                                            ? null
+                                            : relation,
+                                        validator: (v) =>
+                                            v == null ? '请选择关联关系' : null,
+                                      )
+                                    : _readonlyField(
+                                        name: 'relation',
+                                        label: '关联关系',
+                                        required: true,
+                                        value: relation,
+                                        hintText: '随签约主体自动填充',
+                                      ),
                                 _readonlyField(
                                   name: 'clientType',
                                   label: '客户类型',
@@ -845,34 +1026,61 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                               ),
                               const SizedBox(height: 8),
                               _row(
-                                _readonlyField(
-                                  name: 'agency',
-                                  label: '关联 4A',
-                                  value: agencyName,
-                                  hintText: '随品牌自动填充',
-                                ),
+                                _isEdit
+                                    ? AppSelectFormField<String>(
+                                        name: 'agency',
+                                        label: '关联 4A',
+                                        hintText: '请选择',
+                                        popupMinWidth: 180,
+                                        options: agencyOptions,
+                                        initialValue: agencyId,
+                                        onChanged: (v) => setState(
+                                          () => _selectedAgencyId = v,
+                                        ),
+                                      )
+                                    : _readonlyField(
+                                        name: 'agency',
+                                        label: '关联 4A',
+                                        value: agencyName,
+                                        hintText: '随品牌自动填充',
+                                      ),
                               ),
                               const SizedBox(height: 12),
                               _sectionTitle('订单信息'),
                               const SizedBox(height: 8),
                               _row(
                                 _dimDisabled(
-                                  const AppTextFormField(
+                                  AppTextFormField(
                                     name: 'orderNo',
                                     label: '订单编号',
-                                    hintText: '保存后自动生成',
+                                    initialValue: editOrderNo,
+                                    hintText: _isEdit ? null : '保存后自动生成',
                                     enabled: false,
                                     readOnly: true,
                                   ),
                                 ),
-                                const AppSelectFormField<String>(
+                                AppSelectFormField<String>(
                                   name: 'contractType',
                                   label: '合同类型',
                                   required: true,
                                   hintText: '请选择',
                                   popupMinWidth: 160,
-                                  options: _kContractTypeOptions,
-                                  initialValue: '广告发布',
+                                  options: [
+                                    ..._kContractTypeOptions,
+                                    if (editContract != null &&
+                                        editContract.isNotEmpty &&
+                                        !_kContractTypeOptions.any(
+                                          (o) => o.value == editContract,
+                                        ))
+                                      AppOption(
+                                        value: editContract,
+                                        label: editContract,
+                                      ),
+                                  ],
+                                  initialValue: (editContract != null &&
+                                          editContract.isNotEmpty)
+                                      ? editContract
+                                      : '广告发布',
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -881,6 +1089,7 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                                   name: 'amount',
                                   label: '订单金额',
                                   required: true,
+                                  initialValue: editAmount,
                                   hintText: '单位：元，如 15000000',
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
@@ -908,7 +1117,7 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                                   required: true,
                                   // popover 在弹窗内会因 IntrinsicWidth+Spacer 横向溢出，改 dialog
                                   mode: shad.PromptMode.dialog,
-                                  initialValue: DateTime.now(),
+                                  initialValue: editSignDate,
                                   validator: (v) =>
                                       v == null ? '请选择签约时间' : null,
                                 ),
@@ -921,6 +1130,7 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                                   required: true,
                                   hintText: '开始日期 - 结束日期',
                                   mode: shad.PromptMode.dialog,
+                                  initialValue: editPeriod,
                                   onChanged: _onPeriodChanged,
                                   validator: (v) =>
                                       v == null ? '请选择订单周期' : null,
@@ -967,24 +1177,34 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                               _row(
                                 AppMultiSelectFormField<String>(
                                   name: 'clientContacts',
-                                  label: '客户方联系人',
+                                  label: _isEdit ? '客户联系人' : '客户方联系人',
                                   required: true,
-                                  options: contactOptions,
-                                  initialValue: contactOptions.isNotEmpty
-                                      ? [contactOptions.first.value]
-                                      : const [],
+                                  options: [
+                                    ...contactOptions,
+                                    for (final n in editContacts)
+                                      if (n.isNotEmpty &&
+                                          !contactOptions
+                                              .any((o) => o.value == n))
+                                        AppOption(value: n, label: n),
+                                  ],
+                                  initialValue: initialContacts,
                                   validator: (v) => v == null || v.isEmpty
-                                      ? '请选择客户方联系人'
+                                      ? '请选择客户联系人'
                                       : null,
                                 ),
                                 AppMultiSelectFormField<String>(
                                   name: 'ourContacts',
                                   label: '我方联系人',
                                   required: true,
-                                  options: salesOptions,
-                                  initialValue: salesOptions.isNotEmpty
-                                      ? [salesOptions.first.value]
-                                      : const [],
+                                  options: [
+                                    ...salesOptions,
+                                    for (final n in editSales)
+                                      if (n.isNotEmpty &&
+                                          !salesOptions
+                                              .any((o) => o.value == n))
+                                        AppOption(value: n, label: n),
+                                  ],
+                                  initialValue: initialSales,
                                   validator: (v) => v == null || v.isEmpty
                                       ? '请选择我方联系人'
                                       : null,

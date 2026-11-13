@@ -139,23 +139,47 @@ OacPerson _parsePerson(Map<String, dynamic> json) => OacPerson()
   ..name = _asString(json['name'])
   ..title = _asString(json['title'])
   ..latestEmployer = _asString(json['latestEmployer'])
+  ..enterpriseId = _asString(json['enterpriseId'])
+  ..customerId = _asString(json['customerId']) ??
+      _asString(json['customer_id'])
   ..enterpriseType = _asString(json['enterpriseType'])
   ..city = _asString(json['city'])
   ..address = _asString(json['address'])
   ..sameEnterpriseContactCount = _asInt(json['sameEnterpriseContactCount'])
+  ..sameEnterpriseContactNames =
+      _asStringList(json['sameEnterpriseContactNames'])
   ..brandCount = _asInt(json['brandCount'])
   ..brandNames = _asString(json['brandNames'])
   ..brandNameList = _asStringList(json['brandNameList']) ??
       _splitCsv(_asString(json['brandNames']))
   ..brandIdList = _asStringList(json['brandIdList'])
+  ..brandIndustrySummary = _asString(json['brandIndustrySummary'])
   ..enterpriseCount = _asInt(json['enterpriseCount'])
+  ..enterpriseNameList = _asStringList(json['enterpriseNameList'])
   ..agencyCount = _asInt(json['agencyCount'])
+  ..agencyNameList = _asStringList(json['agencyNameList'])
   ..orderCount = _asInt(json['orderCount'])
   ..orderAmount = _asString(json['orderAmount'])
+  ..orderAmountYoyRate = _asString(json['orderAmountYoyRate'])
   ..latestOrderTime = _asString(json['latestOrderTime'])
+  ..influenceScore = _asInt(json['influenceScore'])
+  ..keyDecisionMaker = _asBool(json['keyDecisionMaker'])
+  ..personCode = _asString(json['personCode'])
+  ..realNameVerified = _asBool(json['realNameVerified'])
+  ..canDecide = _asBool(json['canDecide'])
   ..status = _asString(json['status'])
   ..createTime = _asString(json['createTime'])
   ..updateTime = _asString(json['updateTime']);
+
+bool? _asBool(dynamic v) {
+  if (v == null) return null;
+  if (v is bool) return v;
+  if (v is num) return v != 0;
+  final s = '$v'.trim().toLowerCase();
+  if (s == 'true' || s == '1' || s == 'yes') return true;
+  if (s == 'false' || s == '0' || s == 'no') return false;
+  return null;
+}
 
 String? _asString(dynamic v) {
   if (v == null) return null;

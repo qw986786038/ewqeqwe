@@ -1,3 +1,11 @@
+import 'components/hyper_lift_size.dart';
+import 'components/hyper_image_editor_size.dart';
+import 'components/hyper_image_preview_size.dart';
+import 'components/hyper_image_size.dart';
+import 'components/hyper_navigation_bar_size.dart';
+import 'components/hyper_transfer_size.dart';
+import 'components/hyper_rating_size.dart';
+import 'components/hyper_chart_size.dart';
 import 'components/hyper_table_size.dart';
 import 'components/hyper_form_size.dart';
 import 'components/hyper_calendar_size.dart';
@@ -79,6 +87,10 @@ final class HyperSizeScheme {
   static const double radius4xl = 48;
 
   const HyperSizeScheme({
+    HyperLiftSize? motionLift,
+    HyperImagePreviewSize? imagePreview,
+    HyperImageEditorSize? imageEditor,
+    HyperImageSize? image,
     this.navigationItemSpacing = spaceXs,
     required this.deviceType,
     required this.controlHeightXs,
@@ -98,6 +110,7 @@ final class HyperSizeScheme {
     required this.card,
     required this.appBar,
     required this.drawer,
+    this.chart = const HyperChartSize(),
     required this.sidebar,
     required this.menu,
     required this.topNavigation,
@@ -147,13 +160,25 @@ final class HyperSizeScheme {
     required this.slider,
     required this.divider,
     required this.icon,
+    this.navigationBar = const HyperNavigationBarSize(),
+    this.rating = const HyperRatingSize(),
+    this.transfer = const HyperTransferSize(),
     required this.progress,
-  });
+    // Preserve the public named parameter while deriving legacy defaults lazily.
+    // ignore: prefer_initializing_formals
+  }) : _motionLift = motionLift,
+       // ignore: prefer_initializing_formals
+       _imagePreview = imagePreview,
+       // ignore: prefer_initializing_formals
+       _imageEditor = imageEditor,
+       // ignore: prefer_initializing_formals
+       _image = image;
 
   /// 手机尺寸方案。
   const HyperSizeScheme.phone()
     : this(
         deviceType: HyperDeviceType.phone,
+        navigationBar: const HyperNavigationBarSize.phone(),
         controlHeightXs: 32,
         controlHeightSm: 40,
         controlHeightMd: 48,
@@ -190,6 +215,7 @@ final class HyperSizeScheme {
           expandedHeight: 96,
           titleHorizontalPadding: 26,
         ),
+        chart: const HyperChartSize(),
         drawer: const HyperDrawerSize(width: 304, radius: 16),
         toast: const HyperMessageSize(
           maxWidth: 320,
@@ -250,7 +276,7 @@ final class HyperSizeScheme {
         ),
         descriptionList: const HyperDescriptionListSize(
           radius: 16,
-          cellPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          cellPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           columnSpacing: 16,
           rowSpacing: 8,
           labelValueSpacing: 8,
@@ -345,6 +371,9 @@ final class HyperSizeScheme {
           collapsedIconSize: 24,
           collapsedRowGap: 8,
           itemSpacing: 12,
+          itemPadding: 12,
+          trailingSpacing: 12,
+          badgeSpacing: 12,
           rowGap: null,
           indent: 16,
           sectionSpacing: 16,
@@ -353,15 +382,17 @@ final class HyperSizeScheme {
           itemRadius: 12,
         ),
         menu: const HyperMenuSize(
-          itemSpacing: null,
+          itemSpacing: 0,
           itemVerticalPadding: 6,
           width: 280,
           itemHeight: 48,
           padding: 12,
-          groupSpacing: 16,
+          surfacePadding: 0,
+          surfaceVerticalPadding: 8,
+          groupSpacing: 8,
           iconSize: 24,
           iconSpacing: 12,
-          itemRadius: 12,
+          itemRadius: 0,
           surfaceRadius: 16,
         ),
         form: const HyperFormSize(
@@ -399,11 +430,12 @@ final class HyperSizeScheme {
           itemHorizontalPadding: 16,
         ),
         tabBar: const HyperTabBarSize(
-          padding: EdgeInsets.symmetric(horizontal: 4),
+          padding: EdgeInsets.all(4),
           height: 42,
           separatedRadius: 12,
           segmentedRadius: 8,
-          itemSpacing: 9,
+          itemSpacing: 4,
+          itemHorizontalPadding: 20,
           underlineThickness: 2,
         ),
         breadcrumb: const HyperBreadcrumbSize(
@@ -630,6 +662,7 @@ final class HyperSizeScheme {
           expandedHeight: 160,
           titleHorizontalPadding: 26,
         ),
+        chart: const HyperChartSize(),
         drawer: const HyperDrawerSize(width: 304, radius: 16),
         toast: const HyperMessageSize(
           maxWidth: 400,
@@ -690,7 +723,7 @@ final class HyperSizeScheme {
         ),
         descriptionList: const HyperDescriptionListSize(
           radius: 20,
-          cellPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          cellPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
           columnSpacing: 20,
           rowSpacing: 12,
           labelValueSpacing: 12,
@@ -784,6 +817,9 @@ final class HyperSizeScheme {
           collapsedIconSize: 24,
           collapsedRowGap: 8,
           itemSpacing: 12,
+          itemPadding: 12,
+          trailingSpacing: 12,
+          badgeSpacing: 12,
           rowGap: null,
           indent: 16,
           sectionSpacing: 16,
@@ -838,11 +874,12 @@ final class HyperSizeScheme {
           itemHorizontalPadding: 16,
         ),
         tabBar: const HyperTabBarSize(
-          padding: EdgeInsets.symmetric(horizontal: 4),
+          padding: EdgeInsets.all(4),
           height: 44,
           separatedRadius: 16,
           segmentedRadius: 16,
-          itemSpacing: 10,
+          itemSpacing: 4,
+          itemHorizontalPadding: 22,
           underlineThickness: 2,
         ),
         breadcrumb: const HyperBreadcrumbSize(
@@ -1033,6 +1070,7 @@ final class HyperSizeScheme {
   const HyperSizeScheme.desktop()
     : this(
         deviceType: HyperDeviceType.desktop,
+        navigationBar: const HyperNavigationBarSize.desktop(),
         controlHeightXs: 28,
         controlHeightSm: 36,
         controlHeightMd: 44,
@@ -1069,6 +1107,7 @@ final class HyperSizeScheme {
           expandedHeight: 120,
           titleHorizontalPadding: 16,
         ),
+        chart: const HyperChartSize(),
         drawer: const HyperDrawerSize(width: 304, radius: 16),
         toast: const HyperMessageSize(
           maxWidth: 360,
@@ -1129,7 +1168,7 @@ final class HyperSizeScheme {
         ),
         descriptionList: const HyperDescriptionListSize(
           radius: 8,
-          cellPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          cellPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           columnSpacing: 12,
           rowSpacing: 8,
           labelValueSpacing: 8,
@@ -1199,7 +1238,7 @@ final class HyperSizeScheme {
           headerHeight: 36,
           columnWidth: 192,
           minimumColumnWidth: 36,
-          controlColumnWidth: 36,
+          controlColumnWidth: 48,
           horizontalPadding: 8,
           verticalPadding: 4,
           iconSize: 16,
@@ -1223,6 +1262,9 @@ final class HyperSizeScheme {
           collapsedIconSize: 24,
           collapsedRowGap: 8,
           itemSpacing: 12,
+          itemPadding: 12,
+          trailingSpacing: 12,
+          badgeSpacing: 12,
           rowGap: null,
           indent: 16,
           sectionSpacing: 12,
@@ -1277,11 +1319,12 @@ final class HyperSizeScheme {
           itemHorizontalPadding: 16,
         ),
         tabBar: const HyperTabBarSize(
-          padding: EdgeInsets.symmetric(horizontal: 4),
+          padding: EdgeInsets.all(4),
           height: 36,
           separatedRadius: 10,
           segmentedRadius: 10,
-          itemSpacing: 8,
+          itemSpacing: 4,
+          itemHorizontalPadding: 16,
           underlineThickness: 2,
         ),
         breadcrumb: const HyperBreadcrumbSize(
@@ -1508,6 +1551,7 @@ final class HyperSizeScheme {
           expandedHeight: 96,
           titleHorizontalPadding: 12,
         ),
+        chart: const HyperChartSize(),
         drawer: const HyperDrawerSize(width: 200, radius: 16),
         toast: const HyperMessageSize(
           maxWidth: 180,
@@ -1568,7 +1612,7 @@ final class HyperSizeScheme {
         ),
         descriptionList: const HyperDescriptionListSize(
           radius: 20,
-          cellPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          cellPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           columnSpacing: 12,
           rowSpacing: 6,
           labelValueSpacing: 6,
@@ -1662,6 +1706,9 @@ final class HyperSizeScheme {
           collapsedIconSize: 24,
           collapsedRowGap: 8,
           itemSpacing: 8,
+          itemPadding: 8,
+          trailingSpacing: 8,
+          badgeSpacing: 8,
           rowGap: null,
           indent: 12,
           sectionSpacing: 8,
@@ -1716,11 +1763,12 @@ final class HyperSizeScheme {
           itemHorizontalPadding: 16,
         ),
         tabBar: const HyperTabBarSize(
-          padding: EdgeInsets.symmetric(horizontal: 4),
+          padding: EdgeInsets.all(4),
           height: 40,
           separatedRadius: 20,
           segmentedRadius: 20,
-          itemSpacing: 8,
+          itemSpacing: 4,
+          itemHorizontalPadding: 16,
           underlineThickness: 2,
         ),
         breadcrumb: const HyperBreadcrumbSize(
@@ -1927,6 +1975,7 @@ final class HyperSizeScheme {
   final HyperCardSize card;
   final HyperAppBarSize appBar;
   final HyperDrawerSize drawer;
+  final HyperChartSize chart;
   final HyperSidebarSize sidebar;
   final HyperMenuSize menu;
 
@@ -1948,6 +1997,49 @@ final class HyperSizeScheme {
   final HyperButtonSize button;
   final HyperBadgeSize badge;
   final HyperTagSize tag;
+  final HyperLiftSize? _motionLift;
+
+  /// Initial offsets follow the user's legacy lift request on all devices.
+  HyperLiftSize get motionLift =>
+      _motionLift ??
+      HyperLiftSize(
+        hoverOffset: const Offset(0, -2),
+        pressedOffset: Offset.zero,
+        shadowRadius: card.radius,
+      );
+  final HyperImagePreviewSize? _imagePreview;
+  HyperImagePreviewSize get imagePreview =>
+      _imagePreview ??
+      HyperImagePreviewSize(
+        spacing: image.spacing,
+        padding: image.padding,
+        iconSize: image.iconSize,
+      );
+  final HyperImageEditorSize? _imageEditor;
+  HyperImageEditorSize get imageEditor =>
+      _imageEditor ??
+      HyperImageEditorSize(
+        spacing: image.spacing,
+        padding: image.padding,
+        iconSize: image.iconSize,
+        handleLength: image.iconSize,
+        handleThickness: image.progressThickness,
+        lineWidth: 1,
+        handleHitSize: minimumInteractiveDimension,
+      );
+  final HyperImageSize? _image;
+
+  /// D-level derivation from the same device's icon, progress and card metrics.
+  HyperImageSize get image =>
+      _image ??
+      HyperImageSize(
+        iconSize: iconSize,
+        progressSize: progress.circularSize,
+        progressThickness: progress.circularThickness,
+        spacing: spaceSm,
+        padding: card.padding.resolve(TextDirection.ltr).left,
+        radius: card.radius,
+      );
   final HyperAvatarSize avatar;
   final HyperSkeletonSize skeleton;
   final HyperPageIndicatorSize pageIndicator;
@@ -1978,6 +2070,9 @@ final class HyperSizeScheme {
   final HyperSliderSize slider;
   final HyperDividerSize divider;
   final HyperIconSize icon;
+  final HyperNavigationBarSize navigationBar;
+  final HyperRatingSize rating;
+  final HyperTransferSize transfer;
   final HyperProgressSize progress;
 
   HyperSizeScheme copyWith({
@@ -2000,6 +2095,7 @@ final class HyperSizeScheme {
     HyperCardSize? card,
     HyperAppBarSize? appBar,
     HyperDrawerSize? drawer,
+    HyperChartSize? chart,
     HyperSidebarSize? sidebar,
     HyperMenuSize? menu,
     HyperTopNavigationSize? topNavigation,
@@ -2019,6 +2115,10 @@ final class HyperSizeScheme {
     HyperButtonSize? button,
     HyperBadgeSize? badge,
     HyperTagSize? tag,
+    HyperLiftSize? motionLift,
+    HyperImagePreviewSize? imagePreview,
+    HyperImageEditorSize? imageEditor,
+    HyperImageSize? image,
     HyperAvatarSize? avatar,
     HyperSkeletonSize? skeleton,
     HyperPageIndicatorSize? pageIndicator,
@@ -2049,6 +2149,9 @@ final class HyperSizeScheme {
     HyperSliderSize? slider,
     HyperDividerSize? divider,
     HyperIconSize? icon,
+    HyperNavigationBarSize? navigationBar,
+    HyperRatingSize? rating,
+    HyperTransferSize? transfer,
     HyperProgressSize? progress,
   }) => HyperSizeScheme(
     navigationItemSpacing: navigationItemSpacing ?? this.navigationItemSpacing,
@@ -2071,6 +2174,7 @@ final class HyperSizeScheme {
     card: card ?? this.card,
     appBar: appBar ?? this.appBar,
     drawer: drawer ?? this.drawer,
+    chart: chart ?? this.chart,
     sidebar: sidebar ?? this.sidebar,
     menu: menu ?? this.menu,
     topNavigation: topNavigation ?? this.topNavigation,
@@ -2091,6 +2195,10 @@ final class HyperSizeScheme {
     button: button ?? this.button,
     badge: badge ?? this.badge,
     tag: tag ?? this.tag,
+    motionLift: motionLift ?? _motionLift,
+    imagePreview: imagePreview ?? _imagePreview,
+    imageEditor: imageEditor ?? _imageEditor,
+    image: image ?? _image,
     avatar: avatar ?? this.avatar,
     skeleton: skeleton ?? this.skeleton,
     pageIndicator: pageIndicator ?? this.pageIndicator,
@@ -2122,6 +2230,9 @@ final class HyperSizeScheme {
     slider: slider ?? this.slider,
     divider: divider ?? this.divider,
     icon: icon ?? this.icon,
+    navigationBar: navigationBar ?? this.navigationBar,
+    rating: rating ?? this.rating,
+    transfer: transfer ?? this.transfer,
     progress: progress ?? this.progress,
   );
 
@@ -2165,6 +2276,7 @@ final class HyperSizeScheme {
       card: HyperCardSize.lerp(a.card, b.card, t),
       appBar: HyperAppBarSize.lerp(a.appBar, b.appBar, t),
       drawer: HyperDrawerSize.lerp(a.drawer, b.drawer, t),
+      chart: HyperChartSize.lerp(a.chart, b.chart, t),
       dialog: HyperDialogSize.lerp(a.dialog, b.dialog, t),
       toast: HyperMessageSize.lerp(a.toast, b.toast, t),
       snackbar: HyperMessageSize.lerp(a.snackbar, b.snackbar, t),
@@ -2224,6 +2336,14 @@ final class HyperSizeScheme {
       button: HyperButtonSize.lerp(a.button, b.button, t),
       badge: HyperBadgeSize.lerp(a.badge, b.badge, t),
       tag: HyperTagSize.lerp(a.tag, b.tag, t),
+      motionLift: HyperLiftSize.lerp(a.motionLift, b.motionLift, t),
+      imagePreview: HyperImagePreviewSize.lerp(
+        a.imagePreview,
+        b.imagePreview,
+        t,
+      ),
+      imageEditor: HyperImageEditorSize.lerp(a.imageEditor, b.imageEditor, t),
+      image: HyperImageSize.lerp(a.image, b.image, t),
       avatar: HyperAvatarSize.lerp(a.avatar, b.avatar, t),
       skeleton: HyperSkeletonSize.lerp(a.skeleton, b.skeleton, t),
       pageIndicator: HyperPageIndicatorSize.lerp(
@@ -2245,6 +2365,13 @@ final class HyperSizeScheme {
       slider: HyperSliderSize.lerp(a.slider, b.slider, t),
       divider: HyperDividerSize.lerp(a.divider, b.divider, t),
       icon: HyperIconSize.lerp(a.icon, b.icon, t),
+      navigationBar: HyperNavigationBarSize.lerp(
+        a.navigationBar,
+        b.navigationBar,
+        t,
+      ),
+      rating: HyperRatingSize.lerp(a.rating, b.rating, t),
+      transfer: HyperTransferSize.lerp(a.transfer, b.transfer, t),
       progress: HyperProgressSize.lerp(a.progress, b.progress, t),
     );
   }
@@ -2272,6 +2399,7 @@ final class HyperSizeScheme {
           other.card == card &&
           other.appBar == appBar &&
           other.drawer == drawer &&
+          other.chart == chart &&
           other.sidebar == sidebar &&
           other.menu == menu &&
           other.topNavigation == topNavigation &&
@@ -2291,6 +2419,10 @@ final class HyperSizeScheme {
           other.button == button &&
           other.badge == badge &&
           other.tag == tag &&
+          other.motionLift == motionLift &&
+          other.imagePreview == imagePreview &&
+          other.imageEditor == imageEditor &&
+          other.image == image &&
           other.avatar == avatar &&
           other.skeleton == skeleton &&
           other.pageIndicator == pageIndicator &&
@@ -2321,6 +2453,9 @@ final class HyperSizeScheme {
           other.slider == slider &&
           other.divider == divider &&
           other.icon == icon &&
+          other.navigationBar == navigationBar &&
+          other.rating == rating &&
+          other.transfer == transfer &&
           other.progress == progress;
 
   @override
@@ -2344,6 +2479,7 @@ final class HyperSizeScheme {
     card,
     appBar,
     drawer,
+    chart,
     sidebar,
     menu,
     topNavigation,
@@ -2363,6 +2499,10 @@ final class HyperSizeScheme {
     button,
     badge,
     tag,
+    motionLift,
+    imagePreview,
+    imageEditor,
+    image,
     avatar,
     skeleton,
     pageIndicator,
@@ -2393,6 +2533,9 @@ final class HyperSizeScheme {
     slider,
     divider,
     icon,
+    navigationBar,
+    rating,
+    transfer,
     progress,
   ]);
 }

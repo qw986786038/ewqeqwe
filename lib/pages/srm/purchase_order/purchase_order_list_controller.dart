@@ -61,12 +61,18 @@ class PurchaseOrderListController extends LxController {
   }
 
   void setSelectedRows(List<SrmPurchaseOrder> selected) {
+    setSelectedKeys({
+      for (final e in selected)
+        if ((e.id?.trim() ?? '').isNotEmpty) e.id!.trim(),
+    });
+  }
+
+  void setSelectedKeys(Set<Object> keys) {
     selectedIds
       ..clear()
       ..addAll(
-        selected
-            .map((e) => e.id?.trim())
-            .whereType<String>()
+        keys
+            .map((e) => e.toString().trim())
             .where((id) => id.isNotEmpty),
       );
     selectedIds.refresh();

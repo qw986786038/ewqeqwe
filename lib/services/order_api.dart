@@ -93,6 +93,26 @@ class OrderApi {
     }
   }
 
+  /// 更新订单：`PUT /desktop/oac/order`。
+  Future<void> updateOrder(OacOrderCreateBody body) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.updateOrder}');
+    try {
+      final response = await ApiHttp.put(
+        uri,
+        headers: AuthSession.headers(json: true),
+        body: jsonEncode(body.toJson()),
+      );
+      _ensureOk(response, fallback: '更新订单失败');
+    } on OrderApiException {
+      rethrow;
+    } on FormatException {
+      throw OrderApiException('服务器返回数据格式错误');
+    } catch (e) {
+      if (e is OrderApiException) rethrow;
+      throw OrderApiException('网络请求失败：$e');
+    }
+  }
+
   /// 更新订单关联 4A。`agencyCustomerId` 为空字符串或 null 时清空关联。
   Future<void> updateOrderAgency({
     required String id,

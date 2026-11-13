@@ -12,13 +12,17 @@ const _kBorder = Color(0xFFE5E6EB);
 const _kTitle = Color(0xFF1D2129);
 
 /// 联系人详情：`GET /desktop/oac/contact/{id}`。
+///
+/// [embedded] 为 true 时用于详情页内弹窗，不包 Scaffold / AppBar。
 class CustomerContactDetailPage extends StatefulWidget {
   const CustomerContactDetailPage({
     super.key,
     required this.contactId,
+    this.embedded = false,
   });
 
   final String contactId;
+  final bool embedded;
 
   @override
   State<CustomerContactDetailPage> createState() =>
@@ -76,6 +80,10 @@ class _CustomerContactDetailPageState extends State<CustomerContactDetailPage> {
       config: AppThemeConfig.standard(primary: _kPrimary),
       child: Builder(
         builder: (context) {
+          final body = _buildBody(context, data);
+          if (widget.embedded) {
+            return ColoredBox(color: _kPageBg, child: body);
+          }
           return Scaffold(
             backgroundColor: _kPageBg,
             appBar: AppBar(
@@ -109,7 +117,7 @@ class _CustomerContactDetailPageState extends State<CustomerContactDetailPage> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            body: _buildBody(context, data),
+            body: body,
           );
         },
       ),
@@ -473,6 +481,7 @@ class _CareerTableState extends State<_CareerTable> {
                           width: totalW,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               for (var i = 0;
                                   i < _CareerTable._cols.length;
@@ -503,6 +512,7 @@ class _CareerTableState extends State<_CareerTable> {
                             width: totalW,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 for (var i = 0;
                                     i < _CareerTable._cols.length;
@@ -557,9 +567,9 @@ class _CareerTableState extends State<_CareerTable> {
     required bool last,
     required Widget child,
   }) {
+    // 高度由外层固定行高 + Row.stretch 提供；勿用 height: infinity（会与有限 maxHeight 冲突导致未布局）。
     return SizedBox(
       width: width,
-      height: double.infinity,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: header ? const Color(0xFFFAFAFA) : Colors.white,

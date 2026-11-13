@@ -41,7 +41,15 @@ void main() {
     );
     await tester.tap(find.text('请选择'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.chevron_right).first);
+    final treeContext = tester.element(
+      find.byType(HyperTreeView<HyperTreeSelectNode<String>>),
+    );
+    expect(
+      tester.getTopLeft(find.text('团队')).dx -
+          tester.getTopRight(find.byIcon(HyperIcons.chevronRight).first).dx,
+      HyperTheme.sizesOf(treeContext).menu.iconSpacing,
+    );
+    await tester.tap(find.byIcon(HyperIcons.chevronRight).first);
     await tester.pumpAndSettle();
     expect(value, isNull);
     expect(find.text('成员'), findsOneWidget);
@@ -73,7 +81,7 @@ void main() {
       );
       await tester.tap(find.text('请选择'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.chevron_right).first);
+      await tester.tap(find.byIcon(HyperIcons.chevronRight).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('成员'));
       await tester.pump();
@@ -161,7 +169,7 @@ void main() {
     );
     await tester.tap(find.text('请选择'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.chevron_right).first);
+    await tester.tap(find.byIcon(HyperIcons.chevronRight).first);
     await tester.pumpAndSettle();
     expect(find.text('加载失败，点击重试'), findsOneWidget);
     await tester.tap(find.text('加载失败，点击重试'));
@@ -258,7 +266,7 @@ void main() {
     expect(find.text('请选择团队'), findsOneWidget);
     await tester.tap(find.text('请选择'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.chevron_right).first);
+    await tester.tap(find.byIcon(HyperIcons.chevronRight).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('成员'));
     await tester.pumpAndSettle();

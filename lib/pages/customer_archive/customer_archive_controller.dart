@@ -53,6 +53,7 @@ class CustomerArchiveController extends LxController {
 
   /// 列表「列设置」中勾掉的列 id（序号 / 操作始终显示）。
   final hiddenColumnIds = <String>{}.obs;
+  final selectedIds = <String>{}.obs;
 
   final stats = CustomerArchiveStats().obs;
   final rows = <CustomerArchive>[].obs;
@@ -208,6 +209,23 @@ class CustomerArchiveController extends LxController {
       hiddenColumnIds.add(id);
     }
     hiddenColumnIds.refresh();
+  }
+
+  void setSelectedKeys(Set<Object> keys) {
+    selectedIds
+      ..clear()
+      ..addAll(
+        keys
+            .map((e) => e.toString().trim())
+            .where((id) => id.isNotEmpty),
+      );
+    selectedIds.refresh();
+  }
+
+  void clearSelection() {
+    if (selectedIds.isEmpty) return;
+    selectedIds.clear();
+    selectedIds.refresh();
   }
 
   int get totalPages {

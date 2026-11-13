@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
 import 'package:lemon_ui/lemon_ui.dart';
+import 'package:pinyin/pinyin.dart';
 
 import '../../../services/customer_api.dart';
 
@@ -228,7 +229,15 @@ class _ContactOcrPreviewDialogState extends State<_ContactOcrPreviewDialog> {
     }
 
     set(_nameZhCtrl, data.nameZh);
-    set(_nameEnCtrl, data.nameEn);
+    var nameEn = data.nameEn?.trim();
+    // 预览阶段即补 Name：无英文名时用中文姓名转拼音（与确认回填一致）。
+    if ((nameEn == null || nameEn.isEmpty) &&
+        data.nameZh != null &&
+        data.nameZh!.trim().isNotEmpty) {
+      final py = _chineseToEnglishName(data.nameZh!);
+      if (py.isNotEmpty) nameEn = py;
+    }
+    set(_nameEnCtrl, nameEn);
     set(_ageCtrl, data.ageDesc);
     set(_enterpriseCtrl, data.relatedEnterprise);
     set(_cityCtrl, data.city);
@@ -244,7 +253,12 @@ class _ContactOcrPreviewDialogState extends State<_ContactOcrPreviewDialog> {
 
   void _reparse() {
     setState(() {
-      _applyParsed(parseContactOcrText(_contentCtrl.text));
+      _applyParsed(
+        parseContactOcrText(
+          _contentCtrl.text,
+          kvData: widget.kvData,
+        ),
+      );
     });
   }
 
@@ -438,25 +452,19 @@ class _ContactOcrPreviewDialogState extends State<_ContactOcrPreviewDialog> {
   }
 }
 
-/// 从 OCR 文本 / kvData 解析联系人字段。
+/// 从 OCR 文本 / kvData 解析联系人字段（支持一次回填多个字段）。
 ContactOcrFillData parseContactOcrText(
   String raw, {
   Map<String, dynamic>? kvData,
 }) {
   final text = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
-  String? fromKv(List<String> keys) {
-    if (kvData == null || kvData.isEmpty) return null;
-    for (final entry in kvData.entries) {
-      final k = entry.key.toString().trim();
-      for (final want in keys) {
-        if (k == want || k.contains(want)) {
-          final v = entry.value?.toString().trim() ?? '';
-          if (v.isNotEmpty) return v;
-        }
-      }
-    }
-    return null;
-  }
+  final kv = <String, String>{
+    ...OacGeneralOcrResult.flattenKvMap(kvData),
+    ...OacGeneralOcrResult.parseLabeledFields(text),
+  };
+  String? fromKv(List<String> keys) =>
+      OacGeneralOcrResult.pickFromKv(kv, keys) ??
+      OacGeneralOcrResult.valueUntilNextLabel(text, keys);
 
   String? pick(RegExp re, {int group = 1}) {
     final m = re.firstMatch(text);
@@ -465,21 +473,83 @@ ContactOcrFillData parseContactOcrText(
     return (v == null || v.isEmpty) ? null : v;
   }
 
-  var nameZh = fromKv(const ['姓名', 'name', 'Name']) ??
+  // 中文姓名：勿把裸 Name/name 并入此处，名片常见 Name 为英文名。
+  var nameZh = fromKv(const [
+        '姓名',
+        '中文姓名',
+        '中文名',
+        'nameCn',
+        'nameCN',
+        'nameZh',
+        'nameZH',
+        'chineseName',
+        'Chinese Name',
+      ]) ??
       pick(RegExp(r'姓名[:：\s]*([^\s性别民族出生住公民手机电话邮箱]{1,20})'));
   // 「姓名张三」无空格
   nameZh ??= pick(RegExp(r'姓名([^\s性别民族出生住址公民]{2,8})'));
 
-  final genderRaw = fromKv(const ['性别', 'gender', 'Sex']) ??
+  var nameEn = fromKv(const [
+        '英文名',
+        '英文姓名',
+        'Name',
+        'nameEn',
+        'nameEN',
+        'englishName',
+        'English Name',
+        'English name',
+        'EN Name',
+      ]) ??
+      pick(
+        RegExp(
+          r'(?:英文名|英文姓名|English\s*Name|Name)\s*[:：]\s*([A-Za-z][A-Za-z .\-]{1,40})',
+          caseSensitive: false,
+        ),
+      );
+
+  // 歧义键 name：按内容语种分流（含汉字 → 中文姓名；纯拉丁 → Name）。
+  final ambiguousName = fromKv(const ['name']);
+  if (ambiguousName != null) {
+    if (_looksChineseName(ambiguousName)) {
+      nameZh ??= ambiguousName;
+    } else if (_looksLatinName(ambiguousName)) {
+      nameEn ??= ambiguousName;
+    }
+  }
+
+  // 若「姓名」误吃到纯英文，挪到 Name；反之亦然。
+  if (nameZh != null &&
+      nameEn == null &&
+      _looksLatinName(nameZh) &&
+      !_looksChineseName(nameZh)) {
+    nameEn = nameZh;
+    nameZh = null;
+  } else if (nameEn != null &&
+      nameZh == null &&
+      _looksChineseName(nameEn) &&
+      !_looksLatinName(nameEn)) {
+    nameZh = nameEn;
+    nameEn = null;
+  }
+
+  final genderRaw = fromKv(const ['性别', 'gender', 'Sex', 'sex']) ??
       pick(RegExp(r'性别[:：\s]*([男女])'));
   String? gender;
-  if (genderRaw == '男' || genderRaw == '1') gender = '1';
-  if (genderRaw == '女' || genderRaw == '2') gender = '2';
+  if (genderRaw == '男' || genderRaw == '1' || genderRaw?.toLowerCase() == 'male') {
+    gender = '1';
+  }
+  if (genderRaw == '女' || genderRaw == '2' || genderRaw?.toLowerCase() == 'female') {
+    gender = '2';
+  }
 
+  final birthRaw = fromKv(const ['出生', '出生日期', 'birthDate', 'birth']);
   final birthY = pick(RegExp(r'出生[:：\s]*(\d{4})\s*年')) ??
-      pick(RegExp(r'(\d{4})\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日'));
-  String? ageDesc;
-  if (birthY != null) {
+      pick(RegExp(r'(\d{4})\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日')) ??
+      (birthRaw == null
+          ? null
+          : RegExp(r'(\d{4})').firstMatch(birthRaw)?.group(1));
+  String? ageDesc = fromKv(const ['年龄描述', '年龄', 'ageDesc', 'age']);
+  if (ageDesc == null && birthY != null) {
     final y = int.tryParse(birthY);
     if (y != null && y > 1900 && y < 2100) {
       final age = DateTime.now().year - y;
@@ -487,7 +557,14 @@ ContactOcrFillData parseContactOcrText(
     }
   }
 
-  var address = fromKv(const ['住址', '地址', '详细地址', 'address', 'Address']) ??
+  var address = fromKv(const [
+        '住址',
+        '地址',
+        '详细地址',
+        '办公地址',
+        'address',
+        'Address',
+      ]) ??
       pick(
         RegExp(
           r'住\s*址[:：\s]*(.+?)(?=公民身份号码|身份证号|手机|电话|邮箱|$)',
@@ -510,13 +587,26 @@ ContactOcrFillData parseContactOcrText(
   city ??= fromKv(const ['所在城市', '城市', 'city', 'City']);
 
   // 身份证号仅作校验，不写入电话。
-  final idNo = fromKv(const ['公民身份号码', '身份证号', '身份证']) ??
+  final idNo = fromKv(const [
+        '公民身份号码',
+        '身份证号',
+        '身份证',
+        'idNumber',
+        'idNo',
+      ]) ??
       pick(RegExp(r'(?:公民身份号码|身份证号?码?)[:：\s]*(\d{15}|\d{17}[\dXx])')) ??
       pick(RegExp(r'(?<!\d)(\d{17}[\dXx]|\d{15})(?!\d)'));
 
-  String? mobile = fromKv(const ['手机号', '手机', 'mobile', 'Mobile']);
-  String? phone = fromKv(const ['电话', '座机', 'tel', 'Tel', 'phone']);
-  final email = fromKv(const ['邮箱', 'email', 'Email', 'E-mail']) ??
+  String? mobile = fromKv(const [
+    '手机号',
+    '手机',
+    '移动电话',
+    'mobile',
+    'Mobile',
+    'phoneNumber',
+  ]);
+  String? phone = fromKv(const ['电话', '座机', '固话', 'tel', 'Tel', 'phone']);
+  final email = fromKv(const ['邮箱', '电子邮箱', 'email', 'Email', 'E-mail']) ??
       pick(RegExp(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}'));
 
   // 从全文抽手机 / 座机，避开身份证号。
@@ -533,13 +623,31 @@ ContactOcrFillData parseContactOcrText(
       .toList();
   if (phone == null && phones.isNotEmpty) phone = phones.first;
 
-  final title = fromKv(const ['部门/职位', '职位', '职务', '部门', 'title']);
-  final role = fromKv(const ['职能描述', '职能', 'job']);
-  final enterprise = fromKv(const ['关联企业', '企业', '公司', '单位', 'org']);
-  final remark = fromKv(const ['备注', 'remark']);
+  final title = fromKv(const [
+    '部门/职位',
+    '职位',
+    '职务',
+    '部门',
+    'title',
+    'deptTitle',
+    'occupation',
+  ]);
+  final role = fromKv(const ['职能描述', '职能', 'job', 'jobDesc']);
+  final enterprise = fromKv(const [
+    '关联企业',
+    '就职企业',
+    '企业',
+    '公司',
+    '单位',
+    'org',
+    'employer',
+    'companyName',
+  ]);
+  final remark = fromKv(const ['备注', 'remark', 'remarks']);
 
   return ContactOcrFillData(
     nameZh: nameZh,
+    nameEn: nameEn,
     gender: gender,
     ageDesc: ageDesc,
     relatedEnterprise: enterprise,
@@ -552,4 +660,34 @@ ContactOcrFillData parseContactOcrText(
     email: email,
     remark: remark,
   );
+}
+
+bool _looksChineseName(String raw) {
+  final s = raw.trim();
+  if (s.isEmpty) return false;
+  return RegExp(r'[\u4e00-\u9fff]').hasMatch(s);
+}
+
+bool _looksLatinName(String raw) {
+  final s = raw.trim();
+  if (s.isEmpty) return false;
+  if (_looksChineseName(s)) return false;
+  return RegExp(r'^[A-Za-z][A-Za-z .\-]{0,40}$').hasMatch(s);
+}
+
+String _chineseToEnglishName(String zh) {
+  final raw = PinyinHelper.getPinyinE(
+    zh.trim(),
+    separator: ' ',
+    format: PinyinFormat.WITHOUT_TONE,
+  ).trim();
+  if (raw.isEmpty) return '';
+  return raw
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty)
+      .map((w) {
+        final lower = w.toLowerCase();
+        return '${lower[0].toUpperCase()}${lower.substring(1)}';
+      })
+      .join(' ');
 }

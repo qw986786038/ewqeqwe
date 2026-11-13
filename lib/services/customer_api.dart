@@ -290,6 +290,9 @@ class CustomerApi {
       );
 
   /// 解析联系人导入文件：`POST /desktop/oac/customer/importContact/preview`。
+  ///
+  /// 兼容 `data` 为列表，或 `contacts` / `list` / `rows`；
+  /// 以及上级 / 下级独立数组（按主联系人姓名挂到对应联系人）。
   Future<List<Map<String, dynamic>>> previewContactImport({
     required Uint8List bytes,
     required String fileName,
@@ -301,14 +304,25 @@ class CustomerApi {
       emptyFileMessage: '请选择要导入的联系人 Excel 文件',
       failLabel: '解析联系人导入文件',
     );
-    return _asMapList(data['contacts']);
+    return _parseContactImportPreview(data);
   }
 
   /// 确认导入联系人：`POST /desktop/oac/customer/importContact/confirm`。
-  Future<void> confirmContactImport(List<Map<String, dynamic>> contacts) =>
+  ///
+  /// 请求体为顶层 `{ contacts, superiors, subordinates }`，
+  /// 上级/下级通过 `contactName` 关联主联系人，不嵌套在 contacts 内。
+  Future<void> confirmContactImport({
+    required List<Map<String, dynamic>> contacts,
+    List<Map<String, dynamic>> superiors = const [],
+    List<Map<String, dynamic>> subordinates = const [],
+  }) =>
       _postImportConfirm(
         path: ApiConfig.customerImportContactConfirm,
-        body: {'contacts': contacts},
+        body: {
+          'contacts': contacts,
+          'superiors': superiors,
+          'subordinates': subordinates,
+        },
         failLabel: '导入联系人',
       );
 
@@ -331,7 +345,9 @@ class CustomerApi {
       emptyFileMessage: '请选择要导入的经营主体 Excel 文件',
       failLabel: '解析经营主体导入文件',
     );
-    return _asMapList(data['enterprises']);
+    final list = _asMapList(data['enterprises']);
+    if (list.isNotEmpty) return list;
+    return _asMapList(data['items'] ?? data['list'] ?? data['rows']);
   }
 
   /// 确认导入经营主体：`POST /desktop/oac/customer/importEnterprise/confirm`。
@@ -402,6 +418,8 @@ class CustomerApi {
       final data = body['data'];
       if (data is Map<String, dynamic>) return data;
       if (data is Map) return Map<String, dynamic>.from(data);
+      // 部分接口直接返回列表。
+      if (data is List) return <String, dynamic>{'items': data};
       return <String, dynamic>{};
     } on CustomerApiException {
       rethrow;
@@ -411,6 +429,243 @@ class CustomerApi {
       if (e is CustomerApiException) rethrow;
       throw CustomerApiException('网络请求失败：$e');
     }
+  }
+
+  /// 联系人导入预览：归一化字段名，并把独立上级/下级 sheet 挂回主联系人。
+  static List<Map<String, dynamic>> _parseContactImportPreview(
+    Map<String, dynamic> data,
+  ) {
+    var contacts = _asMapList(data['contacts']);
+    if (contacts.isEmpty) {
+      contacts = _asMapList(
+        data['items'] ?? data['list'] ?? data['rows'] ?? data['records'],
+      );
+    }
+    final topSuperiors = _asMapList(
+      data['superiors'] ??
+          data['superiorList'] ??
+          data['superiorContacts'] ??
+          data['contactSuperiors'],
+    );
+    final topSubordinates = _asMapList(
+      data['subordinates'] ??
+          data['subordinateList'] ??
+          data['subordinateContacts'] ??
+          data['contactSubordinates'],
+    );
+
+    return [
+      for (final raw in contacts) _normalizeContactImportRow(
+        raw,
+        topSuperiors: topSuperiors,
+        topSubordinates: topSubordinates,
+      ),
+    ];
+  }
+
+  static Map<String, dynamic> _normalizeContactImportRow(
+    Map<String, dynamic> raw, {
+    List<Map<String, dynamic>> topSuperiors = const [],
+    List<Map<String, dynamic>> topSubordinates = const [],
+  }) {
+    final out = Map<String, dynamic>.from(raw);
+
+    String? pick(List<String> keys) {
+      for (final key in keys) {
+        if (!raw.containsKey(key) && !out.containsKey(key)) continue;
+        final v = raw[key] ?? out[key];
+        final text = _importCellText(v);
+        if (text != null) return text;
+      }
+      return null;
+    }
+
+    void fill(String key, List<String> aliases) {
+      final current = _importCellText(out[key]);
+      if (current != null) {
+        out[key] = current;
+        return;
+      }
+      final v = pick(aliases);
+      if (v != null) out[key] = v;
+    }
+
+    fill('name', const ['name', 'nameZh', 'contactName', '姓名']);
+    fill('nameEn', const ['nameEn', 'englishName', 'Name', '英文名']);
+    fill('gender', const ['gender', 'sex', 'genderLabel', '性别']);
+    fill('ageDesc', const ['ageDesc', 'age', '年龄段', '年龄']);
+    fill('relatedEnterprise', const [
+      'relatedEnterprise',
+      'enterpriseName',
+      'enterpriseFullName',
+      'orgName',
+      'companyName',
+      '关联企业',
+    ]);
+    fill('city', const ['city', '所在城市', '城市']);
+    fill('address', const ['address', 'detailAddress', '详细地址', '住址']);
+    fill('deptTitle', const [
+      'deptTitle',
+      'title',
+      'position',
+      '部门/职位',
+      '职位',
+      '职务',
+    ]);
+    fill('jobDesc', const ['jobDesc', 'job', 'role', '职能描述', '职能']);
+    fill('marketScope', const [
+      'marketScope',
+      'responsibleMarket',
+      '负责市场范围',
+      '市场范围',
+    ]);
+    fill('responsibleBrands', const [
+      'responsibleBrands',
+      'brands',
+      'brandNames',
+      '负责品牌',
+    ]);
+    fill('tenure', const ['tenure', '在职时间']);
+    fill('phones', const [
+      'phones',
+      'phone',
+      'mobile',
+      'mobilePhone',
+      'phoneNumber',
+      '手机号',
+      '手机',
+    ]);
+    fill('tel', const [
+      'tel',
+      'telephone',
+      'landline',
+      'fixedPhone',
+      '电话',
+      '座机',
+      '固话',
+    ]);
+    fill('emails', const ['emails', 'email', 'mail', '邮箱', '电子邮箱']);
+    fill('remark', const ['remark', 'remarks', '备注']);
+
+    var superiors = _asMapList(
+      raw['superiors'] ??
+          raw['superiorList'] ??
+          raw['superiorContacts'] ??
+          raw['contactSuperiors'],
+    );
+    var subordinates = _asMapList(
+      raw['subordinates'] ??
+          raw['subordinateList'] ??
+          raw['subordinateContacts'] ??
+          raw['contactSubordinates'],
+    );
+
+    final selfName = _importCellText(out['name']) ?? '';
+    if (superiors.isEmpty && topSuperiors.isNotEmpty && selfName.isNotEmpty) {
+      superiors = [
+        for (final s in topSuperiors)
+          if ((_importCellText(s['contactName']) ??
+                  _importCellText(s['mainContactName']) ??
+                  _importCellText(s['ownerName']) ??
+                  '') ==
+              selfName)
+            s,
+      ];
+    }
+    if (subordinates.isEmpty &&
+        topSubordinates.isNotEmpty &&
+        selfName.isNotEmpty) {
+      subordinates = [
+        for (final s in topSubordinates)
+          if ((_importCellText(s['contactName']) ??
+                  _importCellText(s['mainContactName']) ??
+                  _importCellText(s['ownerName']) ??
+                  '') ==
+              selfName)
+            s,
+      ];
+    }
+
+    out['superiors'] = [
+      for (final s in superiors) _normalizeContactRelationRow(s),
+    ];
+    out['subordinates'] = [
+      for (final s in subordinates) _normalizeContactRelationRow(s),
+    ];
+    return out;
+  }
+
+  static Map<String, dynamic> _normalizeContactRelationRow(
+    Map<String, dynamic> raw,
+  ) {
+    final out = Map<String, dynamic>.from(raw);
+    String? pick(List<String> keys) {
+      for (final key in keys) {
+        final text = _importCellText(raw[key] ?? out[key]);
+        if (text != null) return text;
+      }
+      return null;
+    }
+
+    void fill(String key, List<String> aliases) {
+      final current = _importCellText(out[key]);
+      if (current != null) {
+        out[key] = current;
+        return;
+      }
+      final v = pick(aliases);
+      if (v != null) out[key] = v;
+    }
+
+    fill('contactName', const [
+      'contactName',
+      'mainContactName',
+      'ownerName',
+      '主联系人姓名',
+      '主联系人',
+    ]);
+    fill('name', const ['name', 'nameZh', '姓名']);
+    fill('nameEn', const ['nameEn', 'englishName', 'Name', '英文名']);
+    fill('gender', const ['gender', 'sex', 'genderLabel', '性别']);
+    fill('ageDesc', const ['ageDesc', 'age', '年龄段', '年龄']);
+    fill('relatedEnterprise', const [
+      'relatedEnterprise',
+      'enterpriseName',
+      'orgName',
+      'companyName',
+      '关联企业',
+    ]);
+    fill('city', const ['city', '所在城市', '城市']);
+    fill('address', const ['address', 'detailAddress', '详细地址']);
+    fill('deptTitle', const ['deptTitle', 'title', 'position', '部门/职位', '职位']);
+    fill('jobDesc', const ['jobDesc', 'job', 'role', '职能描述']);
+    fill('marketScope', const ['marketScope', '负责市场范围', '市场范围']);
+    fill('responsibleBrands', const ['responsibleBrands', 'brands', '负责品牌']);
+    fill('tenure', const ['tenure', '在职时间']);
+    fill('phones', const ['phones', 'phone', 'mobile', '手机号', '手机']);
+    fill('tel', const ['tel', 'telephone', '电话', '座机']);
+    fill('emails', const ['emails', 'email', '邮箱']);
+    fill('remark', const ['remark', 'remarks', '备注']);
+    return out;
+  }
+
+  static String? _importCellText(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      final s = raw.trim();
+      return s.isEmpty ? null : s;
+    }
+    if (raw is num || raw is bool) return raw.toString();
+    if (raw is Iterable) {
+      final parts = <String>[
+        for (final e in raw)
+          if (e != null && e.toString().trim().isNotEmpty) e.toString().trim(),
+      ];
+      if (parts.isEmpty) return null;
+      return parts.join(',');
+    }
+    final s = raw.toString().trim();
+    return s.isEmpty ? null : s;
   }
 
   Future<void> _postImportConfirm({
@@ -1197,6 +1452,12 @@ class OacGeneralOcrResult {
   List<String> subTypes = const [];
   String? rawData;
 
+  /// 展平后的键值（字符串），供多字段回填。
+  Map<String, String> get flatKv => flattenKvMap(kvData);
+
+  /// 按候选键名取第一个非空值（精确匹配优先，其次包含匹配）。
+  String? pickKv(List<String> keys) => pickFromKv(flatKv, keys);
+
   static OacGeneralOcrResult fromJson(Map<String, dynamic> json) {
     String? s(String key) {
       final v = json[key];
@@ -1217,9 +1478,42 @@ class OacGeneralOcrResult {
         for (final e in subRaw)
           if (e != null && e.toString().trim().isNotEmpty) e.toString().trim(),
     ];
-    Map<String, dynamic>? kv;
-    final kvRaw = json['kvData'];
-    if (kvRaw is Map) kv = Map<String, dynamic>.from(kvRaw);
+
+    final merged = <String, dynamic>{};
+    void absorb(dynamic raw) {
+      final map = coerceToMap(raw);
+      if (map == null || map.isEmpty) return;
+      merged.addAll(map);
+    }
+
+    absorb(json['kvData']);
+    absorb(json['kvInfo']);
+    absorb(json['KvInfo']);
+    absorb(json['data']);
+    absorb(json['result']);
+    final rawData = s('rawData');
+    if (rawData != null) {
+      try {
+        absorb(jsonDecode(rawData));
+      } catch (_) {}
+    }
+    // 常见嵌套：raw / data 里再包一层 KvInfo.Data / kvDetails。
+    for (final nestKey in const [
+      'kvData',
+      'kvInfo',
+      'KvInfo',
+      'data',
+      'Data',
+      'kvDetails',
+      'KvDetails',
+    ]) {
+      absorb(merged[nestKey]);
+    }
+
+    final flat = flattenKvMap(merged);
+    final kv = flat.isEmpty
+        ? null
+        : <String, dynamic>{for (final e in flat.entries) e.key: e.value};
 
     final wordCountRaw = json['wordCount'];
     int? wordCount;
@@ -1242,7 +1536,371 @@ class OacGeneralOcrResult {
       ..words = words
       ..kvData = kv
       ..subTypes = subTypes
-      ..rawData = s('rawData');
+      ..rawData = rawData;
+  }
+
+  /// 将任意 kv 结构展平为 `字段名 -> 文本值`。
+  static Map<String, String> flattenKvMap(dynamic raw) {
+    final out = <String, String>{};
+    void walk(dynamic node, {String? fallbackKey}) {
+      if (node == null) return;
+      if (node is String) {
+        final decoded = coerceToMap(node);
+        if (decoded != null) {
+          walk(decoded);
+          return;
+        }
+        final t = node.trim();
+        if (t.isNotEmpty && fallbackKey != null && fallbackKey.isNotEmpty) {
+          out.putIfAbsent(fallbackKey, () => t);
+        }
+        return;
+      }
+      if (node is num || node is bool) {
+        if (fallbackKey != null && fallbackKey.isNotEmpty) {
+          out.putIfAbsent(fallbackKey, () => '$node');
+        }
+        return;
+      }
+      if (node is List) {
+        final parts = <String>[];
+        for (final e in node) {
+          if (e is Map) {
+            walk(e);
+            final v = _kvLeafValue(e);
+            if (v != null) parts.add(v);
+          } else {
+            final t = e?.toString().trim() ?? '';
+            if (t.isNotEmpty) parts.add(t);
+          }
+        }
+        if (parts.isNotEmpty &&
+            fallbackKey != null &&
+            fallbackKey.isNotEmpty) {
+          out.putIfAbsent(fallbackKey, () => parts.join('、'));
+        }
+        return;
+      }
+      if (node is! Map) return;
+      final map = Map<String, dynamic>.from(node);
+      final leaf = _kvLeafValue(map);
+      final alias = map['keyName']?.toString().trim() ??
+          map['KeyName']?.toString().trim() ??
+          map['key']?.toString().trim();
+      if (leaf != null) {
+        if (fallbackKey != null && fallbackKey.isNotEmpty) {
+          out.putIfAbsent(fallbackKey, () => leaf);
+        }
+        if (alias != null && alias.isNotEmpty) {
+          out.putIfAbsent(alias, () => leaf);
+        }
+      }
+      for (final e in map.entries) {
+        final key = e.key.toString().trim();
+        if (key.isEmpty) continue;
+        final lower = key.toLowerCase();
+        if (lower == 'value' ||
+            lower == 'key' ||
+            lower == 'keyname' ||
+            lower == 'keyconfidence' ||
+            lower == 'valueconfidence' ||
+            lower == 'confidence' ||
+            lower == 'kvcount' ||
+            lower == 'data' && e.value is! Map) {
+          continue;
+        }
+        final childLeaf = _kvLeafValue(e.value);
+        if (childLeaf != null) {
+          out.putIfAbsent(key, () => childLeaf);
+          continue;
+        }
+        walk(e.value, fallbackKey: key);
+      }
+    }
+
+    walk(raw);
+    return out;
+  }
+
+  /// 从展平 kv / 正文「标签：值」行中取字段。
+  static String? pickFromKv(Map<String, String> kv, List<String> keys) {
+    if (kv.isEmpty || keys.isEmpty) return null;
+    for (final want in keys) {
+      final w = want.trim();
+      if (w.isEmpty) continue;
+      final exact = kv[w];
+      if (exact != null && exact.trim().isNotEmpty) return exact.trim();
+      for (final e in kv.entries) {
+        if (e.key.toLowerCase() == w.toLowerCase() &&
+            e.value.trim().isNotEmpty) {
+          return e.value.trim();
+        }
+      }
+    }
+    for (final want in keys) {
+      final w = want.trim();
+      if (w.isEmpty) continue;
+      for (final e in kv.entries) {
+        if ((e.key.contains(w) || w.contains(e.key)) &&
+            e.value.trim().isNotEmpty) {
+          return e.value.trim();
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 客户档案图片文字识别常见字段标签（匹配时按长度降序，避免「账号」误吃「银行账号」）。
+  static const List<String> defaultOcrFieldLabels = [
+    '统一社会信用代码',
+    '基本存款账户编号',
+    '基本存款账户账号',
+    '开户银行账号',
+    '纳税人识别号',
+    '法定代表人',
+    '注册电话',
+    '联系电话',
+    '注册地址',
+    '注册资本',
+    '注册资金',
+    '注册日期',
+    '成立日期',
+    '出生日期',
+    '详细地址',
+    '办公地址',
+    '经营地址',
+    '企业名称',
+    '公司名称',
+    '主体全称',
+    '企业简称',
+    '企业类型',
+    '企业性质',
+    '品牌简称',
+    '品牌名称',
+    '品牌性质',
+    '客户标签',
+    '所属行业',
+    '代言人信息',
+    '营收规模/年',
+    '营收规模',
+    '人员规模',
+    '开票名称',
+    '发票抬头',
+    '开户银行',
+    '银行账号',
+    '结算账号',
+    '账户号码',
+    '账号号码',
+    '英文姓名',
+    '中文姓名',
+    '职能描述',
+    '部门/职位',
+    '关联企业',
+    '就职企业',
+    '所在城市',
+    '移动电话',
+    '电子邮箱',
+    '年龄描述',
+    '年龄段',
+    '账号名',
+    '开户行',
+    '英文名',
+    '中文名',
+    '代言人',
+    '信用代码',
+    '营业执照',
+    '手机号',
+    'Name',
+    '行业',
+    '网址',
+    '官网',
+    '简称',
+    '法人',
+    '类型',
+    '名称',
+    '税号',
+    '帐号',
+    '账号',
+    '平台',
+    '链接',
+    '姓名',
+    '性别',
+    '出生',
+    '住址',
+    '地址',
+    '职位',
+    '职务',
+    '部门',
+    '职能',
+    '手机',
+    '座机',
+    '固话',
+    '电话',
+    '邮箱',
+    '备注',
+    '年龄',
+    '城市',
+    '单位',
+    '公司',
+    '企业',
+  ];
+
+  /// 从识别正文抽取「标签：值」以及「标签 值 标签 值」（空格分隔、遇下一标签截断）。
+  static Map<String, String> parseLabeledFields(String text) {
+    final out = <String, String>{};
+    final normalized =
+        text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+    if (normalized.isEmpty) return out;
+    final lineRe = RegExp(
+      r'^\s*([^:：\n]{1,40}?)\s*[:：]\s*(.+?)\s*$',
+      multiLine: true,
+    );
+    for (final m in lineRe.allMatches(normalized)) {
+      final key = m.group(1)?.trim() ?? '';
+      final value = m.group(2)?.trim() ?? '';
+      if (key.isEmpty || value.isEmpty) continue;
+      if (key.length > 24) continue;
+      out.putIfAbsent(key, () => value);
+    }
+    // 同行多组：姓名：张三 手机：138… 邮箱：a@b.com
+    final inlineRe = RegExp(
+      r'([^\s:：，,；;]{1,16})\s*[:：]\s*([^\s:：][^\n]*?)(?=(?:\s+[^\s:：，,；;]{1,16}\s*[:：])|$)',
+    );
+    for (final line in normalized.split('\n')) {
+      final hits = inlineRe.allMatches(line).toList();
+      if (hits.length < 2) continue;
+      for (final m in hits) {
+        final key = m.group(1)?.trim() ?? '';
+        final value = m.group(2)?.trim() ?? '';
+        if (key.isEmpty || value.isEmpty || key.length > 16) continue;
+        out.putIfAbsent(key, () => value);
+      }
+    }
+    // 同行无冒号：开户行 测试工商银行 银行账号 789
+    for (final e in parseSpaceSeparatedLabeledFields(normalized).entries) {
+      out.putIfAbsent(e.key, () => e.value);
+    }
+    return out;
+  }
+
+  /// 按已知标签切分「标签 值 标签 值」；值取到下一标签之前。
+  static Map<String, String> parseSpaceSeparatedLabeledFields(
+    String text, {
+    List<String>? knownLabels,
+  }) {
+    final out = <String, String>{};
+    final raw = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+    if (raw.isEmpty) return out;
+    final labels = [...(knownLabels ?? defaultOcrFieldLabels)]
+      ..sort((a, b) => b.length.compareTo(a.length));
+    if (labels.isEmpty) return out;
+
+    final hits = <({int start, int end, String label})>[];
+    var i = 0;
+    while (i < raw.length) {
+      var matched = false;
+      for (final label in labels) {
+        final end = i + label.length;
+        if (end > raw.length) continue;
+        if (raw.substring(i, end) != label) continue;
+        final beforeOk = i == 0 || RegExp(r'[\s:：，,；;\n]').hasMatch(raw[i - 1]);
+        final afterOk = end >= raw.length ||
+            RegExp(r'[\s:：]').hasMatch(raw[end]);
+        if (!beforeOk || !afterOk) continue;
+        hits.add((start: i, end: end, label: label));
+        i = end;
+        matched = true;
+        break;
+      }
+      if (!matched) i++;
+    }
+    if (hits.isEmpty) return out;
+
+    for (var h = 0; h < hits.length; h++) {
+      var vs = hits[h].end;
+      while (vs < raw.length && RegExp(r'[\s:：]').hasMatch(raw[vs])) {
+        vs++;
+      }
+      final ve = h + 1 < hits.length ? hits[h + 1].start : raw.length;
+      if (vs >= ve) continue;
+      final value = raw.substring(vs, ve).trim();
+      if (value.isEmpty) continue;
+      out.putIfAbsent(hits[h].label, () => value);
+    }
+    return out;
+  }
+
+  /// 取某组标签后的值，遇下一已知标签即停（可用于兜底正则之前）。
+  static String? valueUntilNextLabel(
+    String text,
+    List<String> labels, {
+    List<String>? stopLabels,
+  }) {
+    if (text.trim().isEmpty || labels.isEmpty) return null;
+    final spaced = parseSpaceSeparatedLabeledFields(
+      text,
+      knownLabels: [
+        ...labels,
+        ...(stopLabels ?? defaultOcrFieldLabels),
+      ],
+    );
+    return pickFromKv(spaced, labels);
+  }
+
+  static Map<String, dynamic>? coerceToMap(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is String) {
+      final t = raw.trim();
+      if (t.isEmpty || (!t.startsWith('{') && !t.startsWith('['))) {
+        return null;
+      }
+      try {
+        final decoded = jsonDecode(t);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static String? _kvLeafValue(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      final t = raw.trim();
+      if (t.isEmpty) return null;
+      if (t.startsWith('{') || t.startsWith('[')) {
+        final map = coerceToMap(t);
+        if (map != null) return _kvLeafValue(map);
+      }
+      return t;
+    }
+    if (raw is num || raw is bool) return '$raw';
+    if (raw is List) {
+      final parts = <String>[
+        for (final e in raw)
+          if (_kvLeafValue(e) != null) _kvLeafValue(e)!,
+      ];
+      if (parts.isEmpty) return null;
+      return parts.join('、');
+    }
+    if (raw is Map) {
+      for (final key in const [
+        'value',
+        'Value',
+        'text',
+        'Text',
+        'content',
+        'Content',
+        'word',
+        'Word',
+      ]) {
+        final v = raw[key];
+        if (v == null) continue;
+        final leaf = _kvLeafValue(v);
+        if (leaf != null) return leaf;
+      }
+    }
+    return null;
   }
 }
 

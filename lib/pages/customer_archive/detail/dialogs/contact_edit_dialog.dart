@@ -113,6 +113,20 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
     return t.isEmpty ? null : t;
   }
 
+  String _resolveCustomerId(Map<String, dynamic> c) {
+    for (final key in const [
+      'customerId',
+      'relatedCustomerId',
+      'enterpriseCustomerId',
+      'orgCustomerId',
+      'customer_id',
+    ]) {
+      final v = c[key]?.toString().trim() ?? '';
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
   void _putInit(String key, dynamic value) {
     if (value == null) return;
     if (value is String && value.trim().isEmpty) return;
@@ -683,7 +697,7 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
       final ok = await _form.submit((values) async {
         final c = widget.contact;
         final contactId = c['id']?.toString().trim() ?? '';
-        final customerId = c['customerId']?.toString().trim() ?? '';
+        final customerId = _resolveCustomerId(c);
         if (!widget.isNew && contactId.isEmpty) {
           throw CustomerApiException('缺少联系人 ID');
         }
@@ -806,7 +820,7 @@ class _ContactEditDialogState extends State<_ContactEditDialog> {
     return AppForm(
       controller: _form,
       child: HyperDialog(
-        title: Text(widget.isNew ? '联系人信息' : '编辑客户档案'),
+        title: Text(widget.isNew ? '联系人信息' : '编辑联系人'),
         scrollable: true,
         style: HyperDialogStyle(maxWidth: dialogW),
         onClose: () => widget.onClose(false),

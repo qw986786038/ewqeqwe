@@ -427,24 +427,6 @@ class _Body extends StatelessWidget {
                               ),
                             ),
                             if (c.section == null) ...[
-                            _TwoCol(
-                              left: AppTextAreaFormField(
-                                name: 'abnormalRecord',
-                                label: '经营异常记录',
-                                hintText: '选填',
-                                minHeight: 72,
-                                initialValue:
-                                    _asStr(c.initialOf('abnormalRecord')),
-                              ),
-                              right: AppTextAreaFormField(
-                                name: 'penaltyHistory',
-                                label: '行政处罚历史',
-                                hintText: '选填',
-                                minHeight: 72,
-                                initialValue:
-                                    _asStr(c.initialOf('penaltyHistory')),
-                              ),
-                            ),
                             Row(
                               children: [
                                 const Text(
@@ -624,24 +606,6 @@ class _Body extends StatelessWidget {
                                   _asStr(c.initialOf('businessScope')),
                             ),
                             if (c.section == SupplierEditSection.basic) ...[
-                              _TwoCol(
-                                left: AppTextAreaFormField(
-                                  name: 'abnormalRecord',
-                                  label: '经营异常记录',
-                                  hintText: '选填',
-                                  minHeight: 72,
-                                  initialValue:
-                                      _asStr(c.initialOf('abnormalRecord')),
-                                ),
-                                right: AppTextAreaFormField(
-                                  name: 'penaltyHistory',
-                                  label: '行政处罚历史',
-                                  hintText: '选填',
-                                  minHeight: 72,
-                                  initialValue:
-                                      _asStr(c.initialOf('penaltyHistory')),
-                                ),
-                              ),
                               AppTextAreaFormField(
                                 name: 'remark',
                                 label: '备注',
