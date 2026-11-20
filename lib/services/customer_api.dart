@@ -1103,6 +1103,32 @@ class CustomerApi {
     return null;
   }
 
+  /// 企业模糊搜索：`GET /desktop/oac/ocr/searchCompany?keyword=&page=`。
+  Future<List<Map<String, dynamic>>> searchCompany({
+    required String keyword,
+    int? page,
+  }) async {
+    final q = keyword.trim();
+    if (q.isEmpty) return const [];
+    final params = <String, String>{'keyword': q};
+    if (page != null) params['page'] = '$page';
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.oacOcrSearchCompany}',
+    ).replace(queryParameters: params);
+    final body = await _getJson(uri);
+    final code = body['code'];
+    final ok = code == null || code == 200 || code == 0 || code == '200';
+    if (!ok) {
+      throw CustomerApiException(body['msg']?.toString() ?? '企业模糊搜索失败');
+    }
+    final data = body['data'];
+    if (data is! List) return const [];
+    return [
+      for (final e in data)
+        if (e is Map) Map<String, dynamic>.from(e),
+    ];
+  }
+
   /// 经营异常 / 企业风险查询：`GET /desktop/oac/ocr/entRiskQuery?creditCode=`。
   Future<OacEntRiskQueryResult> fetchEntRiskQuery({
     required String creditCode,

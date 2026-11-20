@@ -5,9 +5,11 @@ import 'package:lemon_shadcn/shadcn.dart' as shad;
 import 'package:lemon_ui/lemon_ui.dart';
 
 import '../../../models/customer_archive.dart';
+import '../../../models/dict_data.dart';
 import '../../../models/oac_brand_detail.dart';
 import '../../../services/brand_api.dart';
 import '../../../services/customer_api.dart';
+import '../../../services/dict_api.dart';
 import '../../../services/order_api.dart';
 import '../../customer_archive/dialogs/quick_create_brand_dialog.dart';
 
@@ -16,12 +18,6 @@ const _kSectionTitle = Color(0xFF1D2129);
 const _kLabel = Color(0xFF4E5969);
 const _kHint = Color(0xFFC9CDD4);
 const _kMuted = Color(0xFF86909C);
-
-const _kContractTypeOptions = [
-  AppOption(value: '广告发布', label: '广告发布'),
-  AppOption(value: '框架协议', label: '框架协议'),
-  AppOption(value: '项目制', label: '项目制'),
-];
 
 const _kRelationOptions = [
   AppOption(value: '经营主体', label: '经营主体'),
@@ -103,6 +99,7 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
   final _orderApi = OrderApi();
   final _customerApi = CustomerApi();
   final _brandApi = BrandApi();
+  final _dictApi = DictApi();
   late final TextEditingController _durationCtrl;
   late final TextEditingController _remarkCtrl;
 
@@ -111,6 +108,8 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
   String? _bootError;
   List<CustomerArchive> _brands = const [];
   List<CustomerArchive> _agencies = const [];
+  List<AppOption<String>> _contractTypeOptions = const [];
+  String? _contractTypeInitial;
   OacBrandDetail? _detail;
   CustomerArchive? _selectedBrand;
   EnterpriseItem? _selectedEnterprise;
@@ -164,27 +163,32 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
       _bootError = null;
     });
     try {
-      final results = await Future.wait([
-        _customerApi.fetchList(
-          OacCustomerQuery(
-            customerType: 'brand',
-            status: '0',
-            pageNum: 1,
-            pageSize: 500,
-          ),
+      final brandFuture = _customerApi.fetchList(
+        OacCustomerQuery(
+          customerType: 'brand',
+          status: '0',
+          pageNum: 1,
+          pageSize: 500,
         ),
-        _customerApi.fetchList(
-          OacCustomerQuery(
-            customerType: 'agency',
-            status: '0',
-            pageNum: 1,
-            pageSize: 500,
-          ),
+      );
+      final agencyFuture = _customerApi.fetchList(
+        OacCustomerQuery(
+          customerType: 'agency',
+          status: '0',
+          pageNum: 1,
+          pageSize: 500,
         ),
-      ]);
+      );
+      final contractFuture =
+          _dictApi.fetchByType(OacDictTypes.contractType);
+      final brandPage = await brandFuture;
+      final agencyPage = await agencyFuture;
+      final contractItems = await contractFuture;
       if (!mounted) return;
-      _brands = results[0].rows;
-      _agencies = results[1].rows;
+      _brands = brandPage.rows;
+      _agencies = agencyPage.rows;
+      _contractTypeOptions = _dictToOptions(contractItems);
+      _contractTypeInitial = _resolveContractTypeInitial(contractItems);
 
       // 优先用入口传入的品牌；否则默认选中列表第一项，并带出首个签约主体。
       final initial = _resolveInitialBrand() ?? _firstBrand();
@@ -200,6 +204,40 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
         _bootError = e.toString();
       });
     }
+  }
+
+  /// 选项 value=dictValue，展示=dictLabel。
+  List<AppOption<String>> _dictToOptions(List<DictDataItem> items) {
+    final out = <AppOption<String>>[];
+    for (final e in items) {
+      final label = e.dictLabel?.trim();
+      final code = e.dictValue?.trim();
+      if (label == null || label.isEmpty) continue;
+      if (code == null || code.isEmpty) continue;
+      out.add(AppOption(value: code, label: label));
+    }
+    return out;
+  }
+
+  /// 编辑回显优先匹配 dictValue / dictLabel；新建取字典默认项，否则首项。
+  String? _resolveContractTypeInitial(List<DictDataItem> items) {
+    final edit = widget.editingOrder?.contractType?.trim();
+    if (edit != null && edit.isNotEmpty) {
+      for (final e in items) {
+        final code = e.dictValue?.trim();
+        final label = e.dictLabel?.trim();
+        if (edit == code || edit == label) return code;
+      }
+      return edit;
+    }
+    for (final e in items) {
+      if (e.isDefault?.toUpperCase() != 'Y') continue;
+      final code = e.dictValue?.trim();
+      if (code != null && code.isNotEmpty) return code;
+    }
+    return _contractTypeOptions.isEmpty
+        ? null
+        : _contractTypeOptions.first.value;
   }
 
   CustomerArchive? _resolveInitialBrand() {
@@ -278,7 +316,7 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
     return null;
   }
 
-  Future<void> _openQuickCreate() async {
+  Future<void> _openQuickCreateBrand() async {
     await showQuickCreateBrandDialog(context, agencies: _agencies);
     if (!mounted) return;
     // 创建成功后刷新品牌列表（接口接入后可按返回 id 预选）。
@@ -294,6 +332,26 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
       if (!mounted) return;
       setState(() => _brands = page.rows);
     } catch (_) {}
+  }
+
+  /// 签约主体旁「快速新建」：按已选品牌回填档案，仅增加经营主体。
+  Future<void> _openQuickCreateEnterprise() async {
+    final brandId = _selectedBrand?.id?.trim();
+    if (brandId == null || brandId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先选择品牌简称')),
+      );
+      return;
+    }
+    await showQuickCreateEnterpriseDialog(
+      context,
+      customerId: brandId,
+      agencies: _agencies,
+    );
+    if (!mounted) return;
+    // 刷新品牌详情，使新经营主体出现在下拉中。
+    await _onBrandSelected(brandId);
   }
 
   Future<void> _onBrandSelected(String? brandId) async {
@@ -909,8 +967,9 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                           _selectWithQuickCreate(
                             label: '品牌简称',
                             required: true,
-                            onQuickCreate:
-                                quickCreateEnabled ? _openQuickCreate : null,
+                            onQuickCreate: quickCreateEnabled
+                                ? _openQuickCreateBrand
+                                : null,
                             field: KeyedSubtree(
                               key: ValueKey(
                                 'brand-$_brandEpoch-${_selectedBrand?.id}',
@@ -944,7 +1003,7 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                                   label: '签约主体全称',
                                   required: true,
                                   onQuickCreate: quickCreateEnabled
-                                      ? _openQuickCreate
+                                      ? _openQuickCreateEnterprise
                                       : null,
                                   field: KeyedSubtree(
                                     key: ValueKey('ent-$_brandEpoch'),
@@ -1066,21 +1125,24 @@ class _AddOrderDialogState extends State<_AddOrderDialog> {
                                   hintText: '请选择',
                                   popupMinWidth: 160,
                                   options: [
-                                    ..._kContractTypeOptions,
+                                    ..._contractTypeOptions,
                                     if (editContract != null &&
                                         editContract.isNotEmpty &&
-                                        !_kContractTypeOptions.any(
-                                          (o) => o.value == editContract,
+                                        !_contractTypeOptions.any(
+                                          (o) =>
+                                          o.value == editContract ||
+                                              o.label == editContract,
                                         ))
                                       AppOption(
                                         value: editContract,
                                         label: editContract,
                                       ),
                                   ],
-                                  initialValue: (editContract != null &&
-                                          editContract.isNotEmpty)
-                                      ? editContract
-                                      : '广告发布',
+                                  initialValue: _contractTypeInitial,
+                                  validator: (v) => (v == null ||
+                                          v.trim().isEmpty)
+                                      ? '请选择合同类型'
+                                      : null,
                                 ),
                               ),
                               const SizedBox(height: 8),

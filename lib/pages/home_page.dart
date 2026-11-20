@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lemon_shadcn/lemon_shadcn.dart';
@@ -820,8 +822,8 @@ class _OrderBrandPage extends StatelessWidget {
                                           options: [
                                             for (final o in opts)
                                               HyperSelectOption(
-                                                value: o,
-                                                label: o,
+                                                value: o.value,
+                                                label: o.label,
                                               ),
                                           ],
                                           onChanged: (v) => c.tags.value = v,
@@ -846,8 +848,8 @@ class _OrderBrandPage extends StatelessWidget {
                                             options: [
                                               for (final o in opts)
                                                 HyperSelectOption(
-                                                  value: o,
-                                                  label: o,
+                                                  value: o.value,
+                                                  label: o.label,
                                                 ),
                                             ],
                                             onChanged: (v) => c.tags.value = v,
@@ -995,8 +997,8 @@ class _OrderBrandPage extends StatelessWidget {
                                           options: [
                                             for (final o in opts)
                                               HyperSelectOption(
-                                                value: o,
-                                                label: o,
+                                                value: o.value,
+                                                label: o.label,
                                               ),
                                           ],
                                           onChanged: (v) => c.tags.value = v,
@@ -1553,9 +1555,23 @@ class _OrderBrandPage extends StatelessWidget {
                               AppDataGridColumn(
                                 id: 'spokesperson',
                                 title: '最新代言人',
-                                width: 96,
+                                width: 120,
                                 sortable: false,
+                                alignment: Alignment.centerLeft,
+                                titleAlignment: Alignment.centerLeft,
                                 value: (row) => row.spokesperson ?? '-',
+                                cellBuilder: (context, row, _) {
+                                  final names = _spokespersonNames(
+                                    row.spokesperson,
+                                  );
+                                  if (names.isEmpty) {
+                                    return const Text(
+                                      '-',
+                                      style: TextStyle(fontSize: 12),
+                                    );
+                                  }
+                                  return _SpokespersonCell(names: names);
+                                },
                               ),
                               AppDataGridColumn(
                                 id: 'agency',
@@ -3308,7 +3324,8 @@ List<String> _brandTagLabels(OacBrand row) {
   } else {
     final tags = row.tags?.trim();
     if (tags != null && tags.isNotEmpty) {
-      for (final part in tags.split(RegExp(r'[,，;；\s]+'))) {
+      // 勿按空白拆分，避免标签名内空格 /「标签1」类名称被截断。
+      for (final part in tags.split(RegExp(r'[,，;；]+'))) {
         final v = part.trim();
         if (v.isNotEmpty && !out.contains(v)) out.add(v);
       }
@@ -3428,16 +3445,17 @@ Future<void> _openAddBrandTags(
   HomeController c,
   OacBrand row,
 ) async {
-  // 选项与回填均用字典 dictLabel，保证与筛选下拉一致。
-  final initial = <String>[
+  // 选项/回填用 dictValue，界面展示 dictLabel。
+  final initial = <String>{
     for (final raw in _brandTagLabels(row))
-      if (c.tagLabel(raw).isNotEmpty &&
-          _isDisplayableTag(c.tagLabel(raw)))
-        c.tagLabel(raw),
-  ];
+      if (_isDisplayableTag(c.tagLabel(raw)))
+        for (final o in c.tagOptions)
+          if (o.value == raw || o.label == raw || o.label == c.tagLabel(raw))
+            o.value,
+  }.toList();
   final options = [
     for (final o in c.tagOptions)
-      if (_isDisplayableTag(o)) o,
+      if (_isDisplayableTag(o.label)) o,
   ];
   final selected = await showHyperDialog<List<String>>(
     context: context,
@@ -3456,6 +3474,130 @@ bool _isDisplayableTag(String tag) {
   final t = tag.trim();
   if (t.isEmpty) return false;
   return RegExp(r'[\u4e00-\u9fff]').hasMatch(t);
+}
+
+/// 最新代言人：按顿号 / 逗号等拆成人名列表。
+List<String> _spokespersonNames(String? raw) {
+  final text = raw?.trim() ?? '';
+  if (text.isEmpty) return const [];
+  return [
+    for (final part in text.split(RegExp(r'[、,，;；/|]+')))
+      if (part.trim().isNotEmpty) part.trim(),
+  ];
+}
+
+/// 最新代言人单元格：超出两人时 `+N` 蓝色；悬停用根 Overlay 实心提示，避开表格分隔白线。
+class _SpokespersonCell extends StatefulWidget {
+  const _SpokespersonCell({required this.names});
+
+  final List<String> names;
+
+  @override
+  State<_SpokespersonCell> createState() => _SpokespersonCellState();
+}
+
+class _SpokespersonCellState extends State<_SpokespersonCell> {
+  final _link = LayerLink();
+  OverlayEntry? _entry;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _removeTip();
+    super.dispose();
+  }
+
+  void _scheduleShow() {
+    _timer?.cancel();
+    if (widget.names.length <= 2) return;
+    _timer = Timer(const Duration(milliseconds: 200), _showTip);
+  }
+
+  void _scheduleHide() {
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 80), _removeTip);
+  }
+
+  void _showTip() {
+    if (!mounted || _entry != null) return;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final message = widget.names.join('、');
+    _entry = OverlayEntry(
+      builder: (context) => UnconstrainedBox(
+        child: CompositedTransformFollower(
+          link: _link,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.bottomLeft,
+          followerAnchor: Alignment.topLeft,
+          offset: const Offset(0, 8),
+          child: Material(
+            color: const Color(0xFF2C2C2C),
+            elevation: 12,
+            shadowColor: Colors.black54,
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(_entry!);
+  }
+
+  void _removeTip() {
+    _entry?.remove();
+    _entry = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final names = widget.names;
+    final more = names.length - 2;
+    final child = names.length <= 2
+        ? Text(
+            names.join('、'),
+            style: const TextStyle(fontSize: 12, color: _kTitle),
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          )
+        : Text.rich(
+            TextSpan(
+              style: const TextStyle(fontSize: 12, color: _kTitle),
+              children: [
+                TextSpan(text: names.take(2).join('、')),
+                TextSpan(
+                  text: ' +$more',
+                  style: const TextStyle(
+                    color: _kPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          );
+    if (names.length <= 2) return child;
+    return MouseRegion(
+      onEnter: (_) => _scheduleShow(),
+      onExit: (_) => _scheduleHide(),
+      child: CompositedTransformTarget(
+        link: _link,
+        child: child,
+      ),
+    );
+  }
 }
 
 
@@ -4627,7 +4769,7 @@ class _AddBrandTagsDialog extends StatefulWidget {
   });
 
   final List<String> initialTags;
-  final List<String> options;
+  final List<({String value, String label})> options;
 
   @override
   State<_AddBrandTagsDialog> createState() => _AddBrandTagsDialogState();
@@ -4650,6 +4792,13 @@ class _AddBrandTagsDialogState extends State<_AddBrandTagsDialog> {
         _selected.remove(tag);
       }
     });
+  }
+
+  String _labelOf(String value) {
+    for (final o in widget.options) {
+      if (o.value == value) return o.label;
+    }
+    return value;
   }
 
   @override
@@ -4683,7 +4832,7 @@ class _AddBrandTagsDialogState extends State<_AddBrandTagsDialog> {
                     children: [
                       for (final tag in _selected)
                         HyperChip.input(
-                          label: tag,
+                          label: _labelOf(tag),
                           onDeleted: () => _toggle(tag, false),
                         ),
                     ],
@@ -4711,8 +4860,11 @@ class _AddBrandTagsDialogState extends State<_AddBrandTagsDialog> {
                       color: _kBorder,
                     ),
                     itemBuilder: (context, index) {
-                      final tag = widget.options[index];
+                      final opt = widget.options[index];
+                      final tag = opt.value;
                       final checked = _selected.contains(tag);
+                      // 整行只由 HyperPressable 切换；复选框 IgnorePointer，
+                      // 避免与 onChanged 各触发一次导致选中立刻被取消。
                       return HyperPressable(
                         onTap: () => _toggle(tag, !checked),
                         builder: (context, states, child) => child!,
@@ -4723,14 +4875,16 @@ class _AddBrandTagsDialogState extends State<_AddBrandTagsDialog> {
                           ),
                           child: Row(
                             children: [
-                              HyperCheckbox(
-                                value: checked,
-                                onChanged: (v) => _toggle(tag, v),
+                              IgnorePointer(
+                                child: HyperCheckbox(
+                                  value: checked,
+                                  onChanged: (_) {},
+                                ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  tag,
+                                  opt.label,
                                   style: const TextStyle(
                                     fontSize: 13,
                                     color: _kTitle,

@@ -151,12 +151,14 @@ class CustomerArchiveController extends LxController {
       ]);
     }
 
-    // 市场级别 / 行业筛选：接口存 dictLabel，选项 value 取标签文案。
+    // 市场级别 / 行业筛选：提交 dictValue，展示 dictLabel。
     marketOptions.replaceAll([
       for (final i in maps[OacDictTypes.marketScale] ?? const <DictDataItem>[])
         if (i.dictLabel?.trim().isNotEmpty ?? false)
           ArchiveDictOption(
-            value: i.dictLabel!.trim(),
+            value: (i.dictValue?.trim().isNotEmpty ?? false)
+                ? i.dictValue!.trim()
+                : i.dictLabel!.trim(),
             label: i.dictLabel!.trim(),
           ),
     ]);
@@ -164,7 +166,9 @@ class CustomerArchiveController extends LxController {
       for (final i in maps[OacDictTypes.industry] ?? const <DictDataItem>[])
         if (i.dictLabel?.trim().isNotEmpty ?? false)
           ArchiveDictOption(
-            value: i.dictLabel!.trim(),
+            value: (i.dictValue?.trim().isNotEmpty ?? false)
+                ? i.dictValue!.trim()
+                : i.dictLabel!.trim(),
             label: i.dictLabel!.trim(),
           ),
     ]);

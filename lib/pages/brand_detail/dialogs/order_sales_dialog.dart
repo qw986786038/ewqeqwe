@@ -119,6 +119,28 @@ Future<bool> showOrderSalesDialog(
     }
 
     await CustomerApi().updateCustomer(body);
+    // 先写回本地详情，避免等 load 完成前指标卡仍显示旧销售员。
+    final current = controller.detail.value;
+    if (current != null) {
+      current.salesList = [
+        for (final s in mergedSales)
+          SalesItem()
+            ..id = s['id']?.toString()
+            ..userId = int.tryParse('${s['userId']}') ??
+                (s['userId'] is int ? s['userId'] as int : null)
+            ..name = s['name']?.toString()
+            ..nameEn = s['nameEn']?.toString()
+            ..gender = s['gender']?.toString()
+            ..deptTitle = s['deptTitle']?.toString()
+            ..assignTime = s['assignTime']?.toString(),
+      ];
+      final brand = current.brand;
+      if (brand != null) {
+        brand.ownerNames =
+            ownerNames.isEmpty ? null : ownerNames.join(',');
+        brand.ownerNameList = List<String>.from(ownerNames);
+      }
+    }
     controller.detail.refresh();
     return true;
   } on CustomerApiException catch (e) {

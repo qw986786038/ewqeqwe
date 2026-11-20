@@ -135,6 +135,7 @@ const _kDictTypes = [
 /// [customerId]：非空则为编辑，先拉详情回显。
 /// [contactsOnly]：仅展示联系人分区（添加同事）；仍拉全量详情以便 PUT。
 /// [profileOnly]：仅展示基础/品牌（及 4A VIP）分区；详情页编辑用，PUT 时只合并该部分。
+/// [enterprisesOnly]：回填已有品牌档案，仅展示/保存经营主体分区（订单页签约主体快捷入口）。
 Future<void> showCreateCustomerArchiveDialog(
   BuildContext context, {
   List<CustomerArchive> agencies = const [],
@@ -142,6 +143,7 @@ Future<void> showCreateCustomerArchiveDialog(
   String? customerId,
   bool contactsOnly = false,
   bool profileOnly = false,
+  bool enterprisesOnly = false,
   VoidCallback? onCreated,
 }) {
   // 关闭后提示用宿主 context（弹窗内 SnackBar 会被遮罩挡住）。
@@ -172,6 +174,7 @@ Future<void> showCreateCustomerArchiveDialog(
             customerId: customerId,
             contactsOnly: contactsOnly,
             profileOnly: profileOnly,
+            enterprisesOnly: enterprisesOnly,
             hostContext: hostContext,
             onClose: () => Navigator.of(dialogContext).pop(),
             onCreated: onCreated,
@@ -189,6 +192,7 @@ Future<void> showEditCustomerArchiveDialog(
   List<CustomerArchive> agencies = const [],
   bool contactsOnly = false,
   bool profileOnly = false,
+  bool enterprisesOnly = false,
   String? title,
   VoidCallback? onSaved,
 }) {
@@ -198,12 +202,15 @@ Future<void> showEditCustomerArchiveDialog(
     title: title ??
         (contactsOnly
             ? '添加同事'
-            : profileOnly
-                ? '编辑档案信息'
-                : '编辑客户档案'),
+            : enterprisesOnly
+                ? '快速新建 · 经营主体'
+                : profileOnly
+                    ? '编辑档案信息'
+                    : '编辑客户档案'),
     customerId: customerId,
     contactsOnly: contactsOnly,
     profileOnly: profileOnly,
+    enterprisesOnly: enterprisesOnly,
     onCreated: onSaved,
   );
 }
@@ -222,6 +229,24 @@ Future<void> showQuickCreateBrandDialog(
   );
 }
 
+/// 打开「快速新建 · 经营主体」弹窗（订单页签约主体快捷入口）。
+/// 按已选品牌 [customerId] 回填档案头，仅增加经营主体分区。
+Future<void> showQuickCreateEnterpriseDialog(
+  BuildContext context, {
+  required String customerId,
+  List<CustomerArchive> agencies = const [],
+  VoidCallback? onCreated,
+}) {
+  return showCreateCustomerArchiveDialog(
+    context,
+    agencies: agencies,
+    title: '快速新建 · 经营主体',
+    customerId: customerId,
+    enterprisesOnly: true,
+    onCreated: onCreated,
+  );
+}
+
 class _CreateCustomerArchiveDialog extends StatefulWidget {
   const _CreateCustomerArchiveDialog({
     required this.agencies,
@@ -231,6 +256,7 @@ class _CreateCustomerArchiveDialog extends StatefulWidget {
     this.customerId,
     this.contactsOnly = false,
     this.profileOnly = false,
+    this.enterprisesOnly = false,
     this.onCreated,
   });
 
@@ -239,6 +265,7 @@ class _CreateCustomerArchiveDialog extends StatefulWidget {
   final String? customerId;
   final bool contactsOnly;
   final bool profileOnly;
+  final bool enterprisesOnly;
   final BuildContext hostContext;
   final VoidCallback onClose;
   final VoidCallback? onCreated;
@@ -258,7 +285,7 @@ class _CreateCustomerArchiveDialogState
 
   var _nextId = 1;
   var _bootLoading = true;
-  /// 编辑全量快照：contactsOnly / profileOnly 保存时在此基础上只替换对应分区。
+  /// 编辑全量快照：contactsOnly / profileOnly / enterprisesOnly 保存时在此基础上只替换对应分区。
   Map<String, dynamic>? _detailSnapshot;
   late final List<_EntityDraft> _entities;
   late final List<_ContactDraft> _contacts;
@@ -291,6 +318,11 @@ class _CreateCustomerArchiveDialogState
   /// 避免同 id 重复拉详情回填。
   String? _lastAppliedBrandLibraryId;
   var _brandLibraryFilling = false;
+
+  /// 企业模糊搜索：主体全称 → 最近一次搜索命中项（选中后回填执照字段）。
+  final Map<String, Map<String, dynamic>> _companySearchByName = {};
+  /// 避免同一主体全称重复回填。
+  final Map<int, String> _lastAppliedCompanyNameByDraftId = {};
 
   Map<String, List<DictDataItem>> _dictItems = const {};
   List<AppOption<String>> _customerTypeOptions = const [];
@@ -343,10 +375,17 @@ class _CreateCustomerArchiveDialogState
 
   bool get _contactsOnly => widget.contactsOnly;
   bool get _profileOnly => widget.profileOnly;
-  /// 基础 / 品牌（及 VIP）等档案头部分区。
+  bool get _enterprisesOnly => widget.enterprisesOnly;
+  /// 基础 / 品牌等档案头：联系人-only 隐藏；经营主体-only 仍展示以便回填品牌。
   bool get _showProfileSections => !_contactsOnly;
-  /// 自媒体 / 经营主体 / 销售员等完整分区。
-  bool get _showFullSections => !_contactsOnly && !_profileOnly;
+  /// 自媒体 / 销售员等完整分区（不含仅经营主体模式）。
+  bool get _showFullSections =>
+      !_contactsOnly && !_profileOnly && !_enterprisesOnly;
+  /// 经营主体分区：完整新建/编辑，或「仅增加经营主体」。
+  bool get _showEnterpriseSection => _showFullSections || _enterprisesOnly;
+  /// VIP：仅经营主体模式不展示。
+  bool get _showVipUi =>
+      _showProfileSections && _showVipSection && !_enterprisesOnly;
 
   @override
   void initState() {
@@ -508,6 +547,69 @@ class _CreateCustomerArchiveDialogState
     await _applyBrandLibraryDetail(id);
   }
 
+  /// 主体全称联想：`GET …/ocr/searchCompany`。
+  Future<List<AppOption<String>>> _searchCompanyOptions(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    try {
+      final list = await _customerApi.searchCompany(keyword: q);
+      final options = <AppOption<String>>[];
+      final seen = <String>{};
+      for (final m in list) {
+        final name = _asTrimmed(m['companyName']);
+        if (name == null || !seen.add(name)) continue;
+        _companySearchByName[name] = m;
+        options.add(AppOption(value: name, label: name));
+      }
+      if (!seen.contains(q)) {
+        options.insert(0, AppOption(value: q, label: q));
+      }
+      return options;
+    } catch (_) {
+      return [AppOption(value: q, label: q)];
+    }
+  }
+
+  /// 选中企业搜索项后回填主体全称 / 法人 / 信用代码 / 成立日期。
+  void _onCompanyNamePicked(
+    int entityId,
+    String? name,
+    void Function(VoidCallback) setEntityState,
+  ) {
+    final n = name?.trim() ?? '';
+    if (n.isEmpty) return;
+    final hit = _companySearchByName[n];
+    if (hit == null) return;
+    if (_lastAppliedCompanyNameByDraftId[entityId] == n) return;
+    _lastAppliedCompanyNameByDraftId[entityId] = n;
+
+    _snapshotEntityLicenseFormToInitials(entityId);
+    final p = 'ent_$entityId';
+    _putInit('${p}_name', n);
+    _putInit('${p}_legalPerson', hit['legalPerson']);
+    _putInit('${p}_creditCode', hit['creditNo'] ?? hit['creditCode']);
+    _putInit(
+      '${p}_establishDate',
+      _formatCompanyEstablishDate(
+        hit['establishDate']?.toString(),
+      ),
+    );
+    setEntityState(() {
+      _entityEpochByDraftId[entityId] =
+          (_entityEpochByDraftId[entityId] ?? 0) + 1;
+    });
+  }
+
+  /// 成立日期原始串可能为 `yyyyMMdd`，表单展示为 `yyyy-MM-dd`。
+  String? _formatCompanyEstablishDate(String? raw) {
+    final s = raw?.trim() ?? '';
+    if (s.isEmpty) return null;
+    if (RegExp(r'^\d{8}$').hasMatch(s)) {
+      return '${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}';
+    }
+    return s;
+  }
+
   /// 选中品牌库项后：`GET …/brandLibrary/nameOptions/{id}` 回填品牌信息 / 主体 / 自媒体。
   Future<void> _applyBrandLibraryDetail(String id) async {
     if (_brandLibraryFilling) return;
@@ -583,6 +685,7 @@ class _CreateCustomerArchiveDialogState
         _cityOptionsByDraftId.remove(e.id);
         _cityEpochByDraftId.remove(e.id);
         _entityEpochByDraftId.remove(e.id);
+        _lastAppliedCompanyNameByDraftId.remove(e.id);
       }
       _entities.clear();
       final pendingCities = <_PendingCity>[];
@@ -875,25 +978,20 @@ class _CreateCustomerArchiveDialogState
           ? results[5] as Map<String, dynamic>
           : null;
 
-      List<AppOption<String>> opts(String type, {bool valueIsCode = false}) =>
-          _dictToOptions(dicts[type] ?? const [], valueIsCode: valueIsCode);
+      List<AppOption<String>> opts(String type) =>
+          _dictToOptions(dicts[type] ?? const []);
 
-      String? initial(
-        String type, {
-        required bool preferFirst,
-        bool valueIsCode = false,
-      }) {
+      String? initial(String type, {required bool preferFirst}) {
         final items = dicts[type] ?? const <DictDataItem>[];
-        final def = _dictDefaultValue(items, valueIsCode: valueIsCode);
+        final def = _dictDefaultValue(items);
         if (def != null) return def;
         if (!preferFirst) return null;
-        final o = _dictToOptions(items, valueIsCode: valueIsCode);
+        final o = _dictToOptions(items);
         return o.isEmpty ? null : o.first.value;
       }
 
-      // 客户类型接口存 dictValue 编码（brand/agency…）；其余字典存 dictLabel。
-      _customerTypeOptions =
-          opts(OacDictTypes.customerType, valueIsCode: true);
+      // 全部字典：选项 value=dictValue，展示 dictLabel。
+      _customerTypeOptions = opts(OacDictTypes.customerType);
       _marketScaleOptions = opts(OacDictTypes.marketScale);
       _brandNatureOptions = opts(OacDictTypes.brandNature);
       _revenueOptions = opts(OacDictTypes.revenueScale);
@@ -903,8 +1001,7 @@ class _CreateCustomerArchiveDialogState
       _marketScopeOptions = opts(OacDictTypes.marketScope);
       _tenureOptions = opts(OacDictTypes.tenure);
       _industryOptions = opts(OacDictTypes.industry);
-      _mediaPlatformOptions =
-          opts(OacDictTypes.selfMediaMatrix, valueIsCode: true);
+      _mediaPlatformOptions = opts(OacDictTypes.selfMediaMatrix);
       _provinceOptions = _adCodeToOptions(provinces);
       _agencies =
           agencyPage.rows.isNotEmpty ? agencyPage.rows : widget.agencies;
@@ -937,7 +1034,6 @@ class _CreateCustomerArchiveDialogState
       _customerTypeInitial = initial(
         OacDictTypes.customerType,
         preferFirst: true,
-        valueIsCode: true,
       );
       // 快速新建品牌入口默认品牌企业。
       if (widget.title.contains('品牌企业')) {
@@ -1001,41 +1097,27 @@ class _CreateCustomerArchiveDialogState
     );
   }
 
-  /// 选项 value/展示均取 [DictDataItem.dictLabel]（接口存标签文案）。
-  /// [valueIsCode] 为 true 时 value 改用 [DictDataItem.dictValue]（如客户类型编码）。
-  List<AppOption<String>> _dictToOptions(
-    List<DictDataItem> items, {
-    bool valueIsCode = false,
-  }) {
+  /// 选项 value=[DictDataItem.dictValue]，展示=[DictDataItem.dictLabel]。
+  List<AppOption<String>> _dictToOptions(List<DictDataItem> items) {
     final out = <AppOption<String>>[];
     for (final e in items) {
       final label = e.dictLabel?.trim();
       final code = e.dictValue?.trim();
       if (label == null || label.isEmpty) continue;
-      if (valueIsCode) {
-        if (code == null || code.isEmpty) continue;
-        out.add(AppOption(value: code, label: label));
-      } else {
-        out.add(AppOption(value: label, label: label));
-      }
+      if (code == null || code.isEmpty) continue;
+      out.add(AppOption(value: code, label: label));
     }
     return out;
   }
 
-  String? _dictDefaultValue(
-    List<DictDataItem> items, {
-    bool valueIsCode = false,
-  }) {
+  String? _dictDefaultValue(List<DictDataItem> items) {
     for (final e in items) {
       if (e.isDefault?.toUpperCase() != 'Y') continue;
       final label = e.dictLabel?.trim();
       final code = e.dictValue?.trim();
       if (label == null || label.isEmpty) continue;
-      if (valueIsCode) {
-        if (code == null || code.isEmpty) continue;
-        return code;
-      }
-      return label;
+      if (code == null || code.isEmpty) continue;
+      return code;
     }
     return null;
   }
@@ -1090,14 +1172,22 @@ class _CreateCustomerArchiveDialogState
       check('customerType', '客户类型');
       check('name', _showBrandShortName ? '品牌简称' : '企业简称');
     }
-    if (_showFullSections) {
+    if (_showEnterpriseSection) {
       for (var i = 0; i < _entities.length; i++) {
         final id = _entities[i].id;
+        final nameEmpty = isEmpty(_form.value<Object?>('ent_${id}_name'));
+        // 仅增加经营主体：已有主体时末尾空行可留空；仅一条时仍必填。
+        if (_enterprisesOnly &&
+            i == _entities.length - 1 &&
+            nameEmpty &&
+            i > 0) {
+          continue;
+        }
         final label = _entities.length > 1 ? '经营主体${i + 1}·主体全称' : '主体全称';
         check('ent_${id}_name', label);
       }
     }
-    if (!_profileOnly) {
+    if (!_profileOnly && !_enterprisesOnly) {
       for (var i = 0; i < _contacts.length; i++) {
         final id = _contacts[i].id;
         final nameEmpty = isEmpty(_form.value<Object?>('ct_${id}_nameZh'));
@@ -1120,6 +1210,13 @@ class _CreateCustomerArchiveDialogState
     return name != null && name.isNotEmpty;
   }
 
+  /// 仅经营主体模式：已有 id 的主体保留；无 id 且无全称的末尾空行丢弃。
+  bool _enterpriseRowKeep(Map<String, dynamic> row) {
+    if (row['id'] != null) return true;
+    final name = _asTrimmed(row['fullName']);
+    return name != null && name.isNotEmpty;
+  }
+
   Future<void> _submit() async {
     try {
       final ok = await _form.submit((values) async {
@@ -1134,6 +1231,21 @@ class _CreateCustomerArchiveDialogState
           body['contacts'] = [
             for (final c in _contacts)
               if (_contactHasName(values, c)) _buildContact(values, c),
+          ];
+          await _customerApi.updateCustomer(body);
+          return;
+        }
+        if (_enterprisesOnly) {
+          final editId = _editId ?? widget.customerId?.trim();
+          final snapshot = _detailSnapshot;
+          if (editId == null || editId.isEmpty || snapshot == null) {
+            throw CustomerApiException('缺少客户档案，无法保存经营主体');
+          }
+          final body = Map<String, dynamic>.from(snapshot);
+          body['id'] = int.tryParse(editId) ?? editId;
+          body['enterprises'] = [
+            for (final e in _buildEnterprises(values))
+              if (_enterpriseRowKeep(e)) e,
           ];
           await _customerApi.updateCustomer(body);
           return;
@@ -1169,7 +1281,9 @@ class _CreateCustomerArchiveDialogState
       final onCreated = widget.onCreated;
       final successText = _contactsOnly
           ? '同事已保存'
-          : (_editId != null || _profileOnly ? '更新成功' : '创建成功');
+          : (_enterprisesOnly
+              ? '经营主体已保存'
+              : (_editId != null || _profileOnly ? '更新成功' : '创建成功'));
       widget.onClose();
       onCreated?.call();
       _toast(successText, afterClose: true);
@@ -1342,6 +1456,9 @@ class _CreateCustomerArchiveDialogState
       }
     }
     if (_entities.isEmpty) {
+      _entities.add(_newEntityDraft());
+    } else if (_enterprisesOnly) {
+      // 仅增加经营主体：回填已有主体后，再追加一条空主体供填写。
       _entities.add(_newEntityDraft());
     }
 
@@ -2253,15 +2370,15 @@ class _CreateCustomerArchiveDialogState
         normalized;
   }
 
-  /// 品牌库回填：字典编码转成中文标签（表单选项 value 即 dictLabel）。
+  /// 品牌库回填：编码/中文均解析为 dictValue（表单选项 value）。
   String? _libraryDictLabel(String dictType, dynamic raw) {
     final text = _libraryText(raw);
     if (text == null) return null;
     for (final item in _dictItems[dictType] ?? const <DictDataItem>[]) {
       final label = item.dictLabel?.trim();
       final code = item.dictValue?.trim();
-      if (label == null || label.isEmpty) continue;
-      if (text == label || text == code) return label;
+      if (code == null || code.isEmpty) continue;
+      if (text == label || text == code) return code;
     }
     return text;
   }
@@ -2672,7 +2789,9 @@ class _CreateCustomerArchiveDialogState
                           required: true,
                           options: _customerTypeOptions,
                           initialValue: _customerTypeInitial,
-                          onChanged: _onCustomerTypeChanged,
+                          enabled: !_enterprisesOnly,
+                          onChanged:
+                              _enterprisesOnly ? null : _onCustomerTypeChanged,
                           validator: (v) => (v == null || v.trim().isEmpty)
                               ? '请选择客户类型'
                               : null,
@@ -2685,27 +2804,34 @@ class _CreateCustomerArchiveDialogState
                           label: '市场量级',
                           options: _marketScaleOptions,
                           initialValue: _marketScaleInitial,
+                          enabled: !_enterprisesOnly,
                         ),
                         AppRadioGroupFormField<String>(
                           name: 'status',
                           label: '状态',
                           options: _kStatusOptions,
                           initialValue: _statusInitial ?? '0',
+                          enabled: !_enterprisesOnly,
                         ),
                       ),
                       const SizedBox(height: 14),
                       _sectionTitle(
                         '品牌信息',
-                        action: _ocrTextLink(_ocrFillBrand),
+                        action: _enterprisesOnly
+                            ? null
+                            : _ocrTextLink(_ocrFillBrand),
                       ),
                       const SizedBox(height: 8),
                       KeyedSubtree(
                         key: ValueKey(
                           'brand-info-$_customerTypeCode-$_brandInfoEpoch',
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: _buildBrandInfoFields(),
+                        child: IgnorePointer(
+                          ignoring: _enterprisesOnly,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: _buildBrandInfoFields(),
+                          ),
                         ),
                       ),
                     ],
@@ -2846,54 +2972,58 @@ class _CreateCustomerArchiveDialogState
                             );
                           },
                         ),
-                        const SizedBox(height: 14),
-                        StatefulBuilder(
-                          builder: (context, setEntityState) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _sectionTitle(
-                                  '经营主体信息',
-                                  action: _sectionActions([
-                                    _ocrTextLink(
-                                      () => _ocrFillEntity(setEntityState),
-                                    ),
-                                    _addLink('添加', () {
-                                      setEntityState(() {
-                                        _entities.add(_newEntityDraft());
-                                        _bumpEntities();
-                                      });
-                                    }),
-                                  ]),
-                                ),
-                                for (var i = 0; i < _entities.length; i++)
-                                  _card(
-                                    title: '经营主体 ${i + 1}',
-                                    deleteLabel: '删除主体',
-                                    onDelete: () {
-                                      if (_entities.length <= 1) return;
-                                      final id = _entities[i].id;
-                                      setEntityState(() {
-                                        _entities.removeAt(i);
-                                        _cityOptionsByDraftId.remove(id);
-                                        _cityEpochByDraftId.remove(id);
-                                        _entityEpochByDraftId.remove(id);
-                                        _bankOcrLoadingIds.remove(id);
-                                        _licenseOcrLoadingIds.remove(id);
-                                        _bumpEntities();
-                                      });
-                                    },
-                                    children: _buildEntityFields(
-                                      i,
-                                      setEntityState,
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
                     ],
-                    if (_showProfileSections && _showVipSection) ...[
+                    if (_showEnterpriseSection) ...[
+                      const SizedBox(height: 14),
+                      StatefulBuilder(
+                        builder: (context, setEntityState) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _sectionTitle(
+                                '经营主体信息',
+                                action: _sectionActions([
+                                  _ocrTextLink(
+                                    () => _ocrFillEntity(setEntityState),
+                                  ),
+                                  _addLink('添加', () {
+                                    setEntityState(() {
+                                      _entities.add(_newEntityDraft());
+                                      _bumpEntities();
+                                    });
+                                  }),
+                                ]),
+                              ),
+                              for (var i = 0; i < _entities.length; i++)
+                                _card(
+                                  title: '经营主体 ${i + 1}',
+                                  deleteLabel: '删除主体',
+                                  onDelete: () {
+                                    if (_entities.length <= 1) return;
+                                    final id = _entities[i].id;
+                                    setEntityState(() {
+                                      _entities.removeAt(i);
+                                      _cityOptionsByDraftId.remove(id);
+                                      _cityEpochByDraftId.remove(id);
+                                      _entityEpochByDraftId.remove(id);
+                                      _lastAppliedCompanyNameByDraftId
+                                          .remove(id);
+                                      _bankOcrLoadingIds.remove(id);
+                                      _licenseOcrLoadingIds.remove(id);
+                                      _bumpEntities();
+                                    });
+                                  },
+                                  children: _buildEntityFields(
+                                    i,
+                                    setEntityState,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                    if (_showVipUi) ...[
                       const SizedBox(height: 14),
                       StatefulBuilder(
                         builder: (context, setVipState) {
@@ -2938,7 +3068,7 @@ class _CreateCustomerArchiveDialogState
                         },
                       ),
                     ],
-                    if (!_profileOnly) ...[
+                    if (!_profileOnly && !_enterprisesOnly) ...[
                       const SizedBox(height: 14),
                       StatefulBuilder(
                         builder: (context, setContactState) {
@@ -3068,8 +3198,22 @@ class _CreateCustomerArchiveDialogState
   }
 
   /// 品牌简称：可输入联想品牌库；企业简称仍用手输。
+  /// [enterprisesOnly] 时只读回填，避免改简称触发品牌库覆盖经营主体。
   Widget _brandNameField({required String label, required String hint}) {
     final initial = _initStr('name');
+    if (_enterprisesOnly) {
+      return AppTextFormField(
+        name: 'name',
+        label: label,
+        required: true,
+        density: AppDensity.compact,
+        hintText: hint,
+        initialValue: initial,
+        readOnly: true,
+        enabled: false,
+        validator: AppValidators.required(message: '请输入$label'),
+      );
+    }
     if (_showBrandShortName) {
       return AppComboboxFormField<String>.async(
         name: 'name',
@@ -3509,6 +3653,7 @@ class _CreateCustomerArchiveDialogState
   ) {
     final id = _entities[i].id;
     final ocrEpoch = _entityEpochByDraftId[id] ?? 0;
+    final nameInitial = _initStr('ent_${id}_name');
     return [
       // OCR 回填会改 initials；需 Key 重建才能吃到新 initialValue。
       KeyedSubtree(
@@ -3516,14 +3661,56 @@ class _CreateCustomerArchiveDialogState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppTextFormField(
+            AppComboboxFormField<String>.async(
               name: 'ent_${id}_name',
               label: '主体全称',
               required: true,
-              density: AppDensity.compact,
-              hintText: '请输入经营主体全称',
-              initialValue: _initStr('ent_${id}_name'),
+              hintText: '输入搜索企业全称，或直接选用新名称',
+              clearable: true,
+              debounce: const Duration(milliseconds: 300),
+              cacheDuration: Duration.zero,
+              initialValue: nameInitial,
+              initialOption: nameInitial == null
+                  ? null
+                  : AppOption(value: nameInitial, label: nameInitial),
+              searchOptions: _searchCompanyOptions,
               validator: AppValidators.required(message: '请输入主体全称'),
+              optionConfig: AppOptionConfig(
+                optionBuilder: (context, option, state) {
+                  final credit = _asTrimmed(
+                        _companySearchByName[option.value]?['creditNo'],
+                      ) ??
+                      _asTrimmed(
+                        _companySearchByName[option.value]?['creditCode'],
+                      ) ??
+                      '';
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          option.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: state.disabled ? _kMuted : _kTitle,
+                          ),
+                        ),
+                      ),
+                      if (credit.isNotEmpty) ...[
+                        const SizedBox(width: 12),
+                        Text(
+                          credit,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, color: _kMuted),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+              onChanged: (v) => _onCompanyNamePicked(id, v, setEntityState),
             ),
             const SizedBox(height: 8),
             AppTextFormField(

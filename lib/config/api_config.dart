@@ -67,6 +67,8 @@ class ApiConfig {
   static const String customerImportEnterpriseConfirm =
       '/desktop/oac/customer/importEnterprise/confirm';
   static const String adCodeList = '/desktop/common/ad-code';
+  /// 全国城市列表：`GET /desktop/common/ad-code/cities`。
+  static const String adCodeCities = '/desktop/common/ad-code/cities';
   static const String hrmDept = '/desktop/hrm/dept';
   /// 公司整体配置：`GET /desktop/hrm/dept/summary`。
   static const String hrmDeptSummary = '/desktop/hrm/dept/summary';
@@ -142,6 +144,8 @@ class ApiConfig {
       '/desktop/oac/ocr/businessLicense';
   /// 经营异常 / 企业风险查询：`GET /desktop/oac/ocr/entRiskQuery?creditCode=`。
   static const String oacOcrEntRiskQuery = '/desktop/oac/ocr/entRiskQuery';
+  /// 企业模糊搜索：`GET /desktop/oac/ocr/searchCompany?keyword=&page=`。
+  static const String oacOcrSearchCompany = '/desktop/oac/ocr/searchCompany';
   /// 阿里云统一识别 RecognizeAllText：`POST /desktop/oac/ocr/allText/upload?type=`。
   static const String oacOcrAllTextUpload = '/desktop/oac/ocr/allText/upload';
   /// 通用 OSS 上传（logo / 合同等）：`POST /desktop/resource/oss/upload`。

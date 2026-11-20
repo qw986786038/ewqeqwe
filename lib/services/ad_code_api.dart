@@ -18,11 +18,23 @@ class AdCodeApi {
   Future<List<AdCodeItem>> fetchChildren({int parentCode = 100000}) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.adCodeList}')
         .replace(queryParameters: {'parentCode': '$parentCode'});
-    final body = await _getJson(uri);
+    return _parseList(await _getJson(uri), failLabel: '行政区划加载失败');
+  }
+
+  /// 全国城市：`GET /desktop/common/ad-code/cities`。
+  Future<List<AdCodeItem>> fetchCities() async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.adCodeCities}');
+    return _parseList(await _getJson(uri), failLabel: '城市列表加载失败');
+  }
+
+  List<AdCodeItem> _parseList(
+    Map<String, dynamic> body, {
+    required String failLabel,
+  }) {
     final code = body['code'];
     final ok = code == null || code == 200 || code == 0 || code == '200';
     if (!ok) {
-      throw AdCodeApiException(body['msg']?.toString() ?? '行政区划加载失败');
+      throw AdCodeApiException(body['msg']?.toString() ?? failLabel);
     }
 
     final raw = body['data'];

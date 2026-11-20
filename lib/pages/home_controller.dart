@@ -9,6 +9,7 @@ import '../models/oac_agency.dart';
 import '../models/oac_brand.dart';
 import '../models/oac_enterprise.dart';
 import '../models/oac_person.dart';
+import '../services/ad_code_api.dart';
 import '../services/agency_api.dart';
 import '../services/auth_session.dart';
 import '../services/brand_api.dart';
@@ -76,6 +77,7 @@ class HomeController extends LxController {
   final _agencyApi = AgencyApi();
   final _personApi = PersonApi();
   final _dictApi = DictApi();
+  final _adCodeApi = AdCodeApi();
 
   final keywordCtrl = TextEditingController();
   final amountMinCtrl = TextEditingController();
@@ -95,7 +97,7 @@ class HomeController extends LxController {
 
   final industryOptions = <({String value, String label})>[].obs;
   final cityOptions = <String>[].obs;
-  final tagOptions = <String>[].obs;
+  final tagOptions = <({String value, String label})>[].obs;
   final relationTypeOptions = <({String value, String label})>[].obs;
   final ownerOptions = <String>[].obs;
   final enterpriseTypeOptions = <String>[].obs;
@@ -224,6 +226,10 @@ class HomeController extends LxController {
   }
 
   Future<void> _loadFilterOptions() async {
+    await Future.wait([_loadDictFilterOptions(), _loadCityFilterOptions()]);
+  }
+
+  Future<void> _loadDictFilterOptions() async {
     try {
       final maps = await _dictApi.fetchMany(const [
         OacDictTypes.industry,
@@ -241,12 +247,14 @@ class HomeController extends LxController {
               MapEntry(i.dictLabel!.trim(), i.dictLabel!.trim()),
             ],
         ]);
-      // 行业筛选与档案一致：接口存 dictLabel。
+      // 筛选提交 dictValue，界面展示 dictLabel。
       industryOptions.replaceAll([
         for (final i in industryItems)
           if (i.dictLabel?.trim().isNotEmpty ?? false)
             (
-              value: i.dictLabel!.trim(),
+              value: (i.dictValue?.trim().isNotEmpty ?? false)
+                  ? i.dictValue!.trim()
+                  : i.dictLabel!.trim(),
               label: i.dictLabel!.trim(),
             ),
       ]);
@@ -263,10 +271,15 @@ class HomeController extends LxController {
               MapEntry(i.dictLabel!.trim(), i.dictLabel!.trim()),
             ],
         ]);
-      // 标签筛选 / 多选：展示与提交均用 dictLabel。
       tagOptions.replaceAll([
         for (final i in tagItems)
-          if (i.dictLabel?.trim().isNotEmpty ?? false) i.dictLabel!.trim(),
+          if (i.dictLabel?.trim().isNotEmpty ?? false)
+            (
+              value: (i.dictValue?.trim().isNotEmpty ?? false)
+                  ? i.dictValue!.trim()
+                  : i.dictLabel!.trim(),
+              label: i.dictLabel!.trim(),
+            ),
       ]);
 
       final relationItems =
@@ -293,6 +306,21 @@ class HomeController extends LxController {
       ]);
     } catch (_) {
       // 字典失败时仍可用列表数据推导的其它筛选项。
+    }
+  }
+
+  /// 所在城市：全国城市接口，筛选项提交中文名（与列表 `city` 一致）。
+  Future<void> _loadCityFilterOptions() async {
+    try {
+      final items = await _adCodeApi.fetchCities();
+      final names = <String>{
+        for (final i in items)
+          if (i.chName?.trim().isNotEmpty ?? false) i.chName!.trim(),
+      }.toList()
+        ..sort();
+      cityOptions.replaceAll(names);
+    } catch (_) {
+      // 城市接口失败时保留已有选项，不阻断其它筛选。
     }
   }
 
@@ -360,16 +388,6 @@ class HomeController extends LxController {
     }
   }
 
-  void _mergeCityFacetOptions(Iterable<String?> citiesIn) {
-    final cities = {...cityOptions};
-    for (final c in citiesIn) {
-      final v = c?.trim();
-      if (v != null && v.isNotEmpty) cities.add(v);
-    }
-    final sortedCities = cities.toList()..sort();
-    cityOptions.replaceAll(sortedCities);
-  }
-
   /// 销售员筛选项：仅取当前视角本次列表行中的人员（去重排序，整表替换）。
   void _replaceOwnerOptionsFromList({
     required Iterable<List<String>?> ownerLists,
@@ -403,7 +421,6 @@ class HomeController extends LxController {
   }
 
   void _mergeBrandFacetOptions(List<OacBrand> rows) {
-    _mergeCityFacetOptions(rows.map((e) => e.city));
     _replaceOwnerOptionsFromList(
       ownerLists: rows.map((e) => e.ownerNameList),
       ownerNamesRaw: rows.map((e) => e.ownerNames),
@@ -411,7 +428,6 @@ class HomeController extends LxController {
   }
 
   void _mergeEnterpriseFacetOptions(List<OacEnterprise> rows) {
-    _mergeCityFacetOptions(rows.map((e) => e.city));
     _replaceOwnerOptionsFromList(
       ownerLists: rows.map((e) => e.ownerNameList),
       ownerNamesRaw: rows.map((e) => e.ownerNames),
@@ -419,7 +435,6 @@ class HomeController extends LxController {
   }
 
   void _mergeAgencyFacetOptions(List<OacAgency> rows) {
-    _mergeCityFacetOptions(rows.map((e) => e.city));
     _replaceOwnerOptionsFromList(
       ownerLists: rows.map((e) => e.ownerNameList),
       ownerNamesRaw: rows.map((e) => e.ownerNames),
@@ -427,7 +442,6 @@ class HomeController extends LxController {
   }
 
   void _mergePersonFacetOptions(List<OacPerson> rows) {
-    _mergeCityFacetOptions(rows.map((e) => e.city));
     final types = <String>{...enterpriseTypeOptions};
     final employers = <String>{...employerOptions};
     for (final row in rows) {

@@ -14,6 +14,7 @@ import '../../models/oac_brand_detail.dart';
 import '../../models/oac_enterprise.dart';
 import '../customer_archive/detail/dialogs/entity_module_edit_dialog.dart';
 import '../customer_archive/dialogs/quick_create_brand_dialog.dart';
+import '../customer_archive/detail/dialogs/contact_overview_dialog.dart';
 import '../office_map_dialog.dart';
 import 'brand_detail_controller.dart';
 import 'dialogs/add_order_dialog.dart';
@@ -21,6 +22,7 @@ import 'dialogs/agency_overview_dialog.dart';
 import 'dialogs/brand_profile_actions.dart';
 import 'dialogs/order_contacts_dialog.dart';
 import 'dialogs/order_sales_dialog.dart';
+import 'dialogs/sales_person_info_dialog.dart';
 
 part 'order_detail_page.dart';
 
@@ -284,152 +286,169 @@ class _BodyState extends State<_Body> {
                 children: [
                     _MetricRows(controller: c, detail: detail),
                     const SizedBox(height: 16),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 4,
-                          child: _BrandProfileCard(
-                            controller: c,
-                            detail: detail,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 6,
-                          child: _RelationGraphCard(
-                            controller: c,
-                            graph: detail.relationGraph,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _ChartCard(
-                            title: c.isAgency
-                                ? '4A 订单金额趋势（万元）'
-                                : c.isEnterprise
-                                    ? '企业订单金额趋势（万元）'
-                                    : '订单金额趋势（万元）',
-                            trailing: () {
-                              final q4 = c.isAgency
-                                  ? c.agencyQ4ExpectedYoyRate()
-                                  : null;
-                              if (q4 == null || q4.isEmpty) return null;
-                              return Text(
-                                'Q4 预期同比 ${q4.startsWith('-') ? '' : '+'}$q4%',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: _kTrendUp,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              );
-                            }(),
-                            child: _TrendChart(items: detail.monthlyTrend),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _ChartCard(
-                            title: '合同类型占比',
-                            // 环形图例在饼图上方，固定 220 易底部溢出。
-                            height: 260,
-                            child: _ContractDonut(counts: c.contractTypeCounts),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _ChartCard(
-                            title: c.isAgency ? '合作企业分布' : '关系分布',
-                            child: _RelationBars(
-                              counts: c.isAgency
-                                  ? {
-                                      for (final name
-                                          in c.relatedEnterpriseNames(detail))
-                                        name: detail.orders
-                                            .where(
-                                              (o) =>
-                                                  o.enterprise?.trim() == name,
-                                            )
-                                            .length
-                                            .clamp(1, 999),
-                                    }
-                                  : c.relationLabelCounts,
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: _BrandProfileCard(
+                              controller: c,
+                              detail: detail,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 6,
+                            child: _RelationGraphCard(
+                              controller: c,
+                              graph: detail.relationGraph,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _ChartCard(
+                              title: c.isAgency
+                                  ? '4A 订单金额趋势（万元）'
+                                  : c.isEnterprise
+                                      ? '企业订单金额趋势（万元）'
+                                      : '订单金额趋势（万元）',
+                              trailing: () {
+                                if (c.isAgency) {
+                                  final q4 = c.agencyQ4ExpectedYoyRate();
+                                  if (q4 == null || q4.isEmpty) return null;
+                                  return Text(
+                                    'Q4 预期同比 ${q4.startsWith('-') ? '' : '+'}$q4%',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _kTrendUp,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  );
+                                }
+                                // 品牌视角：右上角展示环比（优先接口字段，否则用趋势末两月推算）。
+                                if (c.isEnterprise) return null;
+                                final mom = detail.orderAmountMomRate?.trim();
+                                final rate = (mom != null && mom.isNotEmpty)
+                                    ? mom
+                                    : _momRateFromTrend(detail.monthlyTrend);
+                                if (rate == null || rate.isEmpty) return null;
+                                return _OrderAmountMomTrailing(rate: rate);
+                              }(),
+                              child: _TrendChart(items: detail.monthlyTrend),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _ChartCard(
+                              title: '合同类型占比',
+                              child: _ContractDonut(
+                                counts: c.contractTypeCounts,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _ChartCard(
+                              title: c.isAgency ? '合作企业分布' : '关系分布',
+                              child: _RelationBars(
+                                counts: c.isAgency
+                                    ? {
+                                        for (final name in c
+                                            .relatedEnterpriseNames(detail))
+                                          name: detail.orders
+                                              .where(
+                                                (o) =>
+                                                    o.enterprise?.trim() ==
+                                                    name,
+                                              )
+                                              .length
+                                              .clamp(1, 999),
+                                      }
+                                    : c.relationLabelCounts,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
                     _OrdersCard(controller: c),
                     const SizedBox(height: 16),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: _ContactsCard(
-                            controller: c,
-                            contacts: detail.contacts,
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: _ContactsCard(
+                              controller: c,
+                              contacts: detail.contacts,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 5,
-                          child: _SalesCard(
-                            controller: c,
-                            people: c.salesPeople,
-                            detail: detail,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 5,
+                            child: _SalesCard(
+                              controller: c,
+                              people: c.salesPeople,
+                              detail: detail,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _DynamicsCard(
-                            brand: brand,
-                            enterprise: c.isEnterprise
-                                ? c.enterpriseSeed
-                                : null,
-                            agency: c.isAgency ? c.agencySeed : null,
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _DynamicsCard(
+                              brand: brand,
+                              enterprise: c.isEnterprise
+                                  ? c.enterpriseSeed
+                                  : null,
+                              agency: c.isAgency ? c.agencySeed : null,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _MapCard(
-                            hq: c.resolvedHqLocation() ?? detail.hqLocation,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _MapCard(
+                              hq: c.resolvedHqLocation() ?? detail.hqLocation,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _NotesCard(
-                            controller: c,
-                            showEdit: !c.isEnterprise && !c.isAgency,
-                            remark: c.isEnterprise
-                                ? (c.enterpriseSeed?.remark
-                                            ?.trim()
-                                            .isNotEmpty ==
-                                        true
-                                    ? c.enterpriseSeed!.remark
-                                    : brand?.remark)
-                                : c.isAgency
-                                    ? (c.agencySeed?.remark
-                                                ?.trim()
-                                                .isNotEmpty ==
-                                            true
-                                        ? c.agencySeed!.remark
-                                        : brand?.remark)
-                                    : brand?.remark,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _NotesCard(
+                              controller: c,
+                              showEdit: !c.isEnterprise && !c.isAgency,
+                              remark: c.isEnterprise
+                                  ? (c.enterpriseSeed?.remark
+                                              ?.trim()
+                                              .isNotEmpty ==
+                                          true
+                                      ? c.enterpriseSeed!.remark
+                                      : brand?.remark)
+                                  : c.isAgency
+                                      ? (c.agencySeed?.remark
+                                                  ?.trim()
+                                                  .isNotEmpty ==
+                                              true
+                                          ? c.agencySeed!.remark
+                                          : brand?.remark)
+                                      : brand?.remark,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1016,6 +1035,9 @@ class _MetricRows extends StatelessWidget {
   final BrandDetailController controller;
   final OacBrandDetail detail;
 
+  /// 暂时隐藏「关联企业」下「媒体主 · 代理方」副文案；恢复时改为 true。
+  static const _showEnterpriseSplitSubtitle = false;
+
   (int media, int agency) _enterpriseSplit() {
     var media = 0;
     var agency = 0;
@@ -1068,9 +1090,9 @@ class _MetricRows extends StatelessWidget {
     final (mediaCnt, agencyCnt) = _enterpriseSplit();
     final relatedBrands = controller.relatedBrandNames(detail);
     final relatedEnterprises = controller.relatedEnterpriseNames(detail);
-    final subBrandText = detail.subBrands.isEmpty
-        ? '-'
-        : detail.subBrands.take(4).join('、');
+    final subBrandFull = detail.subBrands.isEmpty
+        ? null
+        : detail.subBrands.join(' / ');
     final brandSubtitle = relatedBrands.isEmpty
         ? controller.industryDisplay(b)
         : relatedBrands.take(3).join('、');
@@ -1210,7 +1232,39 @@ class _MetricRows extends StatelessWidget {
                 child: _MetricCard(
                   label: '关联子品牌',
                   value: '${detail.subBrands.length}',
-                  subtitle: subBrandText,
+                  subtitleWidget: subBrandFull == null
+                      ? const Text(
+                          '-',
+                          style: TextStyle(fontSize: 12, color: _kMuted),
+                        )
+                      : Tooltip(
+                          message: subBrandFull,
+                          preferBelow: true,
+                          waitDuration: const Duration(milliseconds: 200),
+                          verticalOffset: 8,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2C2C2C),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          textStyle: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                          child: Text(
+                            subBrandFull,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: _kMuted,
+                            ),
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1218,7 +1272,9 @@ class _MetricRows extends StatelessWidget {
                 child: _MetricCard(
                   label: '关联企业',
                   value: '${b?.enterpriseCount ?? detail.enterprises.length}',
-                  subtitle: '媒体主 $mediaCnt · 代理方 $agencyCnt',
+                  subtitle: _showEnterpriseSplitSubtitle
+                      ? '媒体主 $mediaCnt · 代理方 $agencyCnt'
+                      : null,
                 ),
               ),
             ],
@@ -1318,10 +1374,25 @@ class _MetricRows extends StatelessWidget {
                 label: isEnterprise ? '销售负责人' : '销售员',
                 valueWidget: Row(
                   children: [
-                    if (sales.isNotEmpty)
-                      _Avatar(name: sales.first, size: 28)
-                    else
-                      const _Avatar(name: '?', size: 28),
+                    if (sales.isEmpty)
+                      const _Avatar(name: '?', size: 28)
+                    else ...[
+                      for (var i = 0; i < sales.length && i < 3; i++) ...[
+                        if (i > 0) const SizedBox(width: 4),
+                        _Avatar(name: sales[i], size: 28),
+                      ],
+                      if (sales.length > 3) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '+${sales.length - 3}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _kMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
                     const SizedBox(width: 8),
                     _orderAddChip(
                       label: '+',
@@ -1331,7 +1402,9 @@ class _MetricRows extends StatelessWidget {
                 ),
                 subtitle: sales.isEmpty
                     ? '暂无销售员'
-                    : '主销售：${sales.first}',
+                    : sales.length == 1
+                        ? '主销售：${sales.first}'
+                        : '主销售：${sales.first} 等 ${sales.length} 人',
               ),
             ),
           ],
@@ -1719,6 +1792,11 @@ class _RelationGraphCard extends StatelessWidget {
         : isEnterprise
             ? '企业关系网络图谱'
             : '品牌关系网络图谱';
+    final hint = isAgency
+        ? '中心为当前4A，点击节点可查看对应主体详情'
+        : isEnterprise
+            ? '中心为当前企业，点击节点可查看对应主体详情'
+            : '中心为当前品牌，点击节点可查看对应主体详情';
     final centerCategory = isAgency
         ? 'agency'
         : isEnterprise
@@ -1726,32 +1804,27 @@ class _RelationGraphCard extends StatelessWidget {
             : 'brand';
     return _SectionCard(
       title: title,
+      subtitle: hint,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _LegendDot(
-            color: isAgency
-                ? const Color(0xFFFA8C16)
-                : isEnterprise
-                    ? const Color(0xFF13C2C2)
-                    : _kPrimary,
-            label: isAgency
-                ? '4A'
-                : isEnterprise
-                    ? '企业'
-                    : '品牌',
-          ),
-          const SizedBox(width: 10),
-          _LegendDot(
-            color: _kPrimary,
-            label: '品牌',
-          ),
-          const SizedBox(width: 10),
-          _LegendDot(
-            color: const Color(0xFF13C2C2),
-            label: '企业',
-          ),
-          if (!isAgency) ...[
+          // 各类型只出现一次；当前视角对应项排在最前。
+          if (isAgency) ...[
+            const _LegendDot(color: Color(0xFFFA8C16), label: '4A'),
+            const SizedBox(width: 10),
+            const _LegendDot(color: _kPrimary, label: '品牌'),
+            const SizedBox(width: 10),
+            const _LegendDot(color: Color(0xFF13C2C2), label: '企业'),
+          ] else if (isEnterprise) ...[
+            const _LegendDot(color: Color(0xFF13C2C2), label: '企业'),
+            const SizedBox(width: 10),
+            const _LegendDot(color: _kPrimary, label: '品牌'),
+            const SizedBox(width: 10),
+            const _LegendDot(color: Color(0xFFFA8C16), label: '4A'),
+          ] else ...[
+            const _LegendDot(color: _kPrimary, label: '品牌'),
+            const SizedBox(width: 10),
+            const _LegendDot(color: Color(0xFF13C2C2), label: '企业'),
             const SizedBox(width: 10),
             const _LegendDot(color: Color(0xFFFA8C16), label: '4A'),
           ],
@@ -1762,21 +1835,350 @@ class _RelationGraphCard extends StatelessWidget {
         ],
       ),
       child: SizedBox(
-        height: 280,
+        height: 360,
         child: graph == null || graph!.nodes.isEmpty
             ? const Center(
                 child: Text('暂无关系数据', style: TextStyle(color: _kMuted)),
               )
-            : CustomPaint(
-                painter: _RelationGraphPainter(
-                  graph!,
-                  centerCategory: centerCategory,
-                ),
-                child: const SizedBox.expand(),
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = Size(
+                    constraints.maxWidth,
+                    constraints.maxHeight,
+                  );
+                  final layout = _layoutRelationGraph(
+                    graph!,
+                    size,
+                    centerCategory: centerCategory,
+                  );
+                  return MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (details) {
+                        final node = _hitTestRelationNode(
+                          layout,
+                          details.localPosition,
+                        );
+                        if (node == null) return;
+                        _onRelationNodeTap(context, controller, node);
+                      },
+                      child: CustomPaint(
+                        painter: _RelationGraphPainter(
+                          graph!,
+                          layout: layout,
+                          centerCategory: centerCategory,
+                        ),
+                        size: size,
+                      ),
+                    ),
+                  );
+                },
               ),
       ),
     );
   }
+}
+
+/// 关系图谱节点布局（绘制与点击共用）。
+class _RelationGraphLayout {
+  _RelationGraphLayout({
+    required this.positions,
+    required this.radii,
+    required this.hubId,
+  });
+
+  final Map<String, Offset> positions;
+  final Map<String, double> radii;
+  final String? hubId;
+}
+
+_RelationGraphLayout _layoutRelationGraph(
+  RelationGraph graph,
+  Size size, {
+  required String centerCategory,
+}) {
+  final center = Offset(size.width / 2, size.height / 2);
+  final nodes = graph.nodes;
+  RelationNode? hub;
+  for (final n in nodes) {
+    if (n.category == centerCategory) {
+      hub = n;
+      break;
+    }
+  }
+  hub ??= nodes.isEmpty ? null : nodes.first;
+  final others = nodes.where((n) => n.id != hub?.id).toList();
+  final positions = <String, Offset>{};
+  final radii = <String, double>{};
+  if (hub?.id != null) {
+    positions[hub!.id!] = center;
+    radii[hub.id!] = 28;
+  }
+
+  final radius = math.min(size.width, size.height) * 0.34;
+  for (var i = 0; i < others.length; i++) {
+    final angle =
+        -math.pi / 2 + (2 * math.pi * i / math.max(others.length, 1));
+    final id = others[i].id;
+    if (id == null) continue;
+    positions[id] = Offset(
+      center.dx + radius * math.cos(angle),
+      center.dy + radius * math.sin(angle),
+    );
+    radii[id] = 22;
+  }
+  return _RelationGraphLayout(
+    positions: positions,
+    radii: radii,
+    hubId: hub?.id,
+  );
+}
+
+RelationNode? _hitTestRelationNode(
+  _RelationGraphLayout layout,
+  Offset local,
+) {
+  String? hitId;
+  var bestDist = double.infinity;
+  for (final entry in layout.positions.entries) {
+    final r = (layout.radii[entry.key] ?? 22) + 4;
+    final d = (local - entry.value).distance;
+    if (d <= r && d < bestDist) {
+      bestDist = d;
+      hitId = entry.key;
+    }
+  }
+  if (hitId == null) return null;
+  return RelationNode()..id = hitId;
+}
+
+void _onRelationNodeTap(
+  BuildContext context,
+  BrandDetailController controller,
+  RelationNode hit,
+) {
+  final graph = controller.detail.value?.relationGraph;
+  if (graph == null) return;
+  RelationNode? node;
+  for (final n in graph.nodes) {
+    if (n.id == hit.id) {
+      node = n;
+      break;
+    }
+  }
+  if (node == null) return;
+
+  final category = node.category?.trim() ?? '';
+  switch (category) {
+    case 'salesperson':
+      final sales = _resolveSalesItem(controller, node);
+      if (sales == null) {
+        showHyperToast(context, content: const Text('未找到销售人员信息'));
+        return;
+      }
+      showSalesPersonInfoDialog(context, sales: sales);
+      return;
+    case 'contact':
+      final id = _resolveContactId(controller, node);
+      if (id == null || id.isEmpty) {
+        showHyperToast(context, content: const Text('缺少联系人 ID，无法打开详情'));
+        return;
+      }
+      showContactOverviewDialog(context, contactId: id);
+      return;
+    case 'brand':
+      _openRelationEntityOverview(
+        context,
+        controller,
+        node,
+        perspective: OacDetailPerspective.brand,
+      );
+      return;
+    case 'enterprise':
+      _openRelationEntityOverview(
+        context,
+        controller,
+        node,
+        perspective: OacDetailPerspective.enterprise,
+      );
+      return;
+    case 'agency':
+      _openRelationEntityOverview(
+        context,
+        controller,
+        node,
+        perspective: OacDetailPerspective.agency,
+      );
+      return;
+    default:
+      showHyperToast(context, content: Text('暂不支持查看「${node.name ?? ''}」详情'));
+  }
+}
+
+void _openRelationEntityOverview(
+  BuildContext context,
+  BrandDetailController controller,
+  RelationNode node, {
+  required OacDetailPerspective perspective,
+}) {
+  final id = _resolveEntityId(controller, node, perspective);
+  if (id == null || id.isEmpty) {
+    showHyperToast(context, content: const Text('缺少主体 ID，无法打开详情'));
+    return;
+  }
+  showAgencyOverviewDialog(
+    context,
+    customerId: id,
+    enterpriseName: node.name,
+  );
+}
+
+SalesItem? _resolveSalesItem(
+  BrandDetailController controller,
+  RelationNode node,
+) {
+  final list = controller.detail.value?.salesList ?? const <SalesItem>[];
+  final rawId = node.id?.trim() ?? '';
+  final name = node.name?.trim() ?? '';
+  final stripped = _stripNodeId(rawId, const [
+    'sales-',
+    'salesperson-',
+    'user-',
+  ]);
+
+  for (final s in list) {
+    final sid = s.id?.trim() ?? '';
+    if (sid.isNotEmpty &&
+        (sid == rawId || sid == stripped || 'sales-$sid' == rawId)) {
+      return s;
+    }
+    final uid = s.userId;
+    if (uid != null &&
+        ('$uid' == stripped ||
+            'sales-$uid' == rawId ||
+            'user-$uid' == rawId)) {
+      return s;
+    }
+  }
+  if (name.isNotEmpty) {
+    for (final s in list) {
+      if (s.name?.trim() == name) return s;
+    }
+  }
+  // 图谱仅有名字时仍弹窗展示。
+  if (name.isNotEmpty) {
+    return SalesItem()..name = name;
+  }
+  return null;
+}
+
+String? _resolveContactId(
+  BrandDetailController controller,
+  RelationNode node,
+) {
+  final list = controller.detail.value?.contacts ?? const <ContactItem>[];
+  final rawId = node.id?.trim() ?? '';
+  final name = node.name?.trim() ?? '';
+  final stripped = _stripNodeId(rawId, const [
+    'contact-',
+    'contacts-',
+    'person-',
+  ]);
+
+  for (final c in list) {
+    final cid = c.id?.trim() ?? '';
+    if (cid.isEmpty) continue;
+    if (cid == rawId || cid == stripped || 'contact-$cid' == rawId) {
+      return cid;
+    }
+  }
+  if (name.isNotEmpty) {
+    for (final c in list) {
+      if (c.name?.trim() == name && c.id?.trim().isNotEmpty == true) {
+        return c.id!.trim();
+      }
+    }
+  }
+  // 节点 id 本身即联系人 id（非纯短序号占位）。
+  if (stripped.isNotEmpty && !RegExp(r'^\d{1,2}$').hasMatch(stripped)) {
+    return stripped;
+  }
+  return null;
+}
+
+String? _resolveEntityId(
+  BrandDetailController controller,
+  RelationNode node,
+  OacDetailPerspective perspective,
+) {
+  final detail = controller.detail.value;
+  final rawId = node.id?.trim() ?? '';
+  final name = node.name?.trim() ?? '';
+  final prefixes = switch (perspective) {
+    OacDetailPerspective.brand => const ['brand-', 'brands-'],
+    OacDetailPerspective.enterprise => const [
+        'enterprise-',
+        'ent-',
+        'enterprises-',
+      ],
+    OacDetailPerspective.agency => const ['agency-', 'agencies-', '4a-'],
+  };
+  final stripped = _stripNodeId(rawId, prefixes);
+
+  if (perspective == OacDetailPerspective.brand) {
+    for (final b in detail?.brands ?? const <RelatedBrandItem>[]) {
+      final bid = b.id?.trim() ?? '';
+      if (bid.isNotEmpty &&
+          (bid == rawId || bid == stripped || 'brand-$bid' == rawId)) {
+        return bid;
+      }
+      if (name.isNotEmpty && b.name?.trim() == name && bid.isNotEmpty) {
+        return bid;
+      }
+    }
+    final self = detail?.brand?.id?.trim();
+    if (self != null &&
+        (self == rawId || self == stripped || name == detail?.brand?.name)) {
+      return self;
+    }
+  } else if (perspective == OacDetailPerspective.enterprise) {
+    for (final e in detail?.enterprises ?? const <EnterpriseItem>[]) {
+      final eid = e.id?.trim() ?? '';
+      if (eid.isNotEmpty &&
+          (eid == rawId || eid == stripped || 'enterprise-$eid' == rawId)) {
+        return eid;
+      }
+      if (name.isNotEmpty && e.name?.trim() == name && eid.isNotEmpty) {
+        return eid;
+      }
+    }
+  } else {
+    for (final a in detail?.agencies ?? const <AgencyItem>[]) {
+      final aid = a.id?.trim() ?? '';
+      if (aid.isNotEmpty &&
+          (aid == rawId || aid == stripped || 'agency-$aid' == rawId)) {
+        return aid;
+      }
+      if (name.isNotEmpty && a.name?.trim() == name && aid.isNotEmpty) {
+        return aid;
+      }
+    }
+  }
+
+  if (stripped.isNotEmpty && !RegExp(r'^\d{1,2}$').hasMatch(stripped)) {
+    return stripped;
+  }
+  return stripped.isNotEmpty ? stripped : null;
+}
+
+String _stripNodeId(String raw, List<String> prefixes) {
+  for (final p in prefixes) {
+    if (raw.startsWith(p) && raw.length > p.length) {
+      return raw.substring(p.length);
+    }
+  }
+  return raw;
 }
 
 class _LegendDot extends StatelessWidget {
@@ -1802,9 +2204,14 @@ class _LegendDot extends StatelessWidget {
 }
 
 class _RelationGraphPainter extends CustomPainter {
-  _RelationGraphPainter(this.graph, {this.centerCategory = 'brand'});
+  _RelationGraphPainter(
+    this.graph, {
+    required this.layout,
+    this.centerCategory = 'brand',
+  });
 
   final RelationGraph graph;
+  final _RelationGraphLayout layout;
   final String centerCategory;
 
   Color _color(String? category) {
@@ -1820,31 +2227,11 @@ class _RelationGraphPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final nodes = graph.nodes;
-    RelationNode? hub;
-    for (final n in nodes) {
-      if (n.category == centerCategory) {
-        hub = n;
-        break;
-      }
-    }
-    hub ??= nodes.isEmpty ? null : nodes.first;
-    final others = nodes.where((n) => n.id != hub?.id).toList();
-    final positions = <String, Offset>{};
-    if (hub?.id != null) positions[hub!.id!] = center;
-
-    final radius = math.min(size.width, size.height) * 0.34;
-    for (var i = 0; i < others.length; i++) {
-      final angle = -math.pi / 2 + (2 * math.pi * i / math.max(others.length, 1));
-      final id = others[i].id;
-      if (id == null) continue;
-      positions[id] = Offset(
-        center.dx + radius * math.cos(angle),
-        center.dy + radius * math.sin(angle),
-      );
-    }
-
+    final positions = layout.positions;
+    final nodeById = <String, RelationNode>{
+      for (final n in graph.nodes)
+        if (n.id != null) n.id!: n,
+    };
     final linePaint = Paint()
       ..color = const Color(0xFFD0D7DE)
       ..strokeWidth = 1;
@@ -1853,15 +2240,18 @@ class _RelationGraphPainter extends CustomPainter {
       final b = positions[link.target];
       if (a == null || b == null) continue;
       canvas.drawLine(a, b, linePaint);
+      final label = _linkLabel(link, nodeById);
+      if (label == null) continue;
+      _paintLinkLabel(canvas, a, b, label);
     }
 
-    for (final node in nodes) {
+    for (final node in graph.nodes) {
       final id = node.id;
       if (id == null) continue;
       final pos = positions[id];
       if (pos == null) continue;
-      final isHub = node.category == centerCategory || node.id == hub?.id;
-      final r = isHub ? 28.0 : 22.0;
+      final r = layout.radii[id] ?? 22;
+      final isHub = id == layout.hubId || node.category == centerCategory;
       final paint = Paint()..color = _color(node.category);
       canvas.drawCircle(pos, r, paint);
       final tp = TextPainter(
@@ -1881,6 +2271,57 @@ class _RelationGraphPainter extends CustomPainter {
     }
   }
 
+  /// 优先接口 `link.label`；空则按外侧节点类型兜底。
+  String? _linkLabel(
+    RelationLink link,
+    Map<String, RelationNode> nodeById,
+  ) {
+    final fromApi = link.label?.trim();
+    if (fromApi != null && fromApi.isNotEmpty) return fromApi;
+    final hubId = layout.hubId;
+    final outerId = link.source == hubId
+        ? link.target
+        : link.target == hubId
+            ? link.source
+            : link.target;
+    final category = nodeById[outerId]?.category;
+    return switch (category) {
+      'agency' => '关联4A',
+      'enterprise' => '经营主体',
+      'contact' => '对接人',
+      'salesperson' => '负责销售',
+      'brand' => '关联品牌',
+      _ => null,
+    };
+  }
+
+  void _paintLinkLabel(Canvas canvas, Offset a, Offset b, String label) {
+    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+    var angle = math.atan2(b.dy - a.dy, b.dx - a.dx);
+    // 避免文字倒置。
+    if (angle > math.pi / 2 || angle < -math.pi / 2) {
+      angle += math.pi;
+    }
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          fontSize: 13,
+          color: Color(0xFF8C8C8C),
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    canvas.save();
+    canvas.translate(mid.dx, mid.dy);
+    canvas.rotate(angle);
+    // 略抬离连线，避免压在灰线上。
+    tp.paint(canvas, Offset(-tp.width / 2, -tp.height - 1));
+    canvas.restore();
+  }
+
   String _shortName(String? name) {
     final n = name?.trim() ?? '';
     if (n.isEmpty) return '?';
@@ -1890,6 +2331,7 @@ class _RelationGraphPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RelationGraphPainter oldDelegate) =>
       oldDelegate.graph != graph ||
+      oldDelegate.layout != layout ||
       oldDelegate.centerCategory != centerCategory;
 }
 
@@ -1900,22 +2342,83 @@ class _ChartCard extends StatelessWidget {
     required this.title,
     required this.child,
     this.trailing,
-    this.height = 220,
   });
+
+  /// 三块图表统一内容区高度，避免环形图例撑高后左右不一致。
+  static const double _bodyHeight = 260;
 
   final String title;
   final Widget child;
   final Widget? trailing;
-  final double height;
 
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
       title: title,
       trailing: trailing,
-      child: SizedBox(height: height, child: child),
+      child: SizedBox(height: _bodyHeight, child: child),
     );
   }
+}
+
+/// 订单金额趋势卡右上角「↘ 环比 -xx%」（对齐稿图）。
+class _OrderAmountMomTrailing extends StatelessWidget {
+  const _OrderAmountMomTrailing({required this.rate});
+
+  final String rate;
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = rate.trim();
+    final n = num.tryParse(raw.replaceAll('%', ''));
+    final isDown = n != null ? n < 0 : raw.contains('-');
+    final label = () {
+      if (n == null) {
+        final text = raw.contains('%') ? raw : '$raw%';
+        return '环比 $text';
+      }
+      final sign = n > 0 ? '+' : '';
+      final numText = n % 1 == 0
+          ? '${n.toInt()}'
+          : n.toStringAsFixed(1);
+      return '环比 $sign$numText%';
+    }();
+    // 稿图环比下降用绿色箭头+文案。
+    final color = _kTrendUp;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          isDown ? '↘' : '↗',
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w600,
+            height: 1,
+          ),
+        ),
+        const SizedBox(width: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 用月趋势末两期推算环比（接口未给 `orderAmountMomRate` 时兜底）。
+String? _momRateFromTrend(List<MonthAmountItem> items) {
+  if (items.length < 2) return null;
+  final prev = num.tryParse(items[items.length - 2].amount ?? '');
+  final curr = num.tryParse(items[items.length - 1].amount ?? '');
+  if (prev == null || curr == null || prev == 0) return null;
+  final rate = (curr - prev) / prev * 100;
+  return rate.toStringAsFixed(1);
 }
 
 class _TrendChart extends StatelessWidget {
@@ -1928,23 +2431,28 @@ class _TrendChart extends StatelessWidget {
     if (items.isEmpty) {
       return const Center(child: Text('暂无趋势数据', style: TextStyle(color: _kMuted)));
     }
-    return AppLineChart(
-      showLegend: false,
-      height: 220,
-      series: [
-        AppLineSeries(
-          name: '订单金额',
-          points: [
-            for (var i = 0; i < items.length; i++)
-              AppLinePoint(
-                x: i.toDouble(),
-                y: num.tryParse(items[i].amount ?? '')?.toDouble() ?? 0,
-                label: items[i].month ?? '$i',
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final h = constraints.maxHeight;
+        return AppLineChart(
+          showLegend: false,
+          height: h.isFinite && h > 0 ? h : 260,
+          series: [
+            AppLineSeries(
+              name: '订单金额',
+              points: [
+                for (var i = 0; i < items.length; i++)
+                  AppLinePoint(
+                    x: i.toDouble(),
+                    y: num.tryParse(items[i].amount ?? '')?.toDouble() ?? 0,
+                    label: items[i].month ?? '$i',
+                  ),
+              ],
+            ),
           ],
-        ),
-      ],
-      yAxis: AppChartAxis(formatter: (v) => v.toStringAsFixed(0)),
+          yAxis: AppChartAxis(formatter: (v) => v.toStringAsFixed(0)),
+        );
+      },
     );
   }
 }
@@ -1963,7 +2471,7 @@ class _ContractDonut extends StatelessWidget {
       builder: (context, constraints) {
         final h = constraints.maxHeight;
         return AppPieChart.donut(
-          // 吃满卡片内高度；图例+饼图同处一列，勿再写死 220。
+          // 吃满卡片内高度；图例+饼图同处一列。
           height: h.isFinite && h > 0 ? h : 260,
           showValues: true,
           sections: [
@@ -1987,17 +2495,22 @@ class _RelationBars extends StatelessWidget {
       return const Center(child: Text('暂无关系数据', style: TextStyle(color: _kMuted)));
     }
     final entries = counts.entries.toList();
-    return AppBarChart.horizontal(
-      height: 220,
-      showLegend: false,
-      showValues: true,
-      groups: [
-        for (final e in entries)
-          AppBarGroup(
-            label: e.key,
-            values: [AppBarValue(value: e.value.toDouble())],
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final h = constraints.maxHeight;
+        return AppBarChart.horizontal(
+          height: h.isFinite && h > 0 ? h : 260,
+          showLegend: false,
+          showValues: true,
+          groups: [
+            for (final e in entries)
+              AppBarGroup(
+                label: e.key,
+                values: [AppBarValue(value: e.value.toDouble())],
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -2112,7 +2625,10 @@ class _OrdersHeader extends StatelessWidget {
             style: const TextStyle(fontSize: 12),
             decoration: InputDecoration(
               isDense: true,
-              hintText: '筛选订单号 / 标签',
+              // 品牌视角去掉「筛选订单号」，仅保留「标签」。
+              hintText: controller.isEnterprise || controller.isAgency
+                  ? '筛选订单号 / 标签'
+                  : '标签',
               hintStyle: const TextStyle(fontSize: 12, color: _kMuted),
               prefixIcon: const Icon(Icons.search, size: 16, color: _kMuted),
               filled: true,
@@ -2724,6 +3240,8 @@ class _OrderSalesCell extends StatelessWidget {
       order: order,
     );
     if (!saved || !context.mounted) return;
+    await controller.load();
+    if (!context.mounted) return;
     showHyperToast(context, content: const Text('销售员已更新'));
   }
 
@@ -3489,10 +4007,12 @@ class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.title,
     required this.child,
+    this.subtitle,
     this.trailing,
   });
 
   final String title;
+  final String? subtitle;
   final Widget child;
   final Widget? trailing;
 
@@ -3518,8 +4038,22 @@ class _SectionCard extends StatelessWidget {
                   color: _kTitle,
                 ),
               ),
-              const Spacer(),
-              ?trailing,
+              if (subtitle != null) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: _kMuted),
+                  ),
+                ),
+              ] else
+                const Spacer(),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                trailing!,
+              ],
             ],
           ),
           const SizedBox(height: 12),

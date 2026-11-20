@@ -954,37 +954,40 @@ class BrandDetailController extends LxController {
             deptTitle: s.deptTitle,
           ),
     ];
-    // 4A 列表负责人可能多于 salesList（如 李季兰 + 张三）。
-    if (isAgency) {
-      final seen = {for (final p in fromList) p.name};
-      final merged = [...fromList];
-      for (final name in agencyOwnerNames(d.brand)) {
-        if (!seen.add(name)) continue;
-        merged.add(
-          SalesPersonView(
-            name: name,
-            role: roleByName[name] ?? '销售',
-          ),
-        );
-      }
-      if (merged.isNotEmpty) return merged;
-    } else if (fromList.isNotEmpty) {
-      return fromList;
+    // salesList 与负责人名单合并：新增销售员后详情可能一侧未即时齐全。
+    final seen = {for (final p in fromList) p.name};
+    final merged = [...fromList];
+    final ownerNames = isAgency
+        ? agencyOwnerNames(d.brand)
+        : isEnterprise
+            ? enterpriseOwnerNames(d.brand)
+            : _brandOwnerNames(d.brand);
+    for (final name in ownerNames) {
+      if (!seen.add(name)) continue;
+      merged.add(
+        SalesPersonView(
+          name: name,
+          role: roleByName[name] ?? '销售',
+        ),
+      );
     }
-    final names = d.brand?.ownerNameList;
-    if (names != null && names.isNotEmpty) {
-      return [
-        for (final name in names)
-          SalesPersonView(
-            name: name,
-            role: roleByName[name] ?? '销售',
-          ),
-      ];
-    }
+    if (merged.isNotEmpty) return merged;
     return [
       for (final e in roleByName.entries)
         SalesPersonView(name: e.key, role: e.value),
     ];
+  }
+
+  List<String> _brandOwnerNames(OacBrand? brand) {
+    final fromList = brand?.ownerNameList;
+    if (fromList != null && fromList.isNotEmpty) return fromList;
+    final csv = brand?.ownerNames?.trim();
+    if (csv == null || csv.isEmpty) return const [];
+    return csv
+        .split(RegExp(r'[,，/;|、]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
   }
 
   Map<String, int> get relationLabelCounts {
